@@ -362,6 +362,16 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 		}
 	case "s":
 		v.cycleScope()
+	case "S":
+		// Dedicated stash/unstash shortcut — smart toggle based on current row's source:
+		//   stash row → move to user scope  (unstash)
+		//   anything else mutable → move to stash  (stash)
+		//   plugin / claude.ai / project(.mcp.json) / orphan → refused with explanation
+		// Saves a keypress over `m` + picker and gives the operation a discoverable name.
+		if len(visible) == 0 {
+			return nil
+		}
+		v.stashToggle(visible[v.index])
 	case " ":
 		if len(visible) == 0 {
 			return nil
@@ -516,6 +526,28 @@ func (v *mcpView) bulkApplyRow(r mcpRow, on bool) bool {
 func markDirty(flag *bool) bool {
 	*flag = true
 	return true
+}
+
+// stashToggle handles the `S` key: route the current row into stash or out of stash
+// based on where it lives now. Delegates to doMove for the actual mutation + flash so
+// behavior is identical to the manual `m` + picker flow.
+func (v *mcpView) stashToggle(row mcpRow) {
+	switch row.Source {
+	case config.SourceStash:
+		// Row already in stash → unstash (move to user scope).
+		v.doMove(row.RowKey(), scopeUser)
+	case config.SourceUser, config.SourceLocal:
+		// Row in user/local scope → stash it.
+		v.doMove(row.RowKey(), scopeStash)
+	case config.SourcePlugin:
+		v.flash = styleWarn.Render("can't stash plugin-registered MCPs — disable the plugin or override per-project instead")
+	case config.SourceClaude:
+		v.flash = styleWarn.Render("can't stash claude.ai integrations — they live in Claude.ai; override per-project with `space` instead")
+	case config.SourceProject:
+		v.flash = styleWarn.Render("can't stash .mcp.json entries — they're git-tracked; use the allow/deny list (cycle scope to project + space) instead")
+	default:
+		v.flash = styleDim.Render("nothing to stash here — row source is unknown or orphaned")
+	}
 }
 
 func (v *mcpView) cycleScope() {
@@ -876,7 +908,7 @@ func truncate(s string, n int) string {
 func (v *mcpView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *mcpView) helpText() string {
-	return "space: toggle  A/N: all on/off  m: move→scope  s: cycle scope  /: filter"
+	return "space: toggle  A/N: all on/off  S: stash/unstash  m: move  s: scope  /: filter"
 }
 
 func (v *mcpView) capturingInput() bool { return v.filterActive || v.moveActive }

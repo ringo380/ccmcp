@@ -6,6 +6,17 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-04-20
+
+### Added
+
+- **`S` key in the MCPs tab: stash/unstash the current row.** Smart
+  toggle based on source — stashes a user/local-scope row, unstashes a
+  stash row. Plugin / claude.ai / `.mcp.json` / orphan rows show a
+  specific hint explaining why those can't be stashed. Saves the prior
+  two-keystroke `m` + picker flow and makes the operation discoverable
+  via the footer hint and `?` legend.
+
 ## [0.2.3] — 2026-04-20
 
 ### Added
@@ -140,7 +151,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.4
 [0.2.3]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.3
 [0.2.2]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.2
 [0.2.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.1

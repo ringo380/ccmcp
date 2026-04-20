@@ -81,6 +81,7 @@ apart from genuinely absent sources.
 |---|---|
 | `space` | toggle current row in the active scope |
 | `A` / `N` | bulk enable/disable every visible row |
+| `S` | stash the current row (or unstash if it's already in stash) |
 | `m` | move an MCP's config between user / local / stash |
 | `s` | cycle scope: effective → local → user → project → stash |
 | `/` | filter by substring (enter to lock, esc to cancel) |
