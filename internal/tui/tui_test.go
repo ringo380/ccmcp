@@ -282,6 +282,39 @@ func TestTUIBulkDisableRespectsFilter(t *testing.T) {
 	}
 }
 
+func TestTUIHelpOverlay(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// `?` opens the help overlay, replacing the tab view.
+	view := drive(m, "?")
+	if !m.showHelp {
+		t.Fatal("`?` should set showHelp = true")
+	}
+	for _, want := range []string{
+		"Source badges",
+		"[u]", "[l]", "[p]", "[P]", "[@]", "[s]", "[?]",
+		"Marks (effective view)",
+		"[x]", "[~]",
+		"MCPs tab", "Plugins tab", "Profiles tab", "Global",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("help overlay missing %q; got:\n%s", want, view)
+		}
+	}
+	// `?` again closes it.
+	drive(m, "?")
+	if m.showHelp {
+		t.Error("second `?` should close the overlay")
+	}
+	// `esc` also closes it.
+	drive(m, "?")
+	drive(m, "esc")
+	if m.showHelp {
+		t.Error("esc should close the overlay")
+	}
+}
+
 func TestTUIMoveToStash(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)

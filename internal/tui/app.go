@@ -38,6 +38,8 @@ func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 		m.tab = tabProfiles
 	case "summary":
 		m.tab = tabSummary
+	case "help":
+		m.showHelp = true
 	default:
 		m.tab = tabMCPs
 	}

@@ -28,11 +28,12 @@ var tabs = []struct {
 }
 
 type model struct {
-	st      *state
-	tab     tabID
-	width   int
-	height  int
-	message string // transient status message
+	st       *state
+	tab      tabID
+	width    int
+	height   int
+	message  string // transient status message
+	showHelp bool   // toggled by `?`; when true, View() renders the legend instead of tabs
 
 	mcps     *mcpView
 	plugins  *pluginView
@@ -64,6 +65,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Help overlay swallows input first: any key dismisses it, then the normal
+		// flow resumes on the next keypress. `?` and `esc` close without side effects.
+		if m.showHelp {
+			switch msg.String() {
+			case "?", "esc", "q", " ", "enter":
+				m.showHelp = false
+			}
+			return m, nil
+		}
 		// Global keys first, but defer to the active view if it's in an input mode (filter).
 		if m.activeView().capturingInput() {
 			return m.updateActive(msg)
@@ -71,6 +81,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "?":
+			m.showHelp = true
+			return m, nil
 		case "q", "esc":
 			if m.st.anyDirty() {
 				m.message = styleWarn.Render("unsaved changes — press Q again or `w` to save + quit, `D` to discard + quit")
@@ -163,6 +176,13 @@ func (m *model) View() string {
 	if m.width == 0 {
 		return "initialising..."
 	}
+	if m.showHelp {
+		// Render the legend full-screen. Still keep a tiny footer so the user knows
+		// how to exit.
+		body := renderHelp(m.width)
+		footer := styleFooter.Render("? or esc: close help")
+		return lipgloss.JoinVertical(lipgloss.Left, body, footer)
+	}
 	var header strings.Builder
 	header.WriteString(styleTitle.Render("ccmcp"))
 	header.WriteString("  ")
@@ -195,7 +215,7 @@ func (m *model) View() string {
 }
 
 func (m *model) footerHelp() string {
-	common := "tab: next  1/2/3: tab  w: save  q: quit"
+	common := "tab: next  w: save  ?: help  q: quit"
 	return m.activeView().helpText() + "  │  " + common
 }
 
