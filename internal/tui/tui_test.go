@@ -294,9 +294,9 @@ func TestTUIHelpOverlay(t *testing.T) {
 	for _, want := range []string{
 		"Source badges",
 		"[u]", "[l]", "[p]", "[P]", "[@]", "[s]", "[?]",
-		"Marks (effective view)",
-		"[x]", "[~]",
-		"MCPs tab", "Plugins tab", "Profiles tab", "Global",
+		"Row marks",
+		"[x]", "[~]", "[!]",
+		"MCPs tab", "Plugins tab", "Profiles tab", "Summary tab", "Global",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("help overlay missing %q; got:\n%s", want, view)
@@ -312,6 +312,16 @@ func TestTUIHelpOverlay(t *testing.T) {
 	drive(m, "esc")
 	if m.showHelp {
 		t.Error("esc should close the overlay")
+	}
+	// `q` while help is open should NOT close it — matches footer hint of `?/esc` only,
+	// and avoids surprising a user who hits `q` expecting to quit the whole app.
+	drive(m, "?")
+	if !m.showHelp {
+		t.Fatal("precondition: help should be open")
+	}
+	drive(m, "q")
+	if !m.showHelp {
+		t.Error("`q` inside help should NOT close the overlay (overlay is ?/esc-only)")
 	}
 }
 

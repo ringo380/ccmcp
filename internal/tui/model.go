@@ -65,11 +65,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Help overlay swallows input first: any key dismisses it, then the normal
-		// flow resumes on the next keypress. `?` and `esc` close without side effects.
+		// Help overlay swallows input until dismissed. Only `?` and `esc` close it
+		// — matching the footer hint — so keys the user might reflexively press (like
+		// `q` to "quit") don't silently do something different from the rest of the app.
 		if m.showHelp {
 			switch msg.String() {
-			case "?", "esc", "q", " ", "enter":
+			case "?", "esc":
 				m.showHelp = false
 			}
 			return m, nil
