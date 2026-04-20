@@ -52,6 +52,7 @@ func renderHelp(width int) string {
 	section("MCPs tab")
 	kbd("space", "toggle current row in the active scope")
 	kbd("A / N", "bulk enable / disable every visible row (respects filter)")
+	kbd("S", "stash current row (or unstash if already in stash)")
 	kbd("m", "move MCP config between scopes — opens a picker:")
 	kbd("  └ u / l / s", "  pick target user / local / stash (esc to cancel)")
 	kbd("s", "cycle scope: effective → local → user → project → stash")

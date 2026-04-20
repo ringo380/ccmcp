@@ -325,6 +325,46 @@ func TestTUIHelpOverlay(t *testing.T) {
 	}
 }
 
+func TestTUIStashShortcut(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Filter to a user-scope row, then press S → should move it to stash.
+	drive(m, "/")
+	for _, r := range "user-only" {
+		m.mcps.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m.mcps.update(tea.KeyMsg{Type: tea.KeyEnter})
+	drive(m, "S")
+
+	if _, still := st.cj.UserMCPs()["user-only"]; still {
+		t.Error("S on a user-scope row should remove from user scope")
+	}
+	if _, ok := st.stash.Get("user-only"); !ok {
+		t.Error("S on a user-scope row should place into stash")
+	}
+}
+
+func TestTUIUnstashShortcut(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Filter to an existing stash row, press S → should move it to user scope (unstash).
+	drive(m, "/")
+	for _, r := range "stashed-a" {
+		m.mcps.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m.mcps.update(tea.KeyMsg{Type: tea.KeyEnter})
+	drive(m, "S")
+
+	if _, still := st.stash.Get("stashed-a"); still {
+		t.Error("S on a stash row should remove from stash")
+	}
+	if _, ok := st.cj.UserMCPs()["stashed-a"]; !ok {
+		t.Error("S on a stash row should place into user scope (unstash)")
+	}
+}
+
 func TestTUIMoveToStash(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
