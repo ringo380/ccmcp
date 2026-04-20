@@ -68,6 +68,22 @@ func (p *InstalledPlugins) Has(id string) bool {
 	return ok
 }
 
+// ByName returns every installed entry whose bare plugin name (without @marketplace)
+// equals `name`. Used to attribute `plugin:<name>:<server>` override keys back to a
+// concrete on-disk plugin — those keys don't include the marketplace, so a name-only
+// lookup is the only option. May return 0, 1, or multiple hits (same plugin name in
+// two marketplaces is allowed).
+func (p *InstalledPlugins) ByName(name string) []InstalledPlugin {
+	var out []InstalledPlugin
+	for _, ip := range p.List() {
+		n, _ := ParsePluginID(ip.ID)
+		if n == name {
+			out = append(out, ip)
+		}
+	}
+	return out
+}
+
 // Remove deletes the entry. Returns the installPath of the first entry if present, so the
 // caller can optionally delete the on-disk cache.
 func (p *InstalledPlugins) Remove(id string) (installPath string, removed bool) {

@@ -36,6 +36,8 @@ func runCLI(t *testing.T, home string, args ...string) (string, error) {
 	overrideUndo = false
 	overrideSource = ""
 	overridePluginOf = ""
+	pruneIncludeStashGhosts = false
+	pruneYes = false
 
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
@@ -365,6 +367,104 @@ func TestCLIOverrideUnqualifiedFallbackToStdio(t *testing.T) {
 	if len(arr) == 0 || arr[0] != "keep-me" {
 		t.Errorf("expected 'keep-me' in disabledMcpServers; got %v", arr)
 	}
+}
+
+func TestCLIPruneSkipsDisabledPluginAndStashGhosts(t *testing.T) {
+	home := setupSandbox(t)
+	proj := "/tmp/cli-prune-proj"
+
+	// Seed disabledMcpServers with one of each bucket. Sandbox doesn't have any
+	// plugin infrastructure so plugin:* entries will classify as orphan-plugin — which
+	// is fine for this test (we're checking that the command prunes orphans but keeps
+	// stash ghosts and live-stdio by default).
+	cj := readJSON(t, filepath.Join(home, ".claude.json"))
+	projects, _ := cj["projects"].(map[string]any)
+	if projects == nil {
+		projects = map[string]any{}
+	}
+	projects[proj] = map[string]any{
+		"disabledMcpServers": []any{
+			"keep-me",             // live in user scope → stdioLive (NOT pruned)
+			"parked",              // in stash → stashGhost (kept unless --include-stash-ghosts)
+			"plugin:fake:fake",    // not installed → orphanPlugin (pruned)
+			"totally-gone",        // no source → orphanStdio (pruned)
+		},
+	}
+	cj["projects"] = projects
+	b, _ := json.Marshal(cj)
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1) prune --dry-run: list but don't write
+	before, _ := os.ReadFile(filepath.Join(home, ".claude.json"))
+	if _, err := runCLI(t, home, "mcp", "prune", "--path", proj, "--dry-run"); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(filepath.Join(home, ".claude.json"))
+	if string(before) != string(after) {
+		t.Error("--dry-run should not modify disk")
+	}
+
+	// 2) prune --yes: default behavior prunes orphan-plugin + orphan-stdio
+	if _, err := runCLI(t, home, "mcp", "prune", "--path", proj, "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	cj = readJSON(t, filepath.Join(home, ".claude.json"))
+	remaining := asStringList(cj["projects"].(map[string]any)[proj].(map[string]any)["disabledMcpServers"])
+	// Should keep: keep-me (live), parked (stash ghost)
+	// Should remove: plugin:fake:fake, totally-gone
+	got := map[string]bool{}
+	for _, k := range remaining {
+		got[k] = true
+	}
+	if !got["keep-me"] {
+		t.Error("stdioLive (keep-me) should be preserved")
+	}
+	if !got["parked"] {
+		t.Error("stashGhost (parked) should be preserved by default")
+	}
+	if got["plugin:fake:fake"] || got["totally-gone"] {
+		t.Errorf("orphans should be removed, still present: %v", remaining)
+	}
+}
+
+func TestCLIPruneWithIncludeStashGhosts(t *testing.T) {
+	home := setupSandbox(t)
+	proj := "/tmp/cli-prune-stash"
+
+	cj := readJSON(t, filepath.Join(home, ".claude.json"))
+	projects, _ := cj["projects"].(map[string]any)
+	if projects == nil {
+		projects = map[string]any{}
+	}
+	projects[proj] = map[string]any{
+		"disabledMcpServers": []any{"parked", "totally-gone"},
+	}
+	cj["projects"] = projects
+	b, _ := json.Marshal(cj)
+	os.WriteFile(filepath.Join(home, ".claude.json"), b, 0o600)
+
+	if _, err := runCLI(t, home, "mcp", "prune", "--path", proj, "--yes", "--include-stash-ghosts"); err != nil {
+		t.Fatal(err)
+	}
+	cj = readJSON(t, filepath.Join(home, ".claude.json"))
+	node, _ := cj["projects"].(map[string]any)[proj].(map[string]any)
+	remaining := asStringList(node["disabledMcpServers"])
+	if len(remaining) != 0 {
+		t.Errorf("both should be pruned with --include-stash-ghosts, got: %v", remaining)
+	}
+}
+
+func asStringList(v any) []string {
+	arr, _ := v.([]any)
+	out := make([]string, 0, len(arr))
+	for _, x := range arr {
+		if s, ok := x.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func readJSON(t *testing.T, path string) map[string]any {

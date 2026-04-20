@@ -15,37 +15,34 @@ type PluginMCPSource struct {
 	PluginID   string // e.g. "context7@claude-plugins-official"
 	PluginPath string // e.g. /Users/x/.claude/plugins/cache/claude-plugins-official/context7/unknown
 	Config     any    // the raw MCP entry from the plugin's .mcp.json
+	Enabled    bool   // true when the owning plugin is set to true in enabledPlugins
 }
 
-// ScanEnabledPluginMCPs walks every installed plugin whose enabledPlugins value is true
-// and reads <installPath>/.mcp.json (if present), collecting each registered MCP server.
-// The result maps MCP name -> list of sources (typically 1, but same name could come from
-// multiple enabled plugins — that's a name collision worth surfacing).
+// ScanAllInstalledPluginMCPs walks every plugin that's REGISTERED in enabledPlugins (regardless
+// of whether the value is true or false) and reads <installPath>/.mcp.json to collect every
+// MCP server the plugin ships. Each emitted source carries an Enabled bool.
 //
-// Sources of plugin metadata:
-//   - ~/.claude/settings.json#/enabledPlugins — which plugins are currently on (bool map)
-//   - ~/.claude/plugins/installed_plugins.json — resolves qualified id -> installPath
+// This is strictly a superset of ScanEnabledPluginMCPs — callers that only care about what
+// will actually load in the current project should filter by .Enabled (or use the helper).
 //
-// The installed_plugins.json entries tell us where each plugin's cache lives on disk.
-// If the installPath is missing/empty, we fall back to the conventional
-// cache/<marketplace>/<name>/unknown/ layout.
-func ScanEnabledPluginMCPs(settings *Settings, installed *InstalledPlugins, pluginsDir string) map[string][]PluginMCPSource {
+// Why all installed plugins, not just enabled? Per-project disable entries in
+// ~/.claude.json#/projects[<p>].disabledMcpServers use the key `plugin:<plugin>:<server>`,
+// which persists even after the user globally disables the plugin. If ccmcp only knew about
+// enabled plugins, it'd mis-classify those overrides as "unknown source" when in reality
+// we know exactly which installed-but-disabled plugin they came from.
+func ScanAllInstalledPluginMCPs(settings *Settings, installed *InstalledPlugins, pluginsDir string) map[string][]PluginMCPSource {
 	out := map[string][]PluginMCPSource{}
 	if settings == nil || installed == nil {
 		return out
 	}
-	// Build an id -> installPath index.
+	// Build an id -> installPath index from installed_plugins.json.
 	paths := map[string]string{}
 	for _, p := range installed.List() {
 		paths[p.ID] = p.InstallPath
 	}
 	for _, e := range settings.PluginEntries() {
-		if !e.Enabled {
-			continue
-		}
 		path := paths[e.ID]
 		if path == "" {
-			// Fall back to convention
 			name, mkt := ParsePluginID(e.ID)
 			if mkt == "" {
 				continue
@@ -63,10 +60,7 @@ func ScanEnabledPluginMCPs(settings *Settings, installed *InstalledPlugins, plug
 			continue
 		}
 		servers := mj.Servers()
-		// A plugin can also ship `.mcp.json` with entries at the top level (no "mcpServers" wrapper).
-		// We already handle the {mcpServers:{...}} form via LoadMCPJson. Handle the bare-object form too.
 		if len(servers) == 0 {
-			// Re-read raw; if top level looks like {name: {command:...}} we use that.
 			raw, _ := RawJSON(mjson)
 			if looksLikeBareMCPMap(raw) {
 				servers = raw
@@ -78,14 +72,34 @@ func ScanEnabledPluginMCPs(settings *Settings, installed *InstalledPlugins, plug
 				PluginID:   e.ID,
 				PluginPath: path,
 				Config:     cfg,
+				Enabled:    e.Enabled,
 			})
 		}
 	}
-	// Sort each slice for deterministic output.
 	for k := range out {
 		srcs := out[k]
 		sort.Slice(srcs, func(i, j int) bool { return srcs[i].PluginID < srcs[j].PluginID })
 		out[k] = srcs
+	}
+	return out
+}
+
+// ScanEnabledPluginMCPs is the "only what will actually load" view. Thin filter over
+// ScanAllInstalledPluginMCPs that drops entries whose Enabled is false. Kept for back
+// compat with callers (summary tab, CLI list) that don't care about disabled plugins.
+func ScanEnabledPluginMCPs(settings *Settings, installed *InstalledPlugins, pluginsDir string) map[string][]PluginMCPSource {
+	all := ScanAllInstalledPluginMCPs(settings, installed, pluginsDir)
+	out := map[string][]PluginMCPSource{}
+	for name, srcs := range all {
+		var kept []PluginMCPSource
+		for _, s := range srcs {
+			if s.Enabled {
+				kept = append(kept, s)
+			}
+		}
+		if len(kept) > 0 {
+			out[name] = kept
+		}
 	}
 	return out
 }
@@ -95,7 +109,6 @@ func looksLikeBareMCPMap(raw map[string]any) bool {
 	if len(raw) == 0 {
 		return false
 	}
-	// Heuristic: every top-level value is an object, and at least one has command/type/url.
 	for _, v := range raw {
 		inner, ok := v.(map[string]any)
 		if !ok {

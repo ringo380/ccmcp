@@ -64,10 +64,16 @@ func (v *summaryView) render() string {
 	row(&b, "  user scope     ", len(userMCPs), truncateList(userMCPs, 6))
 	row(&b, "  local scope    ", len(projMCPs), truncateList(projMCPs, 6))
 	row(&b, "  .mcp.json      ", len(mcpjsonNames), truncateList(mcpjsonNames, 6))
-	// Plugin-registered MCPs: from every enabled plugin's bundled .mcp.json
+	// Plugin-registered MCPs: only count those whose plugin is currently ENABLED
+	// (v.st.pluginMCPs includes disabled-but-installed plugins too — they don't load).
 	pluginSources := make([]string, 0, len(v.st.pluginMCPs))
-	for name := range v.st.pluginMCPs {
-		pluginSources = append(pluginSources, name)
+	for name, srcs := range v.st.pluginMCPs {
+		for _, s := range srcs {
+			if s.Enabled {
+				pluginSources = append(pluginSources, name)
+				break
+			}
+		}
 	}
 	sort.Strings(pluginSources)
 	row(&b, "  via plugins    ", len(pluginSources), truncateList(pluginSources, 6))
@@ -79,46 +85,43 @@ func (v *summaryView) render() string {
 
 	// Per-project overrides
 	overrides := v.st.cj.ProjectDisabledMcpServers(v.st.project)
-	var pluginOv, claudeAiOv, stdioOv, unknownOv []string
-	pluginSet := map[string]bool{}
-	for name, srcs := range v.st.pluginMCPs {
-		for _, s := range srcs {
-			pn, _ := config.ParsePluginID(s.PluginID)
-			pluginSet[config.OverrideKey(config.SourcePlugin, name, pn)] = true
-		}
-	}
-	knownPlain := map[string]bool{}
-	for _, n := range userMCPs {
-		knownPlain[n] = true
-	}
-	for _, n := range projMCPs {
-		knownPlain[n] = true
-	}
-	for _, full := range claudeAi {
-		knownPlain[full] = true
-	}
-	for _, k := range overrides {
-		src, _, _ := config.ParseOverrideKey(k)
-		switch {
-		case src == config.SourcePlugin:
-			pluginOv = append(pluginOv, k)
-		case src == config.SourceClaude:
-			claudeAiOv = append(claudeAiOv, k)
-		case knownPlain[k]:
-			stdioOv = append(stdioOv, k)
-		default:
-			unknownOv = append(unknownOv, k)
-		}
-	}
+	classified := classifyOverrides(overrides, userMCPs, projMCPs, claudeAi, stashed, v.st.pluginMCPs, v.st.installed)
 	b.WriteString(styleTitle.Render("Per-project overrides (disabledMcpServers)") + "\n")
 	if len(overrides) == 0 {
 		b.WriteString(styleDim.Render("  (none for " + v.st.project + ")") + "\n\n")
 	} else {
-		row(&b, "  plugin overrides", len(pluginOv), truncateList(pluginOv, 4))
-		row(&b, "  claude.ai overrides", len(claudeAiOv), truncateList(claudeAiOv, 4))
-		row(&b, "  stdio overrides ", len(stdioOv), truncateList(stdioOv, 4))
-		row(&b, "  unknown source  ", len(unknownOv), truncateList(unknownOv, 4))
+		row(&b, "  plugin (active)    ", len(classified.pluginActive), truncateList(classified.pluginActive, 4))
+		row(&b, "  plugin (disabled)  ", len(classified.pluginDisabled), truncateList(classified.pluginDisabled, 4))
+		row(&b, "  claude.ai          ", len(classified.claudeai), truncateList(classified.claudeai, 4))
+		row(&b, "  stdio (live)       ", len(classified.stdioLive), truncateList(classified.stdioLive, 4))
+		row(&b, "  stash ghost        ", len(classified.stashGhost), truncateList(classified.stashGhost, 4))
+		row(&b, "  orphan (plugin)    ", len(classified.orphanPlugin), truncateList(classified.orphanPlugin, 4))
+		row(&b, "  orphan (stdio)     ", len(classified.orphanStdio), truncateList(classified.orphanStdio, 4))
 		b.WriteString("\n")
+
+		// Cleanup suggestions. Bucket 2 (plugin-disabled) is deliberately NOT pruneable
+		// because re-enabling the plugin would re-activate the MCP and the user probably
+		// wanted it off per-project. Stash ghosts are optional (safe but not always wanted).
+		recoverable := len(classified.orphanPlugin) + len(classified.orphanStdio)
+		withStash := recoverable + len(classified.stashGhost)
+		if recoverable > 0 || len(classified.stashGhost) > 0 {
+			b.WriteString(styleTitle.Render("Cleanup suggestions") + "\n")
+			if recoverable > 0 {
+				fmt.Fprintf(&b, "  %s  run  %s  to remove %d orphaned entr%s\n",
+					styleOK.Render("•"),
+					styleBadge.Render("ccmcp mcp prune"),
+					recoverable,
+					pluralY(recoverable))
+			}
+			if len(classified.stashGhost) > 0 {
+				fmt.Fprintf(&b, "  %s  add --include-stash-ghosts to also remove %d stash-ghost entr%s (total %d)\n",
+					styleDim.Render("•"),
+					len(classified.stashGhost),
+					pluralY(len(classified.stashGhost)),
+					withStash)
+			}
+			b.WriteString("\n")
+		}
 	}
 
 	// --- Plugins --------------------------------------------------------
@@ -200,10 +203,21 @@ func (v *summaryView) render() string {
 	if len(stashAndUser) > 0 {
 		warnings = append(warnings, fmt.Sprintf("MCPs in BOTH stash and user scope (stash is redundant): %s", strings.Join(stashAndUser, ", ")))
 	}
+	// Redundancy checks below care about plugins that ACTUALLY load, not
+	// installed-but-disabled ones.
+	enabledPluginMCPs := map[string]bool{}
+	for name, srcs := range v.st.pluginMCPs {
+		for _, s := range srcs {
+			if s.Enabled {
+				enabledPluginMCPs[name] = true
+				break
+			}
+		}
+	}
 	// Stashed MCPs also registered by an enabled plugin: the stash is useless (plugin provides it)
 	var stashedButPluginProvides []string
 	for _, n := range stashed {
-		if _, plug := v.st.pluginMCPs[n]; plug {
+		if enabledPluginMCPs[n] {
 			stashedButPluginProvides = append(stashedButPluginProvides, n)
 		}
 	}
@@ -213,7 +227,7 @@ func (v *summaryView) render() string {
 	// user-scope duplicating a plugin-sourced MCP: two copies will try to load
 	var userDupPlugin []string
 	for _, n := range userMCPs {
-		if _, plug := v.st.pluginMCPs[n]; plug {
+		if enabledPluginMCPs[n] {
 			userDupPlugin = append(userDupPlugin, n)
 		}
 	}

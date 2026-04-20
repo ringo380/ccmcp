@@ -75,8 +75,11 @@ type state struct {
 	installed *config.InstalledPlugins
 	profiles  *config.Profiles
 
-	// pluginMCPs: map of MCP name -> list of enabled plugins that register it
-	// (re-scanned whenever dirtySettings or dirtyPlugins flips)
+	// pluginMCPs: map of MCP name -> every installed plugin that registers it
+	// (enabled AND disabled, each tagged via PluginMCPSource.Enabled). Disabled-but-installed
+	// entries are included so stale `plugin:X:Y` overrides still attribute back to a
+	// concrete source rather than falling through to the orphan classifier.
+	// Re-scanned whenever dirtySettings or dirtyPlugins flips.
 	pluginMCPs map[string][]config.PluginMCPSource
 
 	// claudeAi: full list of "claude.ai <Name>" strings from claudeAiMcpEverConnected
@@ -91,8 +94,10 @@ type state struct {
 }
 
 // rescanPluginMCPs refreshes pluginMCPs from the current enabledPlugins + installed_plugins state.
+// Uses ScanAllInstalledPluginMCPs so disabled-but-installed plugins are still represented —
+// consumers that care about "what will actually load" filter by PluginMCPSource.Enabled.
 func (s *state) rescanPluginMCPs() {
-	s.pluginMCPs = config.ScanEnabledPluginMCPs(s.settings, s.installed, s.paths.PluginsDir)
+	s.pluginMCPs = config.ScanAllInstalledPluginMCPs(s.settings, s.installed, s.paths.PluginsDir)
 }
 
 func loadState(p paths.Paths, project string) (*state, error) {
