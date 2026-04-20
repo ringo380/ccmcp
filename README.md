@@ -8,13 +8,21 @@ Claude Code auto-loads MCP servers from at least **six** distinct places — use
 
 ## Install
 
-Prebuilt release or `go install` (needs Go 1.25+):
+**Homebrew** (macOS, Linux):
+
+```sh
+brew install ringo380/tap/ccmcp
+```
+
+**`go install`** (needs Go 1.25+):
 
 ```sh
 go install github.com/ringo380/ccmcp@latest
 ```
 
-From source:
+**Prebuilt binaries**: download from the [releases page](https://github.com/ringo380/ccmcp/releases/latest).
+
+**From source**:
 
 ```sh
 git clone https://github.com/ringo380/ccmcp
