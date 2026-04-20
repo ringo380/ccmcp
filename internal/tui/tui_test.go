@@ -377,7 +377,9 @@ func TestTUISaveFlushesToDisk(t *testing.T) {
 	m := newModel(st)
 
 	// Toggle something to dirty the state, then save with 'w'.
-	// Must cycle to 'local' scope first since effective is read-only.
+	// Cycle to 'local' scope first — the effective-view toggle writes to
+	// disabledMcpServers (per-project override), but this test asserts a direct
+	// mutation of projects[...].mcpServers, which only the local-scope toggle produces.
 	_ = drive(m, "s", " ", "w")
 
 	if st.anyDirty() {

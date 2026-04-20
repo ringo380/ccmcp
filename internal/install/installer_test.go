@@ -109,6 +109,29 @@ func TestCopyTreeSkipsDotGit(t *testing.T) {
 	}
 }
 
+func TestWithinDirRejectsSiblingPrefix(t *testing.T) {
+	cases := []struct {
+		candidate, root string
+		want            bool
+	}{
+		// Legitimate paths inside the root
+		{"/a/b/foo", "/a/b/foo", true},
+		{"/a/b/foo/sub", "/a/b/foo", true},
+		{"/a/b/foo/x/y/z", "/a/b/foo", true},
+		// Sibling directory with common prefix — must be rejected
+		{"/a/b/foo-evil", "/a/b/foo", false},
+		{"/a/b/foo-evil/x", "/a/b/foo", false},
+		// Traversal
+		{"/a/b/foo/../bar", "/a/b/foo", false},
+		{"/a", "/a/b/foo", false},
+	}
+	for _, c := range cases {
+		if got := withinDir(c.candidate, c.root); got != c.want {
+			t.Errorf("withinDir(%q, %q) = %v, want %v", c.candidate, c.root, got, c.want)
+		}
+	}
+}
+
 func TestCopyTreeOverwrites(t *testing.T) {
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("new"), 0o600); err != nil {

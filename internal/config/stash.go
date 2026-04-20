@@ -22,6 +22,8 @@ func LoadStash(path string) (*Stash, error) {
 
 func (s *Stash) Save() error { return WriteJSON(s.Path, s.Raw) }
 
+// Entries returns the live userMcpServers map (never nil). Shared storage — treat
+// the result as read-only; use Put/Delete to mutate.
 func (s *Stash) Entries() map[string]any {
 	return objOrEmpty(s.Raw, "userMcpServers")
 }

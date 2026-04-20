@@ -27,7 +27,9 @@ func (c *ClaudeJSON) Save() error {
 
 // --- user-scope MCP servers -------------------------------------------------
 
-// UserMCPs returns a copy of .mcpServers (never nil).
+// UserMCPs returns the live .mcpServers map (never nil). For efficiency this shares
+// storage with c.Raw, so callers must treat the result as read-only; mutations should
+// go through SetUserMCP / DeleteUserMCP / ClearUserMCPs instead.
 func (c *ClaudeJSON) UserMCPs() map[string]any {
 	return objOrEmpty(c.Raw, "mcpServers")
 }
@@ -93,6 +95,9 @@ func (c *ClaudeJSON) ProjectPaths() []string {
 	return sortedKeys(projects)
 }
 
+// ProjectMCPs returns the live .projects[path].mcpServers map (or an empty map when
+// absent — never nil). Shared storage; read-only from the caller's perspective. Use
+// SetProjectMCP / DeleteProjectMCP / ClearProjectMCPs to mutate.
 func (c *ClaudeJSON) ProjectMCPs(path string) map[string]any {
 	node := c.projectNode(path, false)
 	if node == nil {

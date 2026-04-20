@@ -7,7 +7,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/stringslice"
 )
 
 // Scope naming aligns with Claude Code's own terminology. "effective" is the default
@@ -88,9 +90,9 @@ func newMCPView(st *state) *mcpView {
 // Plus a 7th synthetic source, "unknown", for leftover entries in disabledMcpServers
 // that don't match any known source — so the user can see and clean them up.
 func (v *mcpView) rebuild() {
-	disabled := setOf(v.st.cj.ProjectDisabledMcpServers(v.st.project))
-	allow := setOf(v.st.cj.ProjectMcpjsonEnabled(v.st.project))
-	deny := setOf(v.st.cj.ProjectMcpjsonDisabled(v.st.project))
+	disabled := stringslice.Set(v.st.cj.ProjectDisabledMcpServers(v.st.project))
+	allow := stringslice.Set(v.st.cj.ProjectMcpjsonEnabled(v.st.project))
+	deny := stringslice.Set(v.st.cj.ProjectMcpjsonDisabled(v.st.project))
 
 	rows := []mcpRow{}
 	// (source, overrideKey) pairs we've emitted — used to catch unknowns at the end.
@@ -429,13 +431,13 @@ func (v *mcpView) toggleMcpjsonAllow(row mcpRow) {
 	name := row.Name
 	allow := v.st.cj.ProjectMcpjsonEnabled(v.st.project)
 	deny := v.st.cj.ProjectMcpjsonDisabled(v.st.project)
-	if containsString(allow, name) {
-		allow = removeStr(allow, name)
-		deny = uniqueAppendStr(deny, name)
+	if stringslice.Contains(allow, name) {
+		allow = stringslice.Remove(allow, name)
+		deny = stringslice.UniqueAppend(deny, name)
 		v.flash = styleDim.Render(name + " moved to .mcp.json deny list")
 	} else {
-		deny = removeStr(deny, name)
-		allow = uniqueAppendStr(allow, name)
+		deny = stringslice.Remove(deny, name)
+		allow = stringslice.UniqueAppend(allow, name)
 		v.flash = styleOK.Render(name + " added to .mcp.json allow list")
 	}
 	v.st.cj.SetProjectMcpjsonEnabled(v.st.project, allow)
@@ -683,42 +685,6 @@ func (v *mcpView) helpText() string {
 func (v *mcpView) capturingInput() bool { return v.filterActive || v.moveActive }
 
 // --- helpers ---------------------------------------------------------------
-
-func containsString(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-
-func setOf(ss []string) map[string]bool {
-	out := map[string]bool{}
-	for _, s := range ss {
-		out[s] = true
-	}
-	return out
-}
-
-func removeStr(s []string, v string) []string {
-	out := s[:0]
-	for _, x := range s {
-		if x != v {
-			out = append(out, x)
-		}
-	}
-	return out
-}
-
-func uniqueAppendStr(s []string, v string) []string {
-	for _, x := range s {
-		if x == v {
-			return s
-		}
-	}
-	return append(s, v)
-}
 
 // pickConfig returns an MCP's config for enable/move/stash operations.
 // Called when the user wants to copy an entry from its source into a new scope.
