@@ -469,8 +469,19 @@ var mcpStashCmd = &cobra.Command{
 }
 
 var mcpRestoreCmd = &cobra.Command{
-	Use:   "restore [<name>...]",
-	Short: "Move stashed MCPs back to user scope",
+	Use:     "restore [<name>...]",
+	Aliases: []string{"unstash"},
+	Short:   "Move stashed MCPs back to user scope (alias: unstash)",
+	Long: `Moves entries from ~/.claude-mcp-stash.json back into user scope
+(~/.claude.json#/mcpServers) so Claude Code will load them again.
+
+Named "restore" originally to parallel "stash"; accepted as "unstash"
+for discoverability. The two names do exactly the same thing.
+
+Examples:
+  ccmcp mcp restore                    # restore every stashed MCP
+  ccmcp mcp unstash dropbox            # restore just one
+  ccmcp mcp restore context7 dropbox   # restore multiple by name`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p, err := resolvePaths()
 		if err != nil {
