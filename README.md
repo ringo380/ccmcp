@@ -65,6 +65,13 @@ The effective view's `[x]` / `[~]` / `[ ]` marks mean:
 - `[x]` — will load in this project
 - `[~]` — disabled here via a per-project override (easy to undo)
 - `[ ]` — not active in this project by any source
+- `[?]` — in `disabledMcpServers` but no live source found (stale); the row description
+  explains why (plugin not installed, name deleted/renamed, etc.) and `ccmcp mcp prune`
+  offers to clean it up.
+
+Every row has a resolved source. MCPs whose parent plugin is installed but globally
+disabled render as `[ ]` with description `(currently disabled)` so you can tell them
+apart from genuinely absent sources.
 
 ## TUI keys
 
@@ -128,6 +135,8 @@ ccmcp mcp enable  <name> [--scope SCOPE]
 ccmcp mcp disable <name> [--scope SCOPE] [--to-stash]
 ccmcp mcp move    <name> --to {user|local|stash}
 ccmcp mcp override <name> [--undo]             # per-project disable (writes disabledMcpServers)
+ccmcp mcp prune [--dry-run] [--yes]            # remove stale entries from disabledMcpServers
+       [--include-stash-ghosts]                # (keeps disabled-but-installed plugin entries)
 ccmcp mcp stash   [<name>...]                  # user-scope → stash
 ccmcp mcp restore [<name>...]                  # stash → user-scope
 
@@ -153,6 +162,18 @@ ccmcp tui --dump [--tab mcps|plugins|profiles|summary]   # print initial render,
 
 Pressing `space` on an effective-view row flips the appropriate override key; `A`/`N` do it for every visible row at once.
 
+### Pruning stale overrides
+
+Over time, `disabledMcpServers` collects entries that no longer match any live source — e.g. an MCP that was renamed, a plugin that was uninstalled, or a server that moved into the stash. `ccmcp mcp prune` classifies every entry and removes the stale ones:
+
+```sh
+ccmcp mcp prune --dry-run                      # list proposed removals, no changes
+ccmcp mcp prune --yes                          # go ahead, skip confirmation
+ccmcp mcp prune --include-stash-ghosts         # also sweep plain-name overrides that match a stash entry
+```
+
+Orphan entries (plugin not installed, plain name with no source) are pruned by default. **Disabled-but-installed plugin overrides are preserved** — re-enabling the plugin would re-activate the MCP, and the user likely wanted it off per-project. Remove those explicitly with `ccmcp mcp override <key> --undo` if that's actually what you want.
+
 ## Plugin installer
 
 `ccmcp plugin install <name> --marketplace <m>` fetches source code from the marketplace and records the install in `~/.claude/plugins/installed_plugins.json`. Four marketplace source formats are supported:
@@ -177,7 +198,7 @@ Pressing `space` on an effective-view row flips the appropriate override key; `A
 go test ./...
 ```
 
-61 tests across config readers/writers, CLI sandbox runs, installer, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+67 tests across config readers/writers, CLI sandbox runs, installer, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 
