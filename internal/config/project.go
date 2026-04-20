@@ -16,6 +16,7 @@ func LoadMCPJson(path string) (*MCPJson, error) {
 
 func (m *MCPJson) Save() error { return WriteJSON(m.Path, m.Raw) }
 
+// Servers returns the live mcpServers map from .mcp.json (never nil). Read-only.
 func (m *MCPJson) Servers() map[string]any {
 	return objOrEmpty(m.Raw, "mcpServers")
 }

@@ -43,11 +43,7 @@ var statusCmd = &cobra.Command{
 
 		// mcp.json servers (project-shared)
 		var mcpjsonNames []string
-		if m, err := config.LoadMCPJson(p.ClaudeJSON); err == nil {
-			_ = m // placeholder to satisfy linter; real load happens below
-		}
-		mcpj, _ := config.LoadMCPJson(proj + "/.mcp.json")
-		if mcpj != nil {
+		if mcpj, err := config.LoadMCPJson(proj + "/.mcp.json"); err == nil && mcpj != nil {
 			mcpjsonNames = mcpj.Names()
 		}
 

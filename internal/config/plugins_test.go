@@ -17,16 +17,13 @@ func TestParseAndQualifyPluginID(t *testing.T) {
 	if n, m := ParsePluginID("a@b@c"); n != "a@b" || m != "c" {
 		t.Errorf("ParsePluginID last-@: got (%q,%q)", n, m)
 	}
-	if got := config_QualifyPluginID("foo", "mkt"); got != "foo@mkt" {
+	if got := QualifyPluginID("foo", "mkt"); got != "foo@mkt" {
 		t.Errorf("qualify: %s", got)
 	}
-	if got := config_QualifyPluginID("already@there", "mkt"); got != "already@there" {
+	if got := QualifyPluginID("already@there", "mkt"); got != "already@there" {
 		t.Errorf("qualify already: %s", got)
 	}
 }
-
-// Wrapper to avoid colliding with the imported identifier if tests are split.
-func config_QualifyPluginID(id, m string) string { return QualifyPluginID(id, m) }
 
 func TestInstalledPluginsRemove(t *testing.T) {
 	dir := t.TempDir()

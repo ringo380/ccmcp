@@ -116,7 +116,7 @@ func Install(p paths.Paths, marketplace, pluginName string) (*Result, error) {
 	// Try bare string source first
 	var asString string
 	if err := json.Unmarshal(entry.Source, &asString); err == nil && asString != "" {
-		return installBareString(p, marketplaceDir, marketplace, pluginName, asString, cacheRoot, r)
+		return installBareString(p, marketplaceDir, asString, cacheRoot, r)
 	}
 	// Otherwise it must be an object
 	var obj map[string]any
@@ -137,9 +137,13 @@ func Install(p paths.Paths, marketplace, pluginName string) (*Result, error) {
 }
 
 // installBareString copies (or symlinks) the subdir of the already-cloned marketplace repo.
-func installBareString(p paths.Paths, marketplaceDir, _ /*marketplace*/, _ /*pluginName*/, relPath, cacheRoot string, r *Result) (*Result, error) {
+// Path containment is checked with filepath.Rel so sibling-directory prefix collisions
+// (e.g. marketplaceDir="/a/b/foo" vs src="/a/b/foo-evil") can't slip past a naïve
+// strings.HasPrefix — a malicious marketplace.json with a crafted "source" field would
+// otherwise escape the intended root.
+func installBareString(_ paths.Paths, marketplaceDir, relPath, cacheRoot string, r *Result) (*Result, error) {
 	src := filepath.Join(marketplaceDir, relPath)
-	if !strings.HasPrefix(filepath.Clean(src), filepath.Clean(marketplaceDir)) {
+	if !withinDir(src, marketplaceDir) {
 		return nil, fmt.Errorf("refusing to follow plugin path %q outside marketplace root", relPath)
 	}
 	if _, err := os.Stat(src); err != nil {
@@ -158,6 +162,20 @@ func installBareString(p paths.Paths, marketplaceDir, _ /*marketplace*/, _ /*plu
 	r.Version = version
 	r.GitCommitSha = sha
 	return r, nil
+}
+
+// withinDir reports whether `candidate` resolves to the same path as, or a path
+// nested inside, `root`. Uses filepath.Rel so sibling directories with a common
+// prefix (foo/foo-evil) are correctly rejected.
+func withinDir(candidate, root string) bool {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(candidate))
+	if err != nil {
+		return false
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
 }
 
 func installURL(obj map[string]any, cacheRoot string, r *Result) (*Result, error) {
@@ -239,10 +257,34 @@ func installGithub(obj map[string]any, cacheRoot string, r *Result) (*Result, er
 		return nil, fmt.Errorf("github source: missing repo")
 	}
 	url := fmt.Sprintf("https://github.com/%s.git", repo)
-	version := ref
-	if version == "" {
-		version = "unknown"
+	// Version directory: prefer the explicit ref; if absent, clone into a temp dir,
+	// resolve HEAD, then move into a sha-named dir. Avoids the "unknown" dir collision
+	// that previously caused repeated reinstalls of the same plugin to land on top of
+	// each other with stale gitCommitSha metadata.
+	if ref == "" {
+		tmp, err := os.MkdirTemp("", "ccmcp-github-")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(tmp)
+		if err := gitClone(url, tmp); err != nil {
+			return nil, err
+		}
+		head, _ := gitHeadSha(tmp)
+		version := head
+		if version == "" {
+			version = "unknown"
+		}
+		dst := filepath.Join(cacheRoot, version)
+		if err := copyTree(tmp, dst); err != nil {
+			return nil, err
+		}
+		r.InstallPath = dst
+		r.Version = version
+		r.GitCommitSha = head
+		return r, nil
 	}
+	version := ref
 	dst := filepath.Join(cacheRoot, version)
 	if err := gitClone(url, dst); err != nil {
 		return nil, err

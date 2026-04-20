@@ -3,6 +3,24 @@ package cmd
 import "github.com/spf13/cobra"
 
 // Back-compat shims preserve the old bash CLI surface so muscle memory keeps working.
+//
+// Every shim calls resetMCPFlags() before setting only the flags it needs. This protects
+// against global-state leakage in scenarios where multiple compat commands run in the
+// same process (library use, long-lived REPL) — previously a prior `clear-local` could
+// leave mcpAll=true and corrupt a subsequent `apply`/`remove-local`.
+
+// resetMCPFlags zeros every package-global mcp*/override*/mkt* flag back to its default.
+// Kept close to the shims that rely on it so it's obvious when a new flag gets added.
+func resetMCPFlags() {
+	mcpScope = ""
+	mcpFromStash = false
+	mcpToStash = false
+	mcpAll = false
+	mcpMoveTo = ""
+	overrideUndo = false
+	overrideSource = ""
+	overridePluginOf = ""
+}
 
 var compatApplyCmd = &cobra.Command{
 	Use:    "apply <name> [<name>...]",
@@ -10,8 +28,8 @@ var compatApplyCmd = &cobra.Command{
 	Args:   cobra.MinimumNArgs(1),
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		resetMCPFlags()
 		mcpScope = "project"
-		mcpFromStash = false
 		return runMCPEnable(args)
 	},
 }
@@ -22,6 +40,7 @@ var compatRemoveLocalCmd = &cobra.Command{
 	Args:   cobra.MinimumNArgs(1),
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		resetMCPFlags()
 		mcpScope = "project"
 		return runMCPDisable(args)
 	},
@@ -32,6 +51,7 @@ var compatClearLocalCmd = &cobra.Command{
 	Short:  "Back-compat: clear every MCP in the current project",
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		resetMCPFlags()
 		mcpScope = "project"
 		mcpAll = true
 		return runMCPDisable(nil)

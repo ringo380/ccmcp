@@ -9,6 +9,7 @@ import (
 
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/paths"
+	"github.com/ringo380/ccmcp/internal/stringslice"
 	"github.com/spf13/cobra"
 )
 
@@ -273,8 +274,8 @@ func runMCPEnable(names []string) error {
 		enabled := cj.ProjectMcpjsonEnabled(proj)
 		disabled := cj.ProjectMcpjsonDisabled(proj)
 		for _, n := range names {
-			enabled = uniqueAppend(enabled, n)
-			disabled = removeString(disabled, n)
+			enabled = stringslice.UniqueAppend(enabled, n)
+			disabled = stringslice.Remove(disabled, n)
 		}
 		cj.SetProjectMcpjsonEnabled(proj, enabled)
 		cj.SetProjectMcpjsonDisabled(proj, disabled)
@@ -346,8 +347,8 @@ func runMCPDisable(names []string) error {
 			}
 		}
 		for _, n := range targets {
-			disabled = uniqueAppend(disabled, n)
-			enabled = removeString(enabled, n)
+			disabled = stringslice.UniqueAppend(disabled, n)
+			enabled = stringslice.Remove(enabled, n)
 			effective = append(effective, n)
 		}
 		cj.SetProjectMcpjsonEnabled(proj, enabled)
@@ -642,17 +643,19 @@ func runMCPMove(name, target string) error {
 	if err != nil {
 		return err
 	}
-	// Locate the current config (stash first → local → user).
+	// Locate the current config. Priority: stash > local > user. First match wins so the
+	// user can rely on "stash is the canonical parked copy" semantics. (Previous versions
+	// used sequential reassignment which let the last check win — that silently clobbered
+	// stash/local configs when the same name existed in multiple scopes.)
 	var cfg any
 	var found bool
-	if v, ok := stash.Get(name); ok {
-		cfg, found = v, true
-	}
-	if v, ok := cj.ProjectMCPs(proj)[name]; ok {
-		cfg, found = v, true
-	}
-	if v, ok := cj.UserMCPs()[name]; ok {
-		cfg, found = v, true
+	switch {
+	case stashHas(stash, name):
+		cfg, found = stash.Get(name)
+	case projectHas(cj, proj, name):
+		cfg, found = cj.ProjectMCPs(proj)[name], true
+	case userHas(cj, name):
+		cfg, found = cj.UserMCPs()[name], true
 	}
 	if !found {
 		return fmt.Errorf("%q not found in stash, local, or user scope", name)
@@ -700,6 +703,23 @@ func runMCPMove(name, target string) error {
 	return nil
 }
 
+// presence-test helpers; used by runMCPMove to avoid the "last-write-wins" bug that
+// previously overwrote `cfg` three times in a row instead of stopping at the first match.
+func stashHas(s *config.Stash, name string) bool {
+	_, ok := s.Get(name)
+	return ok
+}
+
+func projectHas(cj *config.ClaudeJSON, proj, name string) bool {
+	_, ok := cj.ProjectMCPs(proj)[name]
+	return ok
+}
+
+func userHas(cj *config.ClaudeJSON, name string) bool {
+	_, ok := cj.UserMCPs()[name]
+	return ok
+}
+
 // displayScope converts an internal scope key to the name the user would recognize.
 func displayScope(s string) string {
 	switch s {
@@ -728,25 +748,6 @@ func findMCPConfig(name string, cj *config.ClaudeJSON, stash *config.Stash, proj
 		return v, true
 	}
 	return nil, false
-}
-
-func uniqueAppend(s []string, v string) []string {
-	for _, x := range s {
-		if x == v {
-			return s
-		}
-	}
-	return append(s, v)
-}
-
-func removeString(s []string, v string) []string {
-	out := s[:0]
-	for _, x := range s {
-		if x != v {
-			out = append(out, x)
-		}
-	}
-	return out
 }
 
 func backupAndSave(p paths.Paths, cj *config.ClaudeJSON) error {
