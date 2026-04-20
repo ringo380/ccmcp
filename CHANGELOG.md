@@ -6,6 +6,31 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-04-20
+
+### Added
+
+- **`?` help overlay** in the TUI: a full-screen legend describing every
+  source badge (`[u]` / `[l]` / `[p]` / `[P]` / `[@]` / `[s]` / `[?]`),
+  every row mark (`[x]` / `[~]` / `[ ]` / `[!]`), and every key binding
+  grouped by tab — including the `m`-move sub-prompt (`u`/`l`/`s`/esc)
+  that was previously only visible when triggered. Close with `?` or
+  `esc`. Discoverable via the new footer hint (`?: help`).
+- `ccmcp tui --dump --tab help` dumps the legend as plain text for
+  non-interactive inspection.
+- **Bulk `A` / `N` toggle on the MCPs tab** (previously only on the
+  Plugins tab): batched equivalent of per-row `space`, scope-aware,
+  respects the active filter. Turns `/plugin` + `<enter>` + `N` + `w`
+  into a four-keystroke workflow for "disable every plugin-registered
+  MCP for this project".
+
+### Changed
+
+- **CI**: bumped `actions/checkout` v4→v6, `actions/setup-go` v5→v6,
+  `goreleaser/goreleaser-action` v6→v7 ahead of the 2026-06-02 Node.js
+  20 deprecation on GitHub runners. Goreleaser v2 config unchanged.
+- Footer hint updated to include `?: help` so the overlay is discoverable.
+
 ## [0.1.0] — 2026-04-20
 
 Initial public release.
@@ -45,5 +70,6 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.1.0
