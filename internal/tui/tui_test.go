@@ -233,6 +233,55 @@ func TestTUIMoveFromUserToLocal(t *testing.T) {
 	}
 }
 
+func TestTUIBulkDisableInEffective(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Default scope is effective. Press N — should add every effective row's OverrideKey
+	// to disabledMcpServers. In the sandbox that's "shared" + "user-only" (both user-scope).
+	drive(m, "N")
+
+	if !st.dirtyClaude {
+		t.Fatal("bulk disable should dirty claude.json")
+	}
+	disabled := st.cj.ProjectDisabledMcpServers(st.project)
+	// Both user-scope MCPs should be disabled now
+	want := map[string]bool{"shared": true, "user-only": true}
+	got := map[string]bool{}
+	for _, k := range disabled {
+		got[k] = true
+	}
+	for k := range want {
+		if !got[k] {
+			t.Errorf("expected %q in disabledMcpServers, got %v", k, disabled)
+		}
+	}
+	// Now bulk-enable — should clear all
+	drive(m, "A")
+	disabled = st.cj.ProjectDisabledMcpServers(st.project)
+	if len(disabled) != 0 {
+		t.Errorf("bulk enable should clear overrides, still got: %v", disabled)
+	}
+}
+
+func TestTUIBulkDisableRespectsFilter(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Filter to just "user-only", then bulk disable → only that one should be touched.
+	drive(m, "/")
+	for _, r := range "user-only" {
+		m.mcps.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m.mcps.update(tea.KeyMsg{Type: tea.KeyEnter})
+	drive(m, "N")
+
+	disabled := st.cj.ProjectDisabledMcpServers(st.project)
+	if len(disabled) != 1 || disabled[0] != "user-only" {
+		t.Errorf("filter should limit bulk scope; got: %v", disabled)
+	}
+}
+
 func TestTUIMoveToStash(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)

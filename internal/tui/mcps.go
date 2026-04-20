@@ -317,8 +317,142 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 	case "c":
 		v.filter.SetValue("")
 		v.rebuild()
+	case "A":
+		v.bulkToggle(visible, true)
+	case "N":
+		v.bulkToggle(visible, false)
 	}
 	return nil
+}
+
+// bulkToggle applies the equivalent of `space` to every currently-visible row,
+// in the direction indicated by `on` (true = enable, false = disable). Semantics
+// depend on the active scope and match the per-row toggle exactly — just batched.
+//
+// The target set is "visible rows", which respects any active filter. So the common
+// workflow "filter to only plugin-registered MCPs, then turn them all off for this
+// project" becomes `/plugin` enter `N`.
+func (v *mcpView) bulkToggle(rows []mcpRow, on bool) {
+	if len(rows) == 0 {
+		return
+	}
+	var changed int
+	for _, r := range rows {
+		if v.bulkApplyRow(r, on) {
+			changed++
+		}
+	}
+	if changed == 0 {
+		v.flash = styleDim.Render(fmt.Sprintf("no changes (%d rows already in target state)", len(rows)))
+	} else {
+		verb := "enabled"
+		if !on {
+			verb = "disabled"
+		}
+		v.flash = styleOK.Render(fmt.Sprintf("%s %d row(s) in %s scope (unsaved)", verb, changed, v.scope))
+	}
+	v.rebuild()
+}
+
+// bulkApplyRow applies a single in-scope toggle; returns true if state actually changed.
+// Keeps logic per-scope rather than delegating to toggle() because toggle() issues its
+// own flash message per row and calls rebuild() — both would be quadratic during bulk.
+func (v *mcpView) bulkApplyRow(r mcpRow, on bool) bool {
+	switch v.scope {
+	case scopeEffective:
+		if r.OverrideKey == "" || r.Source == config.SourceStash {
+			return false // stash can't be "effective"; unknown rows skipped
+		}
+		if on && r.DisabledHere {
+			return v.st.cj.RemoveProjectDisabledMcpServer(v.st.project, r.OverrideKey) && markDirty(&v.st.dirtyClaude)
+		}
+		if !on && !r.DisabledHere && isEffective(r) {
+			return v.st.cj.AddProjectDisabledMcpServer(v.st.project, r.OverrideKey) && markDirty(&v.st.dirtyClaude)
+		}
+		return false
+	case scopeLocal:
+		inLocal := r.Source == config.SourceLocal
+		if on && !inLocal {
+			cfg, ok := pickConfig(v.st, r.Name, r)
+			if !ok {
+				return false
+			}
+			v.st.cj.SetProjectMCP(v.st.project, r.Name, cfg)
+			v.st.dirtyClaude = true
+			return true
+		}
+		if !on && inLocal {
+			v.st.cj.DeleteProjectMCP(v.st.project, r.Name)
+			v.st.dirtyClaude = true
+			return true
+		}
+		return false
+	case scopeUser:
+		inUser := r.Source == config.SourceUser
+		if on && !inUser {
+			cfg, ok := pickConfig(v.st, r.Name, r)
+			if !ok {
+				return false
+			}
+			v.st.cj.SetUserMCP(r.Name, cfg)
+			v.st.dirtyClaude = true
+			return true
+		}
+		if !on && inUser {
+			v.st.cj.DeleteUserMCP(r.Name)
+			v.st.dirtyClaude = true
+			return true
+		}
+		return false
+	case scopeStash:
+		inStash := r.Source == config.SourceStash
+		if on && !inStash {
+			cfg, ok := pickConfig(v.st, r.Name, r)
+			if !ok {
+				return false
+			}
+			v.st.stash.Put(r.Name, cfg)
+			v.st.dirtyStash = true
+			return true
+		}
+		if !on && inStash {
+			v.st.stash.Delete(r.Name)
+			v.st.dirtyStash = true
+			return true
+		}
+		return false
+	case scopeProject:
+		if r.Source != config.SourceProject {
+			return false
+		}
+		allow := v.st.cj.ProjectMcpjsonEnabled(v.st.project)
+		deny := v.st.cj.ProjectMcpjsonDisabled(v.st.project)
+		if on {
+			if stringslice.Contains(allow, r.Name) {
+				return false
+			}
+			allow = stringslice.UniqueAppend(allow, r.Name)
+			deny = stringslice.Remove(deny, r.Name)
+		} else {
+			if stringslice.Contains(deny, r.Name) {
+				return false
+			}
+			deny = stringslice.UniqueAppend(deny, r.Name)
+			allow = stringslice.Remove(allow, r.Name)
+		}
+		v.st.cj.SetProjectMcpjsonEnabled(v.st.project, allow)
+		v.st.cj.SetProjectMcpjsonDisabled(v.st.project, deny)
+		v.st.dirtyClaude = true
+		return true
+	}
+	return false
+}
+
+// markDirty flips the given dirty flag to true and returns true, so bulkApplyRow can
+// fold "the write succeeded AND we should count this as a change" into one expression.
+func markDirty(flag *bool) bool {
+	*flag = true
+	return true
 }
 
 func (v *mcpView) cycleScope() {
@@ -679,7 +813,7 @@ func truncate(s string, n int) string {
 func (v *mcpView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *mcpView) helpText() string {
-	return "space: toggle  m: move→scope  s: cycle scope  /: filter  j/k: move"
+	return "space: toggle  A/N: all on/off  m: move→scope  s: cycle scope  /: filter"
 }
 
 func (v *mcpView) capturingInput() bool { return v.filterActive || v.moveActive }
