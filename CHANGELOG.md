@@ -6,6 +6,21 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-04-20
+
+### Added
+
+- **Homebrew distribution** via `ringo380/homebrew-tap`. Every
+  non-prerelease tag auto-publishes a `Formula/ccmcp.rb` via goreleaser,
+  so users can install with:
+
+  ```sh
+  brew install ringo380/tap/ccmcp
+  ```
+
+  Install path updated on the release page and in the README to lead
+  with Homebrew, then `go install`, then prebuilt binaries.
+
 ## [0.2.0] — 2026-04-20
 
 ### Added
@@ -70,6 +85,7 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.1.0
