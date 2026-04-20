@@ -138,7 +138,8 @@ ccmcp mcp override <name> [--undo]             # per-project disable (writes dis
 ccmcp mcp prune [--dry-run] [--yes]            # remove stale entries from disabledMcpServers
        [--include-stash-ghosts]                # (keeps disabled-but-installed plugin entries)
 ccmcp mcp stash   [<name>...]                  # user-scope → stash
-ccmcp mcp restore [<name>...]                  # stash → user-scope
+ccmcp mcp restore [<name>...]                  # stash → user-scope (alias: unstash)
+ccmcp mcp unstash [<name>...]                  # same as restore
 
 ccmcp profile save|list|show|use|delete <name> [<mcp>...]
 ccmcp plugin list [--enabled|--disabled]

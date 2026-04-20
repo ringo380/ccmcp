@@ -6,6 +6,15 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-04-20
+
+### Added
+
+- **`ccmcp mcp unstash`** as a symmetrical alias for `ccmcp mcp restore`.
+  Pairs visually with `mcp stash`; the two commands do exactly the same
+  thing (move entries from `~/.claude-mcp-stash.json` back into
+  `~/.claude.json#/mcpServers`). Prior versions only exposed `restore`.
+
 ## [0.2.2] — 2026-04-20
 
 ### Added
@@ -131,7 +140,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.3
 [0.2.2]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.2
 [0.2.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.0

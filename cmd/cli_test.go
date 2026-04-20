@@ -369,6 +369,24 @@ func TestCLIOverrideUnqualifiedFallbackToStdio(t *testing.T) {
 	}
 }
 
+func TestCLIUnstashAliasMatchesRestore(t *testing.T) {
+	home := setupSandbox(t)
+	// Sandbox stash has "parked" with command "parked-cmd"; user scope does not have it.
+	if _, err := runCLI(t, home, "mcp", "unstash", "parked"); err != nil {
+		t.Fatalf("unstash alias: %v", err)
+	}
+	claude := readJSON(t, filepath.Join(home, ".claude.json"))
+	user, _ := claude["mcpServers"].(map[string]any)
+	if _, ok := user["parked"]; !ok {
+		t.Errorf("unstash should have restored 'parked' to user scope; got %v", user)
+	}
+	stash := readJSON(t, filepath.Join(home, ".claude-mcp-stash.json"))
+	srv, _ := stash["userMcpServers"].(map[string]any)
+	if _, still := srv["parked"]; still {
+		t.Error("stash should no longer contain 'parked' after unstash")
+	}
+}
+
 func TestCLIPruneSkipsDisabledPluginAndStashGhosts(t *testing.T) {
 	home := setupSandbox(t)
 	proj := "/tmp/cli-prune-proj"
