@@ -77,7 +77,38 @@ release:
     ## Install
 
     ```sh
+    brew install ringo380/tap/ccmcp
+    ```
+
+    Or via Go toolchain:
+
+    ```sh
     go install github.com/ringo380/ccmcp@{{ .Tag }}
     ```
 
     Or grab a prebuilt binary for your platform from the Assets below and drop it in `~/bin`.
+
+# Homebrew formula is auto-regenerated on each non-prerelease tag and pushed to
+# ringo380/homebrew-tap. Requires a HOMEBREW_TAP_TOKEN secret (PAT with contents:write
+# on the tap repo) exposed to the release workflow. See .github/workflows/release.yml.
+brews:
+  - name: ccmcp
+    repository:
+      owner: ringo380
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "chore(formula): bump {{ .ProjectName }} to {{ .Tag }}"
+    homepage: "https://github.com/ringo380/ccmcp"
+    description: "Dynamic CLI + TUI for managing Claude Code MCP servers, plugins, and per-project overrides"
+    license: "MIT"
+    # Only publish the formula on actual (non-prerelease) tags.
+    skip_upload: auto
+    install: |
+      bin.install "ccmcp"
+    test: |
+      assert_match "ccmcp version", shell_output("#{bin}/ccmcp --version")
