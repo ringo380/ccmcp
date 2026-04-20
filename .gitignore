@@ -1,0 +1,16 @@
+# Build artifacts
+/ccmcp
+/dist/
+/build/
+*.test
+*.out
+
+# Go
+vendor/
+
+# Claude-related (personal, never ship)
+.claude/
+CLAUDE.md
+**/CLAUDE.md
+memory/
+.browser-pilot/
