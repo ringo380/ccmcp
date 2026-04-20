@@ -57,21 +57,38 @@ type mcpView struct {
 type mcpRow struct {
 	Name         string           // display name shown to the user
 	Source       config.MCPSource // primary source of this row
-	OverrideKey  string           // what to write into disabledMcpServers (empty for stash)
+	OverrideKey  string           // key to write into disabledMcpServers when toggling (empty for stash rows — they can't be disabled per-project, but their MatchKey still attracts stale plain-name overrides)
+	MatchKey     string           // key compared against existing disabledMcpServers entries (may differ from OverrideKey for stash rows, which should match the plain name they were parked under)
 	PluginName   string           // only for SourcePlugin rows (the plugin's name without @mkt)
 	PluginIDs    []string         // qualified plugin IDs (e.g. "context7@claude-plugins-official")
-	DisabledHere bool             // OverrideKey appears in projects[cwd].disabledMcpServers
+	PluginEnabled bool            // for SourcePlugin rows: true if the plugin is globally enabled; false means "installed but off — MCP won't load"
+	DisabledHere bool             // MatchKey appears in projects[cwd].disabledMcpServers
 	McpjsonDeny  bool             // .mcp.json allow/deny list excludes this row (project-source only)
 	Description  string
-	Config       any // raw config entry (for move/copy)
+	UnknownReason string          // for bucket-3/4 orphan rows: a human-readable explanation shown instead of Description
+	Config       any              // raw config entry (for move/copy)
 }
 
 // RowKey returns a stable identifier for the (source, display-name) pair.
+// Uses MatchKey so stash rows (which have empty OverrideKey) still get a unique identity,
+// and disabled-plugin rows stay distinct from the plain-name rows they might share a Name with.
 func (r mcpRow) RowKey() string {
-	if r.OverrideKey != "" {
-		return string(r.Source) + "|" + r.OverrideKey
+	if r.MatchKey != "" {
+		return string(r.Source) + "|" + r.MatchKey + "|" + boolTag(r.PluginEnabled, r.Source)
 	}
 	return string(r.Source) + "|" + r.Name
+}
+
+// boolTag disambiguates enabled vs disabled plugin rows in the RowKey; a no-op
+// for non-plugin sources (where the flag is always false / irrelevant).
+func boolTag(pluginEnabled bool, src config.MCPSource) string {
+	if src != config.SourcePlugin {
+		return ""
+	}
+	if pluginEnabled {
+		return "on"
+	}
+	return "off"
 }
 
 // --- load / rebuild ---------------------------------------------------------
@@ -86,16 +103,17 @@ func newMCPView(st *state) *mcpView {
 }
 
 // rebuild scans every source of MCPs and emits one row per (name, source) pair.
-// Sources (six): user, local, project (.mcp.json), plugin-sourced, claude.ai, stash.
-// Plus a 7th synthetic source, "unknown", for leftover entries in disabledMcpServers
-// that don't match any known source — so the user can see and clean them up.
+// Sources: user, local, project (.mcp.json), plugin (enabled + disabled-but-installed),
+// claude.ai, stash. Any leftover key in disabledMcpServers is classified as an orphan
+// row with a specific UnknownReason rather than a generic "unknown" placeholder.
 func (v *mcpView) rebuild() {
 	disabled := stringslice.Set(v.st.cj.ProjectDisabledMcpServers(v.st.project))
 	allow := stringslice.Set(v.st.cj.ProjectMcpjsonEnabled(v.st.project))
 	deny := stringslice.Set(v.st.cj.ProjectMcpjsonDisabled(v.st.project))
 
 	rows := []mcpRow{}
-	// (source, overrideKey) pairs we've emitted — used to catch unknowns at the end.
+	// Keys we've accounted for via a concrete row. An entry in disabledMcpServers that
+	// doesn't appear here falls through to the orphan classifier.
 	seenKeys := map[string]bool{}
 
 	// 1) user scope
@@ -105,6 +123,7 @@ func (v *mcpView) rebuild() {
 			Name:         name,
 			Source:       config.SourceUser,
 			OverrideKey:  key,
+			MatchKey:     key,
 			DisabledHere: disabled[key],
 			Description:  config.DescribeMCP(cfg),
 			Config:       cfg,
@@ -118,6 +137,7 @@ func (v *mcpView) rebuild() {
 			Name:         name,
 			Source:       config.SourceLocal,
 			OverrideKey:  key,
+			MatchKey:     key,
 			DisabledHere: disabled[key],
 			Description:  config.DescribeMCP(cfg),
 			Config:       cfg,
@@ -133,6 +153,7 @@ func (v *mcpView) rebuild() {
 				Name:         name,
 				Source:       config.SourceProject,
 				OverrideKey:  key,
+				MatchKey:     key,
 				McpjsonDeny:  denied,
 				DisabledHere: disabled[key],
 				Description:  config.DescribeMCP(cfg),
@@ -141,21 +162,29 @@ func (v *mcpView) rebuild() {
 			seenKeys[key] = true
 		}
 	}
-	// 4) plugin-sourced — one row per (mcpName, pluginName) so e.g. next-devtools (registered
-	// by both next-devtools and next-project-starter) shows up twice.
+	// 4) plugin-sourced — include BOTH enabled and disabled-but-installed plugins.
+	// Disabled plugins still contribute rows (with PluginEnabled=false) so that stale
+	// `plugin:X:Y` override entries from when X was enabled are still classified correctly.
+	// state.pluginMCPs is now populated from ScanAllInstalledPluginMCPs.
 	for name, srcs := range v.st.pluginMCPs {
 		for _, s := range srcs {
 			pluginName, _ := config.ParsePluginID(s.PluginID)
 			key := config.OverrideKey(config.SourcePlugin, name, pluginName)
+			desc := "via plugin: " + pluginName
+			if !s.Enabled {
+				desc += " (currently disabled)"
+			}
 			rows = append(rows, mcpRow{
-				Name:         name,
-				Source:       config.SourcePlugin,
-				OverrideKey:  key,
-				PluginName:   pluginName,
-				PluginIDs:    []string{s.PluginID},
-				DisabledHere: disabled[key],
-				Description:  "via plugin: " + pluginName,
-				Config:       s.Config,
+				Name:          name,
+				Source:        config.SourcePlugin,
+				OverrideKey:   key,
+				MatchKey:      key,
+				PluginName:    pluginName,
+				PluginIDs:     []string{s.PluginID},
+				PluginEnabled: s.Enabled,
+				DisabledHere:  disabled[key],
+				Description:   desc,
+				Config:        s.Config,
 			})
 			seenKeys[key] = true
 		}
@@ -171,33 +200,45 @@ func (v *mcpView) rebuild() {
 			Name:         name,
 			Source:       config.SourceClaude,
 			OverrideKey:  key,
+			MatchKey:     key,
 			DisabledHere: disabled[key],
 			Description:  "via claude.ai",
 		})
 		seenKeys[key] = true
 	}
-	// 6) stash (no override key; can't be disabled per-project because Claude Code doesn't load it)
+	// 6) stash. Register the plain name as the MatchKey so a pre-stash disable entry
+	// (e.g. project had `"dropbox"` disabled back when it was a stdio MCP) attaches
+	// back to the stash row instead of falling through to the orphan classifier.
+	// Stash rows have empty OverrideKey because Claude Code doesn't honor stash entries —
+	// there's nothing meaningful to toggle per-project.
 	for name, cfg := range v.st.stash.Entries() {
 		rows = append(rows, mcpRow{
-			Name:        name,
-			Source:      config.SourceStash,
-			Description: config.DescribeMCP(cfg),
-			Config:      cfg,
+			Name:         name,
+			Source:       config.SourceStash,
+			MatchKey:     name,
+			DisabledHere: disabled[name], // stale-override marker; informational only
+			Description:  config.DescribeMCP(cfg),
+			Config:       cfg,
 		})
+		seenKeys[name] = true
 	}
-	// 7) unknown — anything in disabledMcpServers we haven't accounted for.
+	// 7) orphans — anything in disabledMcpServers we haven't accounted for. Each gets a
+	// specific UnknownReason so the user can see exactly why the entry is unrecognized.
 	for k := range disabled {
 		if seenKeys[k] {
 			continue
 		}
 		src, name, pluginName := config.ParseOverrideKey(k)
+		reason := v.classifyOrphan(k, src, name, pluginName)
 		rows = append(rows, mcpRow{
-			Name:         name,
-			Source:       src,
-			OverrideKey:  k,
-			PluginName:   pluginName,
-			DisabledHere: true,
-			Description:  "(unknown source — in disabledMcpServers but not provided by any known scope)",
+			Name:          name,
+			Source:        src,
+			OverrideKey:   k,
+			MatchKey:      k,
+			PluginName:    pluginName,
+			DisabledHere:  true,
+			UnknownReason: reason,
+			Description:   reason,
 		})
 	}
 
@@ -216,19 +257,41 @@ func (v *mcpView) rebuild() {
 }
 
 // isEffective: would Claude Code actually load this row in the current project?
+// Sources that can be effective: user, local, project (.mcp.json unless denied),
+// enabled plugins (PluginEnabled=true), claude.ai. Disabled-but-installed plugin
+// rows and stash rows never load.
 func isEffective(r mcpRow) bool {
 	if r.DisabledHere {
 		return false
 	}
 	switch r.Source {
-	case config.SourceUser, config.SourceLocal, config.SourcePlugin, config.SourceClaude:
+	case config.SourceUser, config.SourceLocal, config.SourceClaude:
 		return true
+	case config.SourcePlugin:
+		// Plugin-registered MCPs load only when the plugin itself is globally enabled.
+		return r.PluginEnabled
 	case config.SourceProject:
 		return !r.McpjsonDeny
 	default:
-		// stash, unknown — never effective
-		return false
+		return false // stash, unknown
 	}
+}
+
+// classifyOrphan produces the UnknownReason text for an entry in disabledMcpServers that
+// didn't match any concrete row emitted above. Differentiates "plugin not installed"
+// (safe to prune) from "plugin installed but doesn't register this name" (stale config)
+// from "plain name, no source anywhere" (the nebulous bucket 4).
+func (v *mcpView) classifyOrphan(key string, src config.MCPSource, name, pluginName string) string {
+	if src == config.SourcePlugin && pluginName != "" {
+		if v.st.installed != nil && len(v.st.installed.ByName(pluginName)) > 0 {
+			return "plugin '" + pluginName + "' is installed but doesn't register '" + name + "' — stale override"
+		}
+		return "plugin '" + pluginName + "' is not installed — stale override (safe to prune)"
+	}
+	if src == config.SourceClaude {
+		return "claude.ai integration not in the ever-connected list — stale override"
+	}
+	return "no active MCP source found for '" + name + "' — stale override (likely deleted or renamed)"
 }
 
 // --- update (input handling) -----------------------------------------------

@@ -6,6 +6,52 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-04-20
+
+### Added
+
+- **Source attribution for every `disabledMcpServers` entry.** The TUI's
+  MCPs tab no longer has a generic "unknown" bucket. Every entry is now
+  classified into one of: plugin active, plugin disabled-but-installed,
+  claude.ai, stdio live, stash ghost, orphan plugin (plugin not installed),
+  or orphan stdio (no source anywhere). Rows show a specific reason text
+  like *"plugin 'Notion' is not installed — stale override (safe to prune)"*
+  instead of a vague question mark.
+- **Disabled-but-installed plugins** (e.g. `plugin:postman:postman` when
+  the `postman` plugin is globally disabled) now render as regular plugin
+  rows with `PluginEnabled=false`, a description suffix `(currently
+  disabled)`, and non-effective status. Previously these appeared as
+  unknown because ccmcp only scanned enabled plugins.
+- **Stash-ghost resolution.** Plain-name overrides from before an MCP was
+  parked in the stash (e.g. `"dropbox"` in `disabledMcpServers` while
+  `dropbox` now lives in the stash) now attach to the stash row as an
+  informational marker instead of falling through to unknown.
+- **`ccmcp mcp prune`** — new subcommand that removes orphaned entries
+  from the current project's `disabledMcpServers`. Preserves
+  disabled-but-installed plugin overrides (re-enabling the plugin would
+  re-activate them — user intent respected). `--dry-run` lists what
+  would be removed; `--yes` skips the confirmation prompt;
+  `--include-stash-ghosts` also sweeps stash ghosts.
+- **Summary tab** gains a classified breakdown of per-project overrides
+  and a "Cleanup suggestions" block that points at `mcp prune` when there
+  are recoverable entries.
+
+### Changed
+
+- `config.ScanEnabledPluginMCPs` is now a thin filter over the new
+  `config.ScanAllInstalledPluginMCPs`. `PluginMCPSource` gains an
+  `Enabled` flag so callers can distinguish "will load" from "known but
+  inactive".
+- TUI rows gain `MatchKey`, `PluginEnabled`, and `UnknownReason` fields.
+  `isEffective()` now respects `PluginEnabled` so disabled-plugin rows
+  render as `[ ]` in the effective view.
+
+### Internal
+
+- New package `internal/config`: `InstalledPlugins.ByName(name)` — match
+  installed plugins by bare plugin name (without `@marketplace`), needed
+  to attribute `plugin:X:Y` override keys back to a concrete plugin.
+
 ## [0.2.1] — 2026-04-20
 
 ### Added
@@ -85,7 +131,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.2
 [0.2.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.1.0
