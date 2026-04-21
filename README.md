@@ -11,7 +11,7 @@ Claude Code auto-loads MCP servers from at least **six** distinct places — use
 **Homebrew** (macOS, Linux):
 
 ```sh
-brew install ringo380/tap/ccmcp
+brew install robworks-code/tap/ccmcp
 ```
 
 **`go install`** (needs Go 1.25+):

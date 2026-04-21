@@ -6,6 +6,24 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Changed
+
+- **Homebrew tap moved** from `ringo380/tap` to `robworks-code/tap`.
+  New install command:
+
+  ```sh
+  brew install robworks-code/tap/ccmcp
+  ```
+
+  The old `ringo380/tap` formula is soft-deprecated for one release and
+  will stop receiving updates after the next tag. Migrate with:
+
+  ```sh
+  brew uninstall ccmcp
+  brew untap ringo380/tap
+  brew install robworks-code/tap/ccmcp
+  ```
+
 ## [0.2.4] — 2026-04-20
 
 ### Added

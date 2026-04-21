@@ -77,7 +77,7 @@ release:
     ## Install
 
     ```sh
-    brew install ringo380/tap/ccmcp
+    brew install robworks-code/tap/ccmcp
     ```
 
     Or via Go toolchain:
@@ -89,12 +89,13 @@ release:
     Or grab a prebuilt binary for your platform from the Assets below and drop it in `~/bin`.
 
 # Homebrew formula is auto-regenerated on each non-prerelease tag and pushed to
-# ringo380/homebrew-tap. Requires a HOMEBREW_TAP_TOKEN secret (PAT with contents:write
-# on the tap repo) exposed to the release workflow. See .github/workflows/release.yml.
+# robworks-code/homebrew-tap. Requires a HOMEBREW_TAP_TOKEN secret (PAT with
+# contents:write on the tap repo) exposed to the release workflow. See
+# .github/workflows/release.yml.
 brews:
   - name: ccmcp
     repository:
-      owner: ringo380
+      owner: robworks-code
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
