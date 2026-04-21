@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ccmcp — manage Claude Code MCP servers</title>
+<meta name="description" content="A dynamic CLI and TUI for managing Claude Code MCP servers, plugins, and per-project overrides across every scope Claude Code honors.">
+<meta property="og:title" content="ccmcp">
+<meta property="og:description" content="Bulk-toggle Claude Code MCP servers by scope, filter, or plugin. One view across user, local, project, plugin, and claude.ai sources.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ringo380.github.io/ccmcp/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%230d1117'/%3E%3Ctext x='50%25' y='56%25' font-family='ui-monospace,monospace' font-size='34' font-weight='700' text-anchor='middle' fill='%2358a6ff'%3E&gt;_%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-2: #161b22;
+    --bg-3: #1f2630;
+    --border: #30363d;
+    --fg: #e6edf3;
+    --fg-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-2: #7ee787;
+    --warn: #f0b429;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #ffffff;
+      --bg-2: #f6f8fa;
+      --bg-3: #eaeef2;
+      --border: #d0d7de;
+      --fg: #1f2328;
+      --fg-dim: #59636e;
+      --accent: #0969da;
+      --accent-2: #1a7f37;
+      --warn: #9a6700;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, kbd {
+    font-family: var(--mono);
+    font-size: 0.9em;
+  }
+  :not(pre) > code {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+  kbd {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.85em;
+  }
+  pre {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.9em;
+    line-height: 1.55;
+  }
+  pre code { background: none; border: 0; padding: 0; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+  header.hero {
+    padding: 64px 0 48px;
+    border-bottom: 1px solid var(--border);
+    background: radial-gradient(ellipse at top, rgba(88,166,255,0.08), transparent 60%);
+  }
+  .title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: 48px;
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+  .prompt { color: var(--accent); }
+  .tag {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--fg-dim);
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 10px;
+  }
+  .lede {
+    font-size: 19px;
+    color: var(--fg);
+    max-width: 640px;
+    margin: 20px 0 28px;
+  }
+  .cta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 10px 18px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-2);
+    color: var(--fg);
+  }
+  .btn:hover { background: var(--bg-3); text-decoration: none; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #0d1117; font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  section { padding: 56px 0; border-bottom: 1px solid var(--border); }
+  section:last-of-type { border-bottom: 0; }
+  h2 {
+    font-size: 26px;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  h2 .hash {
+    color: var(--fg-dim);
+    font-family: var(--mono);
+    font-weight: 400;
+    margin-right: 6px;
+  }
+  h3 { font-size: 18px; margin: 24px 0 8px; }
+  p { margin: 12px 0; }
+  .muted { color: var(--fg-dim); }
+  ul { padding-left: 20px; }
+  ul li { margin: 4px 0; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 20px;
+  }
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+  }
+  .card h3 { margin-top: 0; }
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    margin-right: 6px;
+  }
+  .badge.u { color: var(--accent); }
+  .badge.l { color: var(--accent-2); }
+  .badge.p { color: #d2a8ff; }
+  .badge.P { color: #ff7b72; }
+  .badge.at { color: var(--warn); }
+  .badge.s { color: var(--fg-dim); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--fg-dim); font-weight: 600; }
+  td code { white-space: nowrap; }
+  .term {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 20px 0;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .term-bar {
+    background: var(--bg-2);
+    padding: 8px 12px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .term-bar .dot { width: 11px; height: 11px; border-radius: 50%; background: #30363d; }
+  .term-bar .dot.r { background: #f85149; }
+  .term-bar .dot.y { background: #d29922; }
+  .term-bar .dot.g { background: #3fb950; }
+  .term-bar .title {
+    margin-left: auto;
+    margin-right: auto;
+    color: var(--fg-dim);
+    font-size: 12px;
+  }
+  .term-body { padding: 14px 16px; color: #c9d1d9; white-space: pre; overflow-x: auto; }
+  .term-body .acc { color: var(--accent); }
+  .term-body .grn { color: var(--accent-2); }
+  .term-body .dim { color: var(--fg-dim); }
+  .term-body .warn { color: var(--warn); }
+  footer {
+    padding: 32px 0 48px;
+    color: var(--fg-dim);
+    font-size: 14px;
+  }
+  footer a { color: var(--fg-dim); text-decoration: underline; }
+  footer a:hover { color: var(--fg); }
+  @media (max-width: 600px) {
+    h1 { font-size: 36px; }
+    .lede { font-size: 17px; }
+    section { padding: 40px 0; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="title-row">
+      <h1><span class="prompt">&gt;_</span> ccmcp</h1>
+      <span class="tag" id="version">v0.2.4</span>
+    </div>
+    <p class="lede">A dynamic CLI and TUI for managing Claude Code's MCP servers, plugins, and per-project overrides across every scope Claude Code honors.</p>
+    <div class="cta">
+      <a class="btn primary" href="#install">Install</a>
+      <a class="btn" href="https://github.com/ringo380/ccmcp">GitHub</a>
+      <a class="btn" href="https://github.com/ringo380/ccmcp/releases/latest">Releases</a>
+    </div>
+  </div>
+</header>
+
+<section id="why">
+  <div class="wrap">
+    <h2><span class="hash">#</span> Why</h2>
+    <p>Claude Code auto-loads MCP servers from at least <strong>six</strong> distinct places — user config, local project state, committed <code>.mcp.json</code>, bundled plugin <code>.mcp.json</code>s, claude.ai OAuth integrations, and in-memory overrides. Starting a session with all of them enabled burns hundreds of tokens of context before you type a character.</p>
+    <p>The built-in <code>/mcp</code> menu toggles things one row at a time. <code>ccmcp</code> toggles them in bulk, by scope, or by filter, and gives you a single view that reflects what will actually load in the current project.</p>
+
+    <div class="term">
+      <div class="term-bar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="title">ccmcp — MCPs tab</span>
+      </div>
+      <div class="term-body"><span class="acc">ccmcp</span> <span class="dim">v0.2.4</span>    <span class="dim">project:</span> ~/git/ccmcp    <span class="warn">UNSAVED</span>
+<span class="dim">──────────────────────────────────────────────────────────────────</span>
+<span class="acc">[MCPs]</span>  Plugins  Profiles  Summary                   <span class="dim">scope: effective</span>
+
+  <span class="grn">[x]</span> <span class="dim">u</span>  context7              user-scope stdio
+  <span class="grn">[x]</span> <span class="dim">l</span>  github                local to this project
+  <span class="grn">[x]</span> <span class="dim">p</span>  supabase              ./.mcp.json
+  <span class="grn">[x]</span> <span class="dim">P</span>  plugin:vercel:vercel  plugin-registered
+  <span class="grn">[x]</span> <span class="dim">@</span>  claude.ai Gmail       OAuth integration
+  <span class="dim">[~] P  plugin:context7:context7   disabled here</span>
+  <span class="dim">[ ] s  old-name                   in stash</span>
+
+<span class="dim">space</span> toggle   <span class="dim">A/N</span> bulk enable/disable   <span class="dim">/</span> filter   <span class="dim">w</span> save</div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2><span class="hash">#</span> Install</h2>
+
+    <h3>Homebrew <span class="muted">(macOS, Linux)</span></h3>
+<pre><code>brew install ringo380/tap/ccmcp</code></pre>
+
+    <h3><code>go install</code> <span class="muted">(Go 1.25+)</span></h3>
+<pre><code>go install github.com/ringo380/ccmcp@latest</code></pre>
+
+    <h3>Prebuilt binaries</h3>
+    <p>Download from the <a href="https://github.com/ringo380/ccmcp/releases/latest">releases page</a>.</p>
+
+    <h3>From source</h3>
+<pre><code>git clone https://github.com/ringo380/ccmcp
+cd ccmcp
+go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
+  </div>
+</section>
+
+<section id="quickstart">
+  <div class="wrap">
+    <h2><span class="hash">#</span> Quick start</h2>
+    <p>In any project directory:</p>
+<pre><code>ccmcp</code></pre>
+    <p>The <em>effective</em> view is the default. It lists every MCP that will load in this project, with a badge showing its source and a checkbox showing whether it's currently enabled here. Three keystrokes to turn off every plugin-registered MCP for this project:</p>
+<pre><code>/plugin      &lt;enter&gt;      N      w</code></pre>
+    <ul>
+      <li><kbd>/plugin</kbd> — filter rows whose name contains "plugin" (or a plugin name like <code>cloudflare</code>)</li>
+      <li><kbd>N</kbd> — bulk-disable everything visible (writes to <code>disabledMcpServers</code> for this project only)</li>
+      <li><kbd>w</kbd> — save</li>
+    </ul>
+    <p>Undo the same way with <kbd>A</kbd>.</p>
+  </div>
+</section>
+
+<section id="sources">
+  <div class="wrap">
+    <h2><span class="hash">#</span> What ccmcp sees</h2>
+    <table>
+      <thead><tr><th>Badge</th><th>Source</th><th>Location</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge u">u</span></td><td>user</td><td><code>~/.claude.json#/mcpServers</code></td><td>loads in every project</td></tr>
+        <tr><td><span class="badge l">l</span></td><td>local</td><td><code>~/.claude.json#/projects[…]/mcpServers</code></td><td>this directory only</td></tr>
+        <tr><td><span class="badge p">p</span></td><td>project</td><td><code>./.mcp.json</code></td><td>shared via git, team-wide</td></tr>
+        <tr><td><span class="badge P">P</span></td><td>plugin</td><td>bundled <code>.mcp.json</code> per enabled plugin</td><td>loads when plugin enabled</td></tr>
+        <tr><td><span class="badge at">@</span></td><td>claude.ai</td><td>OAuth remote integration</td><td>loads wherever you're signed in</td></tr>
+        <tr><td><span class="badge s">s</span></td><td>stash</td><td><code>~/.claude-mcp-stash.json</code></td><td>ccmcp-owned, parked</td></tr>
+      </tbody>
+    </table>
+    <h3>Effective-view marks</h3>
+    <ul>
+      <li><code>[x]</code> — will load in this project</li>
+      <li><code>[~]</code> — disabled here via a per-project override (easy to undo)</li>
+      <li><code>[ ]</code> — not active in this project by any source</li>
+      <li><code>[?]</code> — in <code>disabledMcpServers</code> but no live source found (stale); the row description explains why, and <code>ccmcp mcp prune</code> cleans it up</li>
+    </ul>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2><span class="hash">#</span> What you get</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Bulk toggles</h3>
+        <p>Filter by substring, then <kbd>A</kbd>/<kbd>N</kbd> flips every visible row at once — per scope, in one keystroke.</p>
+      </div>
+      <div class="card">
+        <h3>Scope-aware</h3>
+        <p>One view across user, local, <code>.mcp.json</code>, plugin-bundled, and claude.ai OAuth. Every row has a resolved source.</p>
+      </div>
+      <div class="card">
+        <h3>Stash</h3>
+        <p>Park servers you don't currently need in <code>~/.claude-mcp-stash.json</code>. <kbd>S</kbd> smart-toggles — stash a live row, unstash a parked one.</p>
+      </div>
+      <div class="card">
+        <h3>Profiles</h3>
+        <p>Snapshot the current project's MCP set and reapply it later with one keystroke.</p>
+      </div>
+      <div class="card">
+        <h3>Prune stale overrides</h3>
+        <p><code>ccmcp mcp prune</code> classifies every entry in <code>disabledMcpServers</code> into 7 buckets and removes what's truly stale — orphan plugin keys, deleted MCPs — while preserving intentional per-project disables.</p>
+      </div>
+      <div class="card">
+        <h3>Plugin installer</h3>
+        <p>Four marketplace source formats (bare path, <code>url</code>, <code>git-subdir</code>, <code>github</code>), with optional <code>sha</code> pinning and purge-on-remove.</p>
+      </div>
+      <div class="card">
+        <h3>Safety</h3>
+        <p>Atomic writes (<code>temp + fsync + rename</code>). Every mutation snapshots the target file to <code>~/.claude-mcp-backups/</code>. <code>--dry-run</code> never touches disk.</p>
+      </div>
+      <div class="card">
+        <h3>Scriptable</h3>
+        <p>Every TUI action has a CLI equivalent. <code>ccmcp status --json</code> for pipelines. 70 tests cover readers, writers, and a headless TUI state machine.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="cli">
+  <div class="wrap">
+    <h2><span class="hash">#</span> CLI</h2>
+<pre><code>ccmcp status                                   <span class="muted"># show everything at once</span>
+ccmcp status --json                            <span class="muted"># JSON for scripts</span>
+
+ccmcp mcp list [--scope SCOPE]                 <span class="muted"># user|local|project|plugin|claudeai|stash|all</span>
+ccmcp mcp enable  &lt;name&gt; [--scope SCOPE]
+ccmcp mcp disable &lt;name&gt; [--scope SCOPE] [--to-stash]
+ccmcp mcp move    &lt;name&gt; --to {user|local|stash}
+ccmcp mcp override &lt;name&gt; [--undo]             <span class="muted"># per-project disable</span>
+ccmcp mcp prune [--dry-run] [--yes] [--include-stash-ghosts]
+ccmcp mcp stash   [&lt;name&gt;...]                  <span class="muted"># user-scope → stash</span>
+ccmcp mcp restore [&lt;name&gt;...]                  <span class="muted"># stash → user-scope (alias: unstash)</span>
+
+ccmcp profile save|list|show|use|delete &lt;name&gt; [&lt;mcp&gt;...]
+ccmcp plugin list [--enabled|--disabled]
+ccmcp plugin enable|disable|install|remove &lt;id&gt; [--marketplace M] [--purge]
+ccmcp marketplace list|add|remove &lt;name&gt; [--source github|git|local] [--repo R]
+
+ccmcp tui --dump [--tab mcps|plugins|profiles|summary]</code></pre>
+    <p class="muted"><strong>Global flags:</strong> <code>--path &lt;dir&gt;</code>, <code>--dry-run</code>, <code>--json</code>, <code>--no-color</code>.</p>
+    <p>Full key reference, scope terminology, and implementation notes live in the <a href="https://github.com/ringo380/ccmcp#readme">README</a>.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>
+      MIT licensed ·
+      <a href="https://github.com/ringo380/ccmcp">source</a> ·
+      <a href="https://github.com/ringo380/ccmcp/blob/main/CHANGELOG.md">changelog</a> ·
+      <a href="https://github.com/ringo380/ccmcp/issues">issues</a>
+    </p>
+  </div>
+</footer>
+
+<script>
+  // Pull the latest release tag at view time so the version tag stays fresh
+  // without requiring a rebuild for every release.
+  fetch('https://api.github.com/repos/ringo380/ccmcp/releases/latest')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d && d.tag_name) document.getElementById('version').textContent = d.tag_name; })
+    .catch(() => {});
+</script>
+
+</body>
+</html>
