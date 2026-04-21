@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.2.5] — 2026-04-21
+
 ### Changed
 
 - **Homebrew tap moved** from `ringo380/tap` to `robworks-code/tap`.
