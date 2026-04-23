@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ringo380/ccmcp/internal/classify"
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 	"github.com/spf13/cobra"
@@ -75,35 +76,35 @@ func runMCPPrune() error {
 	if stash != nil {
 		stashNames = stash.Names()
 	}
-	cls := classifyForPrune(overrides, cj.UserMCPNames(), cj.ProjectMCPNames(proj),
+	cls := classify.Classify(overrides, cj.UserMCPNames(), cj.ProjectMCPNames(proj),
 		cj.ClaudeAiEverConnected(), stashNames, pluginMCPs, installed)
 
 	var toRemove []string
-	toRemove = append(toRemove, cls.orphanPlugin...)
-	toRemove = append(toRemove, cls.orphanStdio...)
+	toRemove = append(toRemove, cls.OrphanPlugin...)
+	toRemove = append(toRemove, cls.OrphanStdio...)
 	if pruneIncludeStashGhosts {
-		toRemove = append(toRemove, cls.stashGhost...)
+		toRemove = append(toRemove, cls.StashGhost...)
 	}
 	sort.Strings(toRemove)
 
 	if len(toRemove) == 0 {
 		fmt.Printf("no orphaned overrides to prune in %s\n", proj)
-		if len(cls.stashGhost) > 0 {
+		if len(cls.StashGhost) > 0 {
 			fmt.Printf("(%d stash-ghost entr%s exist — pass --include-stash-ghosts to sweep them too)\n",
-				len(cls.stashGhost), pluralYCLI(len(cls.stashGhost)))
+				len(cls.StashGhost), classify.PluralY(len(cls.StashGhost)))
 		}
 		return nil
 	}
 
 	fmt.Printf("Project: %s\n", proj)
-	fmt.Printf("Would remove %d entr%s from disabledMcpServers:\n", len(toRemove), pluralYCLI(len(toRemove)))
+	fmt.Printf("Would remove %d entr%s from disabledMcpServers:\n", len(toRemove), classify.PluralY(len(toRemove)))
 	for _, k := range toRemove {
 		fmt.Printf("  - %s  (%s)\n", k, reasonForPruneEntry(k, cls))
 	}
-	if n := len(cls.pluginDisabled); n > 0 {
+	if n := len(cls.PluginDisabled); n > 0 {
 		fmt.Printf("\nKept (plugin installed but globally disabled — use `plugin enable %s` to reactivate):\n",
 			"<id>")
-		for _, k := range cls.pluginDisabled {
+		for _, k := range cls.PluginDisabled {
 			fmt.Printf("  ~ %s\n", k)
 		}
 	}
@@ -113,7 +114,7 @@ func runMCPPrune() error {
 		return nil
 	}
 	if !pruneYes {
-		if !confirmInteractive(fmt.Sprintf("\nRemove %d entr%s? (y/N) ", len(toRemove), pluralYCLI(len(toRemove)))) {
+		if !confirmInteractive(fmt.Sprintf("\nRemove %d entr%s? (y/N) ", len(toRemove), classify.PluralY(len(toRemove)))) {
 			fmt.Println("aborted")
 			return nil
 		}
@@ -129,85 +130,15 @@ func runMCPPrune() error {
 	if err := backupAndSave(p, cj); err != nil {
 		return err
 	}
-	fmt.Printf("pruned %d entr%s from %s\n", len(toRemove), pluralYCLI(len(toRemove)), proj)
+	fmt.Printf("pruned %d entr%s from %s\n", len(toRemove), classify.PluralY(len(toRemove)), proj)
 	return nil
 }
 
-// pruneClassification mirrors tui.classifiedOverrides but is kept in package `cmd` to
-// avoid pulling the entire tui package into CLI code paths. The logic is identical —
-// keep them in lockstep via the test `TestPruneMatchesTUIClassifier`.
-type pruneClassification struct {
-	pluginActive   []string
-	pluginDisabled []string
-	claudeai       []string
-	stdioLive      []string
-	stashGhost     []string
-	orphanPlugin   []string
-	orphanStdio    []string
-}
-
-func classifyForPrune(
-	overrides []string,
-	userMCPs []string,
-	localMCPs []string,
-	claudeAi []string,
-	stashedNames []string,
-	pluginMCPs map[string][]config.PluginMCPSource,
-	installed *config.InstalledPlugins,
-) pruneClassification {
-	userSet := stringslice.Set(userMCPs)
-	localSet := stringslice.Set(localMCPs)
-	stashSet := stringslice.Set(stashedNames)
-	claudeSet := stringslice.Set(claudeAi)
-
-	type pluginKey struct{ plugin, mcp string }
-	pluginPairs := map[pluginKey]bool{}
-	for mcp, srcs := range pluginMCPs {
-		for _, s := range srcs {
-			pn, _ := config.ParsePluginID(s.PluginID)
-			pluginPairs[pluginKey{pn, mcp}] = s.Enabled
-		}
-	}
-
-	var out pruneClassification
-	for _, k := range overrides {
-		src, name, pluginName := config.ParseOverrideKey(k)
-		switch src {
-		case config.SourcePlugin:
-			if enabled, ok := pluginPairs[pluginKey{pluginName, name}]; ok {
-				if enabled {
-					out.pluginActive = append(out.pluginActive, k)
-				} else {
-					out.pluginDisabled = append(out.pluginDisabled, k)
-				}
-				continue
-			}
-			out.orphanPlugin = append(out.orphanPlugin, k)
-		case config.SourceClaude:
-			if claudeSet[k] {
-				out.claudeai = append(out.claudeai, k)
-			} else {
-				out.orphanStdio = append(out.orphanStdio, k)
-			}
-		default:
-			switch {
-			case userSet[name] || localSet[name]:
-				out.stdioLive = append(out.stdioLive, k)
-			case stashSet[name]:
-				out.stashGhost = append(out.stashGhost, k)
-			default:
-				out.orphanStdio = append(out.orphanStdio, k)
-			}
-		}
-	}
-	return out
-}
-
-func reasonForPruneEntry(k string, cls pruneClassification) string {
-	if stringslice.Contains(cls.orphanPlugin, k) {
+func reasonForPruneEntry(k string, cls classify.Overrides) string {
+	if stringslice.Contains(cls.OrphanPlugin, k) {
 		return "plugin not installed"
 	}
-	if stringslice.Contains(cls.stashGhost, k) {
+	if stringslice.Contains(cls.StashGhost, k) {
 		return "stash ghost"
 	}
 	return "no source on disk"
@@ -222,13 +153,6 @@ func confirmInteractive(prompt string) bool {
 	}
 	answer := strings.TrimSpace(strings.ToLower(line))
 	return answer == "y" || answer == "yes"
-}
-
-func pluralYCLI(n int) string {
-	if n == 1 {
-		return "y"
-	}
-	return "ies"
 }
 
 func init() {
