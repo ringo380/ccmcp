@@ -77,7 +77,7 @@ func runMCPPrune() error {
 		stashNames = stash.Names()
 	}
 	cls := classify.Classify(overrides, cj.UserMCPNames(), cj.ProjectMCPNames(proj),
-		cj.ClaudeAiEverConnected(), stashNames, pluginMCPs, installed)
+		cj.ClaudeAiEverConnected(), stashNames, pluginMCPs)
 
 	var toRemove []string
 	toRemove = append(toRemove, cls.OrphanPlugin...)

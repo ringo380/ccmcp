@@ -21,13 +21,6 @@ func TestClassifyBuckets(t *testing.T) {
 		"context7": {{PluginID: "context7@mkt", Enabled: true}},
 		"postman":  {{PluginID: "postman@mkt", Enabled: false}},
 	}
-	installed := &config.InstalledPlugins{Raw: map[string]any{
-		"plugins": map[string]any{
-			"context7@mkt": []any{map[string]any{"installPath": "/c"}},
-			"postman@mkt":  []any{map[string]any{"installPath": "/p"}},
-			// Note: "Notion" plugin deliberately absent → bucket 3 (orphan-plugin)
-		},
-	}}
 
 	overrides := []string{
 		"plugin:context7:context7", // PluginActive
@@ -40,7 +33,7 @@ func TestClassifyBuckets(t *testing.T) {
 		"appstore-connect",         // OrphanStdio (no source anywhere)
 	}
 
-	got := Classify(overrides, userMCPs, localMCPs, claudeAi, stashed, pluginMCPs, installed)
+	got := Classify(overrides, userMCPs, localMCPs, claudeAi, stashed, pluginMCPs)
 
 	want := Overrides{
 		PluginActive:   []string{"plugin:context7:context7"},

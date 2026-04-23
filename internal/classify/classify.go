@@ -39,7 +39,6 @@ func Classify(
 	claudeAi []string, // full "claude.ai Name" strings
 	stashedNames []string,
 	pluginMCPs map[string][]config.PluginMCPSource,
-	installed *config.InstalledPlugins,
 ) Overrides {
 	userSet := stringslice.Set(userMCPs)
 	localSet := stringslice.Set(localMCPs)
@@ -54,7 +53,6 @@ func Classify(
 			pluginPairs[pluginKey{pn, mcp}] = s.Enabled
 		}
 	}
-	_ = installed // reserved for future "installed but unregistered" distinctions
 
 	var out Overrides
 	for _, k := range overrides {

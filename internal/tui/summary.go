@@ -86,7 +86,7 @@ func (v *summaryView) render() string {
 
 	// Per-project overrides
 	overrides := v.st.cj.ProjectDisabledMcpServers(v.st.project)
-	classified := classify.Classify(overrides, userMCPs, projMCPs, claudeAi, stashed, v.st.pluginMCPs, v.st.installed)
+	classified := classify.Classify(overrides, userMCPs, projMCPs, claudeAi, stashed, v.st.pluginMCPs)
 	b.WriteString(styleTitle.Render("Per-project overrides (disabledMcpServers)") + "\n")
 	if len(overrides) == 0 {
 		b.WriteString(styleDim.Render("  (none for " + v.st.project + ")") + "\n\n")
