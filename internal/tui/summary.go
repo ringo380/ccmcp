@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ringo380/ccmcp/internal/classify"
 	"github.com/ringo380/ccmcp/internal/config"
 )
 
@@ -85,39 +86,39 @@ func (v *summaryView) render() string {
 
 	// Per-project overrides
 	overrides := v.st.cj.ProjectDisabledMcpServers(v.st.project)
-	classified := classifyOverrides(overrides, userMCPs, projMCPs, claudeAi, stashed, v.st.pluginMCPs, v.st.installed)
+	classified := classify.Classify(overrides, userMCPs, projMCPs, claudeAi, stashed, v.st.pluginMCPs)
 	b.WriteString(styleTitle.Render("Per-project overrides (disabledMcpServers)") + "\n")
 	if len(overrides) == 0 {
 		b.WriteString(styleDim.Render("  (none for " + v.st.project + ")") + "\n\n")
 	} else {
-		row(&b, "  plugin (active)    ", len(classified.pluginActive), truncateList(classified.pluginActive, 4))
-		row(&b, "  plugin (disabled)  ", len(classified.pluginDisabled), truncateList(classified.pluginDisabled, 4))
-		row(&b, "  claude.ai          ", len(classified.claudeai), truncateList(classified.claudeai, 4))
-		row(&b, "  stdio (live)       ", len(classified.stdioLive), truncateList(classified.stdioLive, 4))
-		row(&b, "  stash ghost        ", len(classified.stashGhost), truncateList(classified.stashGhost, 4))
-		row(&b, "  orphan (plugin)    ", len(classified.orphanPlugin), truncateList(classified.orphanPlugin, 4))
-		row(&b, "  orphan (stdio)     ", len(classified.orphanStdio), truncateList(classified.orphanStdio, 4))
+		row(&b, "  plugin (active)    ", len(classified.PluginActive), truncateList(classified.PluginActive, 4))
+		row(&b, "  plugin (disabled)  ", len(classified.PluginDisabled), truncateList(classified.PluginDisabled, 4))
+		row(&b, "  claude.ai          ", len(classified.ClaudeAi), truncateList(classified.ClaudeAi, 4))
+		row(&b, "  stdio (live)       ", len(classified.StdioLive), truncateList(classified.StdioLive, 4))
+		row(&b, "  stash ghost        ", len(classified.StashGhost), truncateList(classified.StashGhost, 4))
+		row(&b, "  orphan (plugin)    ", len(classified.OrphanPlugin), truncateList(classified.OrphanPlugin, 4))
+		row(&b, "  orphan (stdio)     ", len(classified.OrphanStdio), truncateList(classified.OrphanStdio, 4))
 		b.WriteString("\n")
 
 		// Cleanup suggestions. Bucket 2 (plugin-disabled) is deliberately NOT pruneable
 		// because re-enabling the plugin would re-activate the MCP and the user probably
 		// wanted it off per-project. Stash ghosts are optional (safe but not always wanted).
-		recoverable := len(classified.orphanPlugin) + len(classified.orphanStdio)
-		withStash := recoverable + len(classified.stashGhost)
-		if recoverable > 0 || len(classified.stashGhost) > 0 {
+		recoverable := len(classified.OrphanPlugin) + len(classified.OrphanStdio)
+		withStash := recoverable + len(classified.StashGhost)
+		if recoverable > 0 || len(classified.StashGhost) > 0 {
 			b.WriteString(styleTitle.Render("Cleanup suggestions") + "\n")
 			if recoverable > 0 {
 				fmt.Fprintf(&b, "  %s  run  %s  to remove %d orphaned entr%s\n",
 					styleOK.Render("•"),
 					styleBadge.Render("ccmcp mcp prune"),
 					recoverable,
-					pluralY(recoverable))
+					classify.PluralY(recoverable))
 			}
-			if len(classified.stashGhost) > 0 {
+			if len(classified.StashGhost) > 0 {
 				fmt.Fprintf(&b, "  %s  add --include-stash-ghosts to also remove %d stash-ghost entr%s (total %d)\n",
 					styleDim.Render("•"),
-					len(classified.stashGhost),
-					pluralY(len(classified.stashGhost)),
+					len(classified.StashGhost),
+					classify.PluralY(len(classified.StashGhost)),
 					withStash)
 			}
 			b.WriteString("\n")
