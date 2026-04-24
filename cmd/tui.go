@@ -55,5 +55,5 @@ func runTUIDump(tab string) error {
 func init() {
 	rootCmd.AddCommand(tuiCmd)
 	tuiCmd.Flags().BoolVar(&tuiDump, "dump", false, "print the TUI's initial render and exit (no TTY needed)")
-	tuiCmd.Flags().StringVar(&tuiDumpTab, "tab", "mcps", "which tab to dump: mcps|plugins|profiles|summary")
+	tuiCmd.Flags().StringVar(&tuiDumpTab, "tab", "mcps", "which tab to dump: mcps|plugins|skills|agents|commands|profiles|summary|doctor")
 }

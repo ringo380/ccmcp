@@ -19,6 +19,7 @@ type Paths struct {
 	Stash            string // ~/.claude-mcp-stash.json
 	Profiles         string // ~/.claude-mcp-profiles.json
 	BackupsDir       string // ~/.claude-mcp-backups
+	Ignores          string // ~/.claude-ccmcp-ignores.json (ccmcp-owned conflict ignore list)
 }
 
 func Resolve() (Paths, error) {
@@ -42,6 +43,7 @@ func Resolve() (Paths, error) {
 		Stash:            filepath.Join(home, ".claude-mcp-stash.json"),
 		Profiles:         filepath.Join(home, ".claude-mcp-profiles.json"),
 		BackupsDir:       filepath.Join(home, ".claude-mcp-backups"),
+		Ignores:          filepath.Join(home, ".claude-ccmcp-ignores.json"),
 	}
 	return p, nil
 }

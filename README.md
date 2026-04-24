@@ -111,12 +111,22 @@ apart from genuinely absent sources.
 
 Read-only overview of every scope's counts, per-project overrides, and redundancies (e.g., "MCPs in stash that are also provided by an enabled plugin — stash entry is redundant").
 
+**Doctor tab**
+
+| Key | Action |
+|---|---|
+| `r` | re-run lint checks |
+| `j` / `k` / arrows | scroll |
+| `g` / `G` | top / bottom |
+
+Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project.
+
 **Global**
 
 | Key | Action |
 |---|---|
 | `tab` / `shift+tab` | cycle tabs |
-| `1` / `2` / `3` / `4` | jump to MCPs / Plugins / Profiles / Summary |
+| `1`–`8` | jump to MCPs / Plugins / Skills / Agents / Commands / Profiles / Summary / Doctor |
 | `w` | save all staged changes |
 | `q` | quit (warns if unsaved) |
 | `Q` | force quit, discard changes |
@@ -143,11 +153,32 @@ ccmcp mcp restore [<name>...]                  # stash → user-scope (alias: un
 ccmcp mcp unstash [<name>...]                  # same as restore
 
 ccmcp profile save|list|show|use|delete <name> [<mcp>...]
+ccmcp profile export <name> [--out FILE] [--with-config]
+ccmcp profile import [FILE|-] [--overwrite]
 ccmcp plugin list [--enabled|--disabled]
 ccmcp plugin enable|disable|install|remove <id> [--marketplace M] [--purge]
 ccmcp marketplace list|add|remove <name> [--source github|git|local] [--repo R]
 
-ccmcp tui --dump [--tab mcps|plugins|profiles|summary]   # print initial render, no TTY
+ccmcp skill   list [--scope user|project|plugin] [--enabled|--disabled]
+ccmcp skill   enable|disable <name> [<name>...]    # writes to skillOverrides
+ccmcp skill   new <name> [--scope user|project] [--description D]
+ccmcp skill   move <name> --to {user|project}
+ccmcp skill   rm   <name> [--scope user|project]
+ccmcp skill   show <name>
+ccmcp agent   list|new|move|rm|show <name>         # same verb shape as skill
+ccmcp command list [--scope user|project|plugin]
+ccmcp command conflicts [--include-ignored] [--json]
+ccmcp command resolve <effective-name> [--strategy disable-skill|ignore|list]
+
+ccmcp report snapshot [--out FILE] [--format json|md|csv]   # point-in-time state dump
+ccmcp report sweep    [--base PATH] [--format json|md|csv]  # summary table across all projects
+ccmcp report drift    --from <snapshot.json> [--format json|md]  # what changed since baseline
+ccmcp report audit    [--format json|md|csv]                # stale overrides, conflicts, redundancies
+
+ccmcp doctor md [--user] [--memory-dir DIR]                # lint CLAUDE.md + MEMORY.md
+ccmcp doctor md --llm-review [--provider anthropic|openai] # + LLM quality review
+
+ccmcp tui --dump [--tab mcps|plugins|skills|agents|commands|profiles|summary]   # print initial render, no TTY
 ```
 
 **Global flags:** `--path <dir>` (override cwd), `--dry-run`, `--json`, `--no-color`.
@@ -200,7 +231,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-71 tests across config readers/writers, CLI sandbox runs, installer, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+158 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

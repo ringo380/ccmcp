@@ -72,6 +72,7 @@ func buildState(t *testing.T) (*state, paths.Paths) {
 		Stash:            filepath.Join(home, ".claude-mcp-stash.json"),
 		Profiles:         filepath.Join(home, ".claude-mcp-profiles.json"),
 		BackupsDir:       filepath.Join(home, ".claude-mcp-backups"),
+		Ignores:          filepath.Join(home, ".claude-ccmcp-ignores.json"),
 	}
 	st, err := loadState(p, filepath.Join(home, "project"))
 	if err != nil {
@@ -296,7 +297,7 @@ func TestTUIHelpOverlay(t *testing.T) {
 		"[u]", "[l]", "[p]", "[P]", "[@]", "[s]", "[?]",
 		"Row marks",
 		"[x]", "[~]", "[!]",
-		"MCPs tab", "Plugins tab", "Profiles tab", "Summary tab", "Global",
+		"MCPs tab", "Plugins tab", "Skills tab", "Agents tab", "Commands tab", "Profiles tab", "Summary tab", "Doctor tab", "Global",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("help overlay missing %q; got:\n%s", want, view)
@@ -409,25 +410,57 @@ func TestTUITabSwitching(t *testing.T) {
 		t.Errorf("tab 1: want plugins, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
+	if m.tab != tabSkills {
+		t.Errorf("tab 2: want skills, got %d", m.tab)
+	}
+	_ = drive(m, "tab")
+	if m.tab != tabAgents {
+		t.Errorf("tab 3: want agents, got %d", m.tab)
+	}
+	_ = drive(m, "tab")
+	if m.tab != tabCommands {
+		t.Errorf("tab 4: want commands, got %d", m.tab)
+	}
+	_ = drive(m, "tab")
 	if m.tab != tabProfiles {
-		t.Errorf("tab 2: want profiles, got %d", m.tab)
+		t.Errorf("tab 5: want profiles, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
 	if m.tab != tabSummary {
-		t.Errorf("tab 3: want summary, got %d", m.tab)
+		t.Errorf("tab 6: want summary, got %d", m.tab)
+	}
+	_ = drive(m, "tab")
+	if m.tab != tabDoctor {
+		t.Errorf("tab 7: want doctor, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
 	if m.tab != tabMCPs {
-		t.Errorf("tab 4: want mcps (wrapped), got %d", m.tab)
+		t.Errorf("tab 8: want mcps (wrapped), got %d", m.tab)
 	}
 	// Numeric shortcuts
 	_ = drive(m, "3")
-	if m.tab != tabProfiles {
-		t.Errorf("numeric 3: want profiles, got %d", m.tab)
+	if m.tab != tabSkills {
+		t.Errorf("numeric 3: want skills, got %d", m.tab)
 	}
 	_ = drive(m, "4")
+	if m.tab != tabAgents {
+		t.Errorf("numeric 4: want agents, got %d", m.tab)
+	}
+	_ = drive(m, "5")
+	if m.tab != tabCommands {
+		t.Errorf("numeric 5: want commands, got %d", m.tab)
+	}
+	_ = drive(m, "6")
+	if m.tab != tabProfiles {
+		t.Errorf("numeric 6: want profiles, got %d", m.tab)
+	}
+	_ = drive(m, "7")
 	if m.tab != tabSummary {
-		t.Errorf("numeric 4: want summary, got %d", m.tab)
+		t.Errorf("numeric 7: want summary, got %d", m.tab)
+	}
+	_ = drive(m, "8")
+	if m.tab != tabDoctor {
+		t.Errorf("numeric 8: want doctor, got %d", m.tab)
 	}
 }
 
@@ -484,8 +517,8 @@ func TestTUIProfileApply(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	// Profiles tab, cursor at first profile ("dev"), enter applies it
-	_ = drive(m, "3", "enter")
+	// Profiles tab (now key "6"), cursor at first profile ("dev"), enter applies it
+	_ = drive(m, "6", "enter")
 
 	if !st.dirtyClaude {
 		t.Fatal("dirtyClaude should be set after applying profile")
@@ -570,13 +603,101 @@ func TestTUISummaryDetectsRedundancy(t *testing.T) {
 	st.cj.SetProjectMCP(st.project, "shared", cfg)
 
 	m := newModel(st)
-	view := drive(m, "4") // switch to Summary tab
+	view := drive(m, "7") // switch to Summary tab
 
 	if !strings.Contains(view, "BOTH user and project scope") {
 		t.Errorf("summary should flag user+project duplication; got:\n%s", view)
 	}
 	if !strings.Contains(view, "shared") {
 		t.Errorf("summary should mention the duplicated MCP name; got:\n%s", view)
+	}
+}
+
+func TestTUISkillsTabRenders(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	view := drive(m, "3") // Skills tab
+	if !strings.Contains(view, "Skills") {
+		t.Errorf("skills tab should show Skills header; got:\n%s", view)
+	}
+}
+
+func TestTUISkillsTabToggleNoop(t *testing.T) {
+	// With no skills on disk the view should render without crash
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Switch to skills, attempt toggle — with empty rows should be a no-op
+	_ = drive(m, "3", " ")
+	if st.dirtySettings {
+		t.Error("toggling in empty skills view should not dirty settings")
+	}
+}
+
+func TestTUIAgentsTabRenders(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	view := drive(m, "4") // Agents tab
+	if !strings.Contains(view, "Agents") {
+		t.Errorf("agents tab should show Agents header; got:\n%s", view)
+	}
+}
+
+func TestTUICommandsTabRenders(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	view := drive(m, "5") // Commands tab
+	if !strings.Contains(view, "Commands") {
+		t.Errorf("commands tab should show Commands header; got:\n%s", view)
+	}
+}
+
+func TestTUICommandsConflictToggle(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Switch to commands tab, press ! to toggle conflicts-only
+	_ = drive(m, "5")
+	if m.commands.conflictsOnly {
+		t.Fatal("should start with conflictsOnly=false")
+	}
+	_ = drive(m, "!")
+	if !m.commands.conflictsOnly {
+		t.Error("! should enable conflicts-only mode")
+	}
+	_ = drive(m, "!")
+	if m.commands.conflictsOnly {
+		t.Error("second ! should disable conflicts-only mode")
+	}
+}
+
+func TestTUIDoctorTabRenders(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	view := drive(m, "8") // Doctor tab
+	if !strings.Contains(view, "Doctor") {
+		t.Errorf("doctor tab should contain 'Doctor'; got:\n%s", view)
+	}
+}
+
+func TestTUIDoctorTabRerun(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Switch to Doctor tab so lint runs on first render.
+	_ = drive(m, "8")
+	if !m.doctor.loaded {
+		t.Fatal("doctor.loaded should be true after first render")
+	}
+	// Press 'r' to re-run.
+	m.doctor.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	// runLint sets loaded=true at end; calling update resets+re-runs it.
+	if !m.doctor.loaded {
+		t.Error("doctor.loaded should be true after re-run")
 	}
 }
 

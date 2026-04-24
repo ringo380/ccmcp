@@ -7,8 +7,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ringo380/ccmcp/internal/agents"
 	"github.com/ringo380/ccmcp/internal/classify"
+	"github.com/ringo380/ccmcp/internal/commands"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/skills"
 )
 
 // summaryView is the "Summary" tab: bird's-eye overview of every scope, plus
@@ -171,6 +174,57 @@ func (v *summaryView) render() string {
 	names := v.st.profiles.Names()
 	b.WriteString(styleTitle.Render("Profiles") + "\n")
 	fmt.Fprintf(&b, "  saved          %d  (%s)\n", len(names), styleDim.Render(strings.Join(names, ", ")))
+	b.WriteString("\n")
+
+	// --- Skills / Agents / Commands -------------------------------------
+	discoveredSkills := skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	discoveredAgents := agents.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	discoveredCmds := commands.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	conflicts := commands.FindConflicts(discoveredCmds, discoveredSkills)
+	var skillEnabled, skillPlugin, skillUser int
+	for _, s := range discoveredSkills {
+		if s.Enabled {
+			skillEnabled++
+		}
+		switch s.Scope {
+		case skills.ScopePlugin:
+			skillPlugin++
+		case skills.ScopeUser:
+			skillUser++
+		}
+	}
+	var agentPlugin, agentUser int
+	for _, a := range discoveredAgents {
+		switch a.Scope {
+		case agents.ScopePlugin:
+			agentPlugin++
+		case agents.ScopeUser:
+			agentUser++
+		}
+	}
+	var cmdPlugin, cmdUser int
+	for _, c := range discoveredCmds {
+		switch c.Scope {
+		case commands.ScopePlugin:
+			cmdPlugin++
+		case commands.ScopeUser:
+			cmdUser++
+		}
+	}
+	b.WriteString(styleTitle.Render("Skills / Agents / Commands") + "\n")
+	fmt.Fprintf(&b, "  skills     %d enabled / %d total  (user %d, plugin %d)\n", skillEnabled, len(discoveredSkills), skillUser, skillPlugin)
+	fmt.Fprintf(&b, "  agents     %d total  (user %d, plugin %d)\n", len(discoveredAgents), agentUser, agentPlugin)
+	fmt.Fprintf(&b, "  commands   %d total  (user %d, plugin %d)\n", len(discoveredCmds), cmdUser, cmdPlugin)
+	if len(conflicts) > 0 {
+		fmt.Fprintf(&b, "  %s  %d slash-command conflict(s)\n", styleWarn.Render("⚠"), len(conflicts))
+		for i, c := range conflicts {
+			if i >= 3 {
+				fmt.Fprintf(&b, "      %s and %d more\n", styleDim.Render("…"), len(conflicts)-3)
+				break
+			}
+			fmt.Fprintf(&b, "      %s  /%s\n", styleDim.Render(string(c.Kind)), c.Effective)
+		}
+	}
 	b.WriteString("\n")
 
 	// --- Redundancies / warnings ---------------------------------------

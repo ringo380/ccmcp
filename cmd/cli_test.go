@@ -38,6 +38,37 @@ func runCLI(t *testing.T, home string, args ...string) (string, error) {
 	overridePluginOf = ""
 	pruneIncludeStashGhosts = false
 	pruneYes = false
+	skillScopeFilter = ""
+	skillFilterEnabled = false
+	skillFilterDisabled = false
+	skillNewScope = "user"
+	skillNewDescription = ""
+	skillMoveTo = ""
+	skillRmScope = "user"
+	skillShowScope = ""
+	agentScopeFilter = ""
+	agentNewScope = "user"
+	agentNewDescription = ""
+	agentNewModel = "sonnet"
+	agentMoveTo = ""
+	agentRmScope = "user"
+	agentShowScope = ""
+	commandScopeFilter = ""
+	conflictsIncludeIgnored = false
+	resolveStrategy = ""
+	reportFormat = "json"
+	reportSnapshotOut = ""
+	sweepBase = ""
+	driftFrom = ""
+	doctorLLMReview = false
+	doctorProvider = "anthropic"
+	doctorModel = ""
+	doctorAPIKey = ""
+	doctorMemoryDir = ""
+	doctorUserLevel = false
+	profileExportOut = ""
+	profileWithConfig = false
+	profileOverwrite = false
 
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))

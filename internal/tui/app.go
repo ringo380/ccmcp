@@ -34,10 +34,18 @@ func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 	switch tab {
 	case "plugins":
 		m.tab = tabPlugins
+	case "skills":
+		m.tab = tabSkills
+	case "agents":
+		m.tab = tabAgents
+	case "commands":
+		m.tab = tabCommands
 	case "profiles":
 		m.tab = tabProfiles
 	case "summary":
 		m.tab = tabSummary
+	case "doctor":
+		m.tab = tabDoctor
 	case "help":
 		m.showHelp = true
 	default:
