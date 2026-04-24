@@ -119,7 +119,9 @@ func TestCLIProfileImportNamesOnly(t *testing.T) {
 	sp := ShareableProfile{Version: 1, Name: "imported", MCPs: []string{"server-a"}}
 	data, _ := json.Marshal(sp)
 	inFile := filepath.Join(home, "import.json")
-	os.WriteFile(inFile, data, 0o600)
+	if err := os.WriteFile(inFile, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	out, err := runCLI(t, home, "profile", "import", inFile)
 	if err != nil {
@@ -159,7 +161,9 @@ func TestCLIProfileImportWithConfig(t *testing.T) {
 	}
 	data, _ := json.Marshal(sp)
 	inFile := filepath.Join(home, "import-cfg.json")
-	os.WriteFile(inFile, data, 0o600)
+	if err := os.WriteFile(inFile, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	out, err := runCLI(t, home, "profile", "import", inFile)
 	if err != nil {
@@ -186,7 +190,9 @@ func TestCLIProfileImportOverwriteBlocked(t *testing.T) {
 	sp := ShareableProfile{Version: 1, Name: "myprofile", MCPs: []string{"server-a"}}
 	data, _ := json.Marshal(sp)
 	inFile := filepath.Join(home, "dup.json")
-	os.WriteFile(inFile, data, 0o600)
+	if err := os.WriteFile(inFile, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := runCLI(t, home, "profile", "import", inFile)
 	if err == nil {
@@ -200,7 +206,9 @@ func TestCLIProfileImportOverwriteAllowed(t *testing.T) {
 	sp := ShareableProfile{Version: 1, Name: "myprofile", MCPs: []string{"server-a"}}
 	data, _ := json.Marshal(sp)
 	inFile := filepath.Join(home, "dup.json")
-	os.WriteFile(inFile, data, 0o600)
+	if err := os.WriteFile(inFile, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	out, err := runCLI(t, home, "profile", "import", inFile, "--overwrite")
 	if err != nil {

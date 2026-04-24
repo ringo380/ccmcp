@@ -688,16 +688,20 @@ func TestTUIDoctorTabRerun(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	// Switch to Doctor tab so lint runs on first render.
+	// drive() calls View() at the end, which calls render(), which runs lint.
 	_ = drive(m, "8")
 	if !m.doctor.loaded {
 		t.Fatal("doctor.loaded should be true after first render")
 	}
-	// Press 'r' to re-run.
+	// 'r' resets loaded so the next render re-runs lint.
 	m.doctor.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
-	// runLint sets loaded=true at end; calling update resets+re-runs it.
+	if m.doctor.loaded {
+		t.Error("doctor.loaded should be false after 'r' (re-run deferred to next render)")
+	}
+	// Calling render() triggers the re-run.
+	m.doctor.render()
 	if !m.doctor.loaded {
-		t.Error("doctor.loaded should be true after re-run")
+		t.Error("doctor.loaded should be true after render() following 'r'")
 	}
 }
 

@@ -145,11 +145,11 @@ var commandResolveCmd = &cobra.Command{
 			if match.Kind != commands.SkillVsCommand {
 				return fmt.Errorf("disable-skill only applies to skill-vs-command conflicts; got %s", match.Kind)
 			}
-			settings.SetSkillOverride(match.Effective, "off")
 			if flagDryRun {
 				fmt.Printf("[dry-run] would set skillOverrides[%q]=\"off\"\n", match.Effective)
 				return nil
 			}
+			settings.SetSkillOverride(match.Effective, "off")
 			if err := config.Backup(settings.Path, p.BackupsDir); err != nil {
 				return err
 			}

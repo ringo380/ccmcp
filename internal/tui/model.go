@@ -76,6 +76,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.mcps.resize(msg.Width, msg.Height-reservedHeight)
 		m.plugins.resize(msg.Width, msg.Height-reservedHeight)
+		m.skills.resize(msg.Width, msg.Height-reservedHeight)
+		m.agents.resize(msg.Width, msg.Height-reservedHeight)
+		m.commands.resize(msg.Width, msg.Height-reservedHeight)
 		m.profiles.resize(msg.Width, msg.Height-reservedHeight)
 		m.summary.resize(msg.Width, msg.Height-reservedHeight)
 		m.doctor.resize(msg.Width, msg.Height-reservedHeight)

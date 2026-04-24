@@ -24,7 +24,7 @@ func Run(p paths.Paths, projectPath string) error {
 }
 
 // Dump returns the TUI's first render for diagnostic purposes (no TTY, no interaction).
-// tab can be "mcps" | "plugins" | "profiles" | "summary".
+// tab can be "mcps" | "plugins" | "skills" | "agents" | "commands" | "profiles" | "summary" | "doctor".
 func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 	st, err := loadState(p, projectPath)
 	if err != nil {

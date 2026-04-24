@@ -126,13 +126,6 @@ func (v *skillView) update(msg tea.Msg) tea.Cmd {
 		v.rebuild()
 	case "A":
 		for _, s := range v.rows {
-			if !s.Enabled {
-				continue
-			}
-			// leave enabled rows alone; A enables — so remove any override
-			v.st.settings.RemoveSkillOverride(s.Name)
-		}
-		for _, s := range v.rows {
 			v.st.settings.RemoveSkillOverride(s.Name)
 		}
 		v.st.dirtySettings = true

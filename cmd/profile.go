@@ -293,7 +293,21 @@ var profileImportCmd = &cobra.Command{
 			return fmt.Errorf("profile %q already exists — use --overwrite to replace", sp.Name)
 		}
 
-		var dirtyClaude bool
+		if flagDryRun {
+			fmt.Printf("[dry-run] would import profile %q (%d MCPs)\n", sp.Name, len(sp.MCPs))
+			if len(sp.Configs) > 0 {
+				fmt.Printf("[dry-run] would add %d MCP config(s) to user scope\n", len(sp.Configs))
+			}
+			return nil
+		}
+
+		// Write profile first so a later failure doesn't leave orphaned user MCPs.
+		prof.Set(sp.Name, sp.MCPs)
+		if err := prof.Save(); err != nil {
+			return err
+		}
+
+		var addedConfigs int
 		if len(sp.Configs) > 0 {
 			cj, err := config.LoadClaudeJSON(p.ClaudeJSON)
 			if err != nil {
@@ -302,28 +316,15 @@ var profileImportCmd = &cobra.Command{
 			for name, cfg := range sp.Configs {
 				cj.SetUserMCP(name, cfg)
 			}
-			if flagDryRun {
-				fmt.Printf("[dry-run] would add %d MCP config(s) to user scope\n", len(sp.Configs))
-			} else {
-				if err := backupAndSave(p, cj); err != nil {
-					return err
-				}
-				dirtyClaude = true
+			if err := backupAndSave(p, cj); err != nil {
+				return err
 			}
-		}
-
-		prof.Set(sp.Name, sp.MCPs)
-		if flagDryRun {
-			fmt.Printf("[dry-run] would import profile %q (%d MCPs)\n", sp.Name, len(sp.MCPs))
-			return nil
-		}
-		if err := prof.Save(); err != nil {
-			return err
+			addedConfigs = len(sp.Configs)
 		}
 
 		msg := fmt.Sprintf("imported profile %q (%d MCPs)", sp.Name, len(sp.MCPs))
-		if dirtyClaude {
-			msg += fmt.Sprintf(", added %d MCP config(s) to user scope", len(sp.Configs))
+		if addedConfigs > 0 {
+			msg += fmt.Sprintf(", added %d MCP config(s) to user scope", addedConfigs)
 		}
 		fmt.Println(msg)
 		return nil

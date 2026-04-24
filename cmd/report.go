@@ -106,7 +106,7 @@ Optionally filter to projects whose path starts with --base.`,
 		if sweepBase != "" {
 			filtered := projectPaths[:0]
 			for _, pp := range projectPaths {
-				if strings.HasPrefix(pp, sweepBase) {
+				if pp == sweepBase || strings.HasPrefix(pp, sweepBase+"/") {
 					filtered = append(filtered, pp)
 				}
 			}

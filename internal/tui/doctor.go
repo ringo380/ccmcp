@@ -57,9 +57,6 @@ func tuiMemoryPath(claudeConfigDir, projectPath string) string {
 }
 
 func (v *doctorView) update(msg tea.Msg) tea.Cmd {
-	if !v.loaded {
-		v.runLint()
-	}
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return nil
@@ -68,8 +65,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 	pageH := v.pageHeight()
 	switch key.String() {
 	case "r":
-		v.loaded = false
-		v.runLint()
+		v.loaded = false // render() will re-run lint on the next frame
 	case "j", "down":
 		if v.top < totalLines-pageH {
 			v.top++
@@ -105,7 +101,6 @@ func (v *doctorView) render() string {
 	if !v.loaded {
 		v.runLint()
 	}
-
 	total := 0
 	for _, g := range v.groups {
 		total += len(g.issues)
