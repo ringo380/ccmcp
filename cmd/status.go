@@ -6,7 +6,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ringo380/ccmcp/internal/agents"
+	"github.com/ringo380/ccmcp/internal/commands"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +43,10 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 		pluginMCPs := config.ScanEnabledPluginMCPs(settings, installed, p.PluginsDir)
+		discoveredSkills := skills.Discover(p.ClaudeConfigDir, proj, settings, installed, p.PluginsDir)
+		discoveredAgents := agents.Discover(p.ClaudeConfigDir, proj, settings, installed, p.PluginsDir)
+		discoveredCmds := commands.Discover(p.ClaudeConfigDir, proj, settings, installed, p.PluginsDir)
+		conflicts := commands.FindConflicts(discoveredCmds, discoveredSkills)
 
 		// mcp.json servers (project-shared)
 		var mcpjsonNames []string
@@ -51,6 +58,12 @@ var statusCmd = &cobra.Command{
 		overrides := cj.ProjectDisabledMcpServers(proj)
 		claudeai := cj.ClaudeAiEverConnected()
 
+		skillEnabled := 0
+		for _, s := range discoveredSkills {
+			if s.Enabled {
+				skillEnabled++
+			}
+		}
 		data := struct {
 			ProjectPath    string   `json:"projectPath"`
 			UserMCPs       []string `json:"userMcps"`
@@ -65,6 +78,11 @@ var statusCmd = &cobra.Command{
 			PluginsActive  int      `json:"pluginsActive"`
 			PluginsTotal   int      `json:"pluginsTotal"`
 			Installed      int      `json:"pluginsInstalled"`
+			SkillsTotal    int      `json:"skillsTotal"`
+			SkillsEnabled  int      `json:"skillsEnabled"`
+			AgentsTotal    int      `json:"agentsTotal"`
+			CommandsTotal  int      `json:"commandsTotal"`
+			Conflicts      []commands.Conflict `json:"commandConflicts"`
 		}{
 			ProjectPath:    proj,
 			UserMCPs:       cj.UserMCPNames(),
@@ -77,6 +95,11 @@ var statusCmd = &cobra.Command{
 			Overrides:      overrides,
 			Stashed:        stash.Names(),
 			Installed:      len(installed.List()),
+			SkillsTotal:    len(discoveredSkills),
+			SkillsEnabled:  skillEnabled,
+			AgentsTotal:    len(discoveredAgents),
+			CommandsTotal:  len(discoveredCmds),
+			Conflicts:      conflicts,
 		}
 		for _, e := range settings.PluginEntries() {
 			data.PluginsTotal++
@@ -142,6 +165,17 @@ var statusCmd = &cobra.Command{
 		}
 		section("Stashed MCPs (parked, not active)", data.Stashed)
 		fmt.Printf("Plugins: %d enabled / %d known (%d installed)\n", data.PluginsActive, data.PluginsTotal, data.Installed)
+		fmt.Printf("Skills:  %d/%d enabled  |  Agents: %d  |  Commands: %d\n", data.SkillsEnabled, data.SkillsTotal, data.AgentsTotal, data.CommandsTotal)
+		if len(data.Conflicts) > 0 {
+			fmt.Printf("\n⚠  %d slash-command conflict(s) — run `ccmcp command conflicts` for details\n", len(data.Conflicts))
+			for i, c := range data.Conflicts {
+				if i >= 3 {
+					fmt.Printf("   … and %d more\n", len(data.Conflicts)-3)
+					break
+				}
+				fmt.Printf("   - %s /%s\n", c.Kind, c.Effective)
+			}
+		}
 		return nil
 	},
 }

@@ -13,8 +13,12 @@ type tabID int
 const (
 	tabMCPs tabID = iota
 	tabPlugins
+	tabSkills
+	tabAgents
+	tabCommands
 	tabProfiles
 	tabSummary
+	tabDoctor
 )
 
 var tabs = []struct {
@@ -23,8 +27,12 @@ var tabs = []struct {
 }{
 	{tabMCPs, "MCPs"},
 	{tabPlugins, "Plugins"},
+	{tabSkills, "Skills"},
+	{tabAgents, "Agents"},
+	{tabCommands, "Commands"},
 	{tabProfiles, "Profiles"},
 	{tabSummary, "Summary"},
+	{tabDoctor, "Doctor"},
 }
 
 type model struct {
@@ -37,8 +45,12 @@ type model struct {
 
 	mcps     *mcpView
 	plugins  *pluginView
+	skills   *skillView
+	agents   *agentView
+	commands *commandView
 	profiles *profileView
 	summary  *summaryView
+	doctor   *doctorView
 }
 
 func newModel(st *state) *model {
@@ -46,8 +58,12 @@ func newModel(st *state) *model {
 		st:       st,
 		mcps:     newMCPView(st),
 		plugins:  newPluginView(st),
+		skills:   newSkillView(st),
+		agents:   newAgentView(st),
+		commands: newCommandView(st),
 		profiles: newProfileView(st),
 		summary:  newSummaryView(st),
+		doctor:   newDoctorView(st),
 	}
 }
 
@@ -60,8 +76,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.mcps.resize(msg.Width, msg.Height-reservedHeight)
 		m.plugins.resize(msg.Width, msg.Height-reservedHeight)
+		m.skills.resize(msg.Width, msg.Height-reservedHeight)
+		m.agents.resize(msg.Width, msg.Height-reservedHeight)
+		m.commands.resize(msg.Width, msg.Height-reservedHeight)
 		m.profiles.resize(msg.Width, msg.Height-reservedHeight)
 		m.summary.resize(msg.Width, msg.Height-reservedHeight)
+		m.doctor.resize(msg.Width, msg.Height-reservedHeight)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -120,10 +140,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tab = tabPlugins
 			return m, nil
 		case "3":
-			m.tab = tabProfiles
+			m.tab = tabSkills
 			return m, nil
 		case "4":
+			m.tab = tabAgents
+			return m, nil
+		case "5":
+			m.tab = tabCommands
+			return m, nil
+		case "6":
+			m.tab = tabProfiles
+			return m, nil
+		case "7":
 			m.tab = tabSummary
+			return m, nil
+		case "8":
+			m.tab = tabDoctor
 			return m, nil
 		}
 	}
@@ -146,6 +178,17 @@ func (m *model) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.plugins.flash = ""
 		}
 		return m, cmd
+	case tabSkills:
+		cmd := m.skills.update(msg)
+		if m.skills.flash != "" {
+			m.message = m.skills.flash
+			m.skills.flash = ""
+		}
+		return m, cmd
+	case tabAgents:
+		return m, m.agents.update(msg)
+	case tabCommands:
+		return m, m.commands.update(msg)
 	case tabProfiles:
 		cmd := m.profiles.update(msg)
 		if m.profiles.flash != "" {
@@ -155,6 +198,8 @@ func (m *model) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case tabSummary:
 		return m, m.summary.update(msg)
+	case tabDoctor:
+		return m, m.doctor.update(msg)
 	}
 	return m, nil
 }
@@ -165,10 +210,18 @@ func (m *model) activeView() view {
 		return m.mcps
 	case tabPlugins:
 		return m.plugins
+	case tabSkills:
+		return m.skills
+	case tabAgents:
+		return m.agents
+	case tabCommands:
+		return m.commands
 	case tabProfiles:
 		return m.profiles
 	case tabSummary:
 		return m.summary
+	case tabDoctor:
+		return m.doctor
 	}
 	return m.mcps
 }

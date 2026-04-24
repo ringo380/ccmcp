@@ -67,6 +67,22 @@ func renderHelp(width int) string {
 	kbd("/", "filter by substring; c clears")
 	kbd("j/k or ↑/↓", "navigate; g/G top/bottom")
 
+	section("Skills tab")
+	kbd("space", "toggle skill enabled/disabled (writes skillOverrides)")
+	kbd("A / N", "bulk enable / disable every visible skill")
+	kbd("/", "filter by substring; c clears")
+	kbd("j/k or ↑/↓", "navigate; g/G top/bottom")
+
+	section("Agents tab")
+	kbd("/", "filter by substring; c clears")
+	kbd("j/k or ↑/↓", "navigate; g/G top/bottom")
+	kbd("(CRUD)", "use CLI: ccmcp agent new|move|rm|show")
+
+	section("Commands tab")
+	kbd("!", "toggle conflicts-only view (shows ⚠ rows)")
+	kbd("/", "filter by substring; c clears")
+	kbd("j/k or ↑/↓", "navigate; g/G top/bottom")
+
 	section("Profiles tab")
 	kbd("enter / space", "apply profile (replaces current project's MCPs)")
 	kbd("n", "create profile from current project")
@@ -78,9 +94,13 @@ func renderHelp(width int) string {
 	kbd("pgup / pgdn", "page")
 	kbd("g / home", "jump to top")
 
+	section("Doctor tab")
+	kbd("r", "re-run lint checks")
+	kbd("j/k or ↑/↓", "scroll; g/G top/bottom")
+
 	section("Global")
 	kbd("tab / shift+tab", "cycle tabs")
-	kbd("1 / 2 / 3 / 4", "jump to MCPs / Plugins / Profiles / Summary")
+	kbd("1–8", "jump to MCPs / Plugins / Skills / Agents / Commands / Profiles / Summary / Doctor")
 	kbd("w", "save staged changes (atomic + backup)")
 	kbd("q", "quit (warns if unsaved)")
 	kbd("Q", "force quit, discard pending changes")

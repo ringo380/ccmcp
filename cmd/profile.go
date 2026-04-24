@@ -1,12 +1,27 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/spf13/cobra"
 )
+
+// ShareableProfile is the JSON format for ccmcp profile export / import.
+type ShareableProfile struct {
+	Version int            `json:"version"`
+	Name    string         `json:"name"`
+	MCPs    []string       `json:"mcps"`
+	Configs map[string]any `json:"configs,omitempty"`
+}
+
+var profileExportOut string
+var profileWithConfig bool
+var profileOverwrite bool
 
 var profileCmd = &cobra.Command{
 	Use:     "profile",
@@ -182,7 +197,145 @@ var profileUseCmd = &cobra.Command{
 	},
 }
 
+var profileExportCmd = &cobra.Command{
+	Use:   "export <name>",
+	Short: "Export a profile as a shareable JSON file",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p, err := resolvePaths()
+		if err != nil {
+			return err
+		}
+		prof, err := config.LoadProfiles(p.Profiles)
+		if err != nil {
+			return err
+		}
+		mcps, ok := prof.MCPs(args[0])
+		if !ok {
+			return fmt.Errorf("profile %q not found", args[0])
+		}
+
+		sp := ShareableProfile{Version: 1, Name: args[0], MCPs: mcps}
+
+		if profileWithConfig {
+			cj, err := config.LoadClaudeJSON(p.ClaudeJSON)
+			if err != nil {
+				return err
+			}
+			stash, err := config.LoadStash(p.Stash)
+			if err != nil {
+				return err
+			}
+			proj, err := projectPath()
+			if err != nil {
+				return err
+			}
+			sp.Configs = make(map[string]any)
+			for _, name := range mcps {
+				cfg, found := findMCPConfig(name, cj, stash, proj)
+				if found {
+					sp.Configs[name] = cfg
+				}
+			}
+		}
+
+		b, err := json.MarshalIndent(sp, "", "  ")
+		if err != nil {
+			return err
+		}
+
+		if profileExportOut != "" {
+			if err := os.WriteFile(profileExportOut, append(b, '\n'), 0o600); err != nil {
+				return err
+			}
+			fmt.Printf("exported profile %q to %s\n", args[0], profileExportOut)
+		} else {
+			fmt.Printf("%s\n", b)
+		}
+		return nil
+	},
+}
+
+var profileImportCmd = &cobra.Command{
+	Use:   "import [file]",
+	Short: "Import a profile from a shareable JSON file (or stdin with '-')",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var data []byte
+		var err error
+		if len(args) == 0 || args[0] == "-" {
+			data, err = io.ReadAll(os.Stdin)
+		} else {
+			data, err = os.ReadFile(args[0])
+		}
+		if err != nil {
+			return fmt.Errorf("read: %w", err)
+		}
+
+		var sp ShareableProfile
+		if err := json.Unmarshal(data, &sp); err != nil {
+			return fmt.Errorf("parse: %w", err)
+		}
+		if sp.Name == "" {
+			return fmt.Errorf("invalid profile file: missing name")
+		}
+
+		p, err := resolvePaths()
+		if err != nil {
+			return err
+		}
+		prof, err := config.LoadProfiles(p.Profiles)
+		if err != nil {
+			return err
+		}
+
+		if _, exists := prof.MCPs(sp.Name); exists && !profileOverwrite {
+			return fmt.Errorf("profile %q already exists — use --overwrite to replace", sp.Name)
+		}
+
+		if flagDryRun {
+			fmt.Printf("[dry-run] would import profile %q (%d MCPs)\n", sp.Name, len(sp.MCPs))
+			if len(sp.Configs) > 0 {
+				fmt.Printf("[dry-run] would add %d MCP config(s) to user scope\n", len(sp.Configs))
+			}
+			return nil
+		}
+
+		// Write profile first so a later failure doesn't leave orphaned user MCPs.
+		prof.Set(sp.Name, sp.MCPs)
+		if err := prof.Save(); err != nil {
+			return err
+		}
+
+		var addedConfigs int
+		if len(sp.Configs) > 0 {
+			cj, err := config.LoadClaudeJSON(p.ClaudeJSON)
+			if err != nil {
+				return err
+			}
+			for name, cfg := range sp.Configs {
+				cj.SetUserMCP(name, cfg)
+			}
+			if err := backupAndSave(p, cj); err != nil {
+				return err
+			}
+			addedConfigs = len(sp.Configs)
+		}
+
+		msg := fmt.Sprintf("imported profile %q (%d MCPs)", sp.Name, len(sp.MCPs))
+		if addedConfigs > 0 {
+			msg += fmt.Sprintf(", added %d MCP config(s) to user scope", addedConfigs)
+		}
+		fmt.Println(msg)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(profileCmd)
 	profileCmd.AddCommand(profileListCmd, profileShowCmd, profileSaveCmd, profileUseCmd, profileDeleteCmd)
+	profileCmd.AddCommand(profileExportCmd, profileImportCmd)
+	profileExportCmd.Flags().StringVar(&profileExportOut, "out", "", "write to file instead of stdout")
+	profileExportCmd.Flags().BoolVar(&profileWithConfig, "with-config", false, "embed resolved MCP configs in the export")
+	profileImportCmd.Flags().BoolVar(&profileOverwrite, "overwrite", false, "replace existing profile with the same name")
 }
