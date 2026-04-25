@@ -243,7 +243,7 @@
   <div class="wrap">
     <div class="title-row">
       <h1><span class="prompt">&gt;_</span> ccmcp</h1>
-      <span class="tag" id="version">v0.2.4</span>
+      <span class="tag" id="version">v0.2.5</span>
     </div>
     <p class="lede">A dynamic CLI and TUI for managing Claude Code's MCP servers, plugins, and per-project overrides across every scope Claude Code honors.</p>
     <div class="cta">
@@ -265,9 +265,9 @@
         <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
         <span class="title">ccmcp — MCPs tab</span>
       </div>
-      <div class="term-body"><span class="acc">ccmcp</span> <span class="dim">v0.2.4</span>    <span class="dim">project:</span> ~/git/ccmcp    <span class="warn">UNSAVED</span>
+      <div class="term-body"><span class="acc">ccmcp</span> <span class="dim">v0.2.5</span>    <span class="dim">project:</span> ~/git/ccmcp    <span class="warn">UNSAVED</span>
 <span class="dim">──────────────────────────────────────────────────────────────────</span>
-<span class="acc">[MCPs]</span>  Plugins  Profiles  Summary                   <span class="dim">scope: effective</span>
+<span class="acc">[MCPs]</span>  Plugins  Skills  Agents  Commands  Profiles  Summary  Doctor   <span class="dim">scope: effective</span>
 
   <span class="grn">[x]</span> <span class="dim">u</span>  context7              user-scope stdio
   <span class="grn">[x]</span> <span class="dim">l</span>  github                local to this project
@@ -376,7 +376,19 @@ go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
       </div>
       <div class="card">
         <h3>Scriptable</h3>
-        <p>Every TUI action has a CLI equivalent. <code>ccmcp status --json</code> for pipelines. 70 tests cover readers, writers, and a headless TUI state machine.</p>
+        <p>Every TUI action has a CLI equivalent. <code>ccmcp status --json</code> for pipelines. 158 tests cover readers, writers, and a headless TUI state machine.</p>
+      </div>
+      <div class="card">
+        <h3>Skills, Agents &amp; Commands</h3>
+        <p>List, enable/disable, create, move, and remove skills, agents, and slash commands across user, project, and plugin scopes. <code>ccmcp command conflicts</code> surfaces shadowed commands before they bite.</p>
+      </div>
+      <div class="card">
+        <h3>Doctor</h3>
+        <p>Lint <code>CLAUDE.md</code> and <code>MEMORY.md</code> for structural issues — stale entries, missing sections, broken pointers. Add <code>--llm-review</code> for an LLM quality pass via Anthropic or OpenAI.</p>
+      </div>
+      <div class="card">
+        <h3>Reports</h3>
+        <p>Point-in-time snapshots, cross-project sweep tables, drift diffs against a baseline, and full stale-override audits — all in JSON, Markdown, or CSV.</p>
       </div>
     </div>
   </div>
@@ -398,11 +410,32 @@ ccmcp mcp stash   [&lt;name&gt;...]                  <span class="muted"># user-
 ccmcp mcp restore [&lt;name&gt;...]                  <span class="muted"># stash → user-scope (alias: unstash)</span>
 
 ccmcp profile save|list|show|use|delete &lt;name&gt; [&lt;mcp&gt;...]
+ccmcp profile export &lt;name&gt; [--out FILE] [--with-config]
+ccmcp profile import [FILE|-] [--overwrite]
+
+ccmcp skill   list [--scope user|project|plugin] [--enabled|--disabled]
+ccmcp skill   enable|disable &lt;name&gt; [&lt;name&gt;...]
+ccmcp skill   new|move|rm|show &lt;name&gt; [--scope user|project]
+
+ccmcp agent   list|new|move|rm|show &lt;name&gt;
+
+ccmcp command list [--scope user|project|plugin]
+ccmcp command conflicts [--include-ignored] [--json]
+ccmcp command resolve &lt;effective-name&gt; [--strategy disable-skill|ignore|list]
+
+ccmcp report snapshot [--out FILE] [--format json|md|csv]
+ccmcp report sweep    [--base PATH] [--format json|md|csv]
+ccmcp report drift    --from &lt;snapshot.json&gt; [--format json|md]
+ccmcp report audit    [--format json|md|csv]
+
+ccmcp doctor md [--user] [--memory-dir DIR]
+ccmcp doctor md --llm-review [--provider anthropic|openai]
+
 ccmcp plugin list [--enabled|--disabled]
 ccmcp plugin enable|disable|install|remove &lt;id&gt; [--marketplace M] [--purge]
 ccmcp marketplace list|add|remove &lt;name&gt; [--source github|git|local] [--repo R]
 
-ccmcp tui --dump [--tab mcps|plugins|profiles|summary]</code></pre>
+ccmcp tui --dump [--tab mcps|plugins|skills|agents|commands|profiles|summary|doctor]</code></pre>
     <p class="muted"><strong>Global flags:</strong> <code>--path &lt;dir&gt;</code>, <code>--dry-run</code>, <code>--json</code>, <code>--no-color</code>.</p>
     <p>Full key reference, scope terminology, and implementation notes live in the <a href="https://github.com/ringo380/ccmcp#readme">README</a>.</p>
   </div>
