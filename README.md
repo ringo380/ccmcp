@@ -236,13 +236,21 @@ go test ./...
 ## Project layout
 
 ```
-cmd/              cobra subcommands (status, mcp, profile, plugin, marketplace, compat aliases)
+cmd/              cobra subcommands (status, mcp, profile, plugin, marketplace,
+                  skill, agent, command, report, doctor, compat aliases)
 internal/
-  config/         readers + writers for every Claude Code config file; override-key helpers
+  agents/         agent CRUD + file-backed store
+  classify/       override-key classifier (7 buckets)
+  commands/       command discovery, conflict detection, ignore list
+  config/         readers + writers for every Claude Code config file
+  doctor/         CLAUDE.md + MEMORY.md structural linter
   install/        plugin marketplace installer (4 source formats)
   paths/          config path resolution ($CLAUDE_CONFIG_DIR aware)
+  report/         snapshot / sweep / drift / audit report generators
+  skills/         skill CRUD + file-backed store
   stringslice/    shared slice helpers
-  tui/            bubbletea app: 4 tabs, scope-aware toggle, move, bulk
+  tui/            bubbletea app: 8 tabs (MCPs, Plugins, Skills, Agents,
+                  Commands, Profiles, Summary, Doctor)
 main.go
 ```
 
