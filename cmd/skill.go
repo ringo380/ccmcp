@@ -45,8 +45,8 @@ func skillSetEnabled(enable bool) func(*cobra.Command, []string) error {
 		var changed []string
 		for _, name := range args {
 			if enable {
-				_, has := settings.SkillOverride(name)
-				if has {
+				cur, has := settings.SkillOverride(name)
+				if has && cur == "off" {
 					changed = append(changed, name)
 				}
 			} else {
