@@ -6,6 +6,36 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-04-24
+
+### Added
+
+- **Skills, Agents & Commands TUI tabs** — list, enable/disable, create,
+  move, and remove skills, agents, and slash commands across user, project,
+  and plugin scopes directly from the TUI.
+- **Doctor tab** — lint `CLAUDE.md` and `MEMORY.md` for structural issues;
+  add `--llm-review` for an LLM quality pass.
+- **Reports** — `ccmcp report snapshot|sweep|drift|audit` for point-in-time
+  dumps, cross-project sweep tables, drift diffs, and stale-override audits
+  (JSON, Markdown, or CSV output).
+- **Profile export/import** — `ccmcp profile export <name> [--with-config]`
+  and `ccmcp profile import [FILE|-] [--overwrite]` for sharing profiles
+  across machines or teams.
+- **Command conflict detection** — `ccmcp command conflicts` and
+  `ccmcp command resolve` surface and resolve shadowed slash commands.
+
+### Fixed
+
+- `command resolve --strategy ignore --dry-run` now correctly reports
+  "already ignored" instead of "would add" when the entry is already
+  present (was skipping the read-only `ig.Has()` check).
+- `skill enable --dry-run` no longer reports or mutates skills that already
+  have an explicit `"on"` override (first-pass change detection now checks
+  `cur == "off"` to mirror the disable path).
+- `rebuild()` backing-array aliasing in Skills, Agents, and Commands TUI
+  tabs (was using `v.rows[:0]` + append which aliased the unfiltered slice).
+- Flash message drain wired for Agents and Commands tabs in `updateActive()`.
+
 ## [0.2.5] — 2026-04-21
 
 ### Changed
