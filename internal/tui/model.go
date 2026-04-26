@@ -186,9 +186,19 @@ func (m *model) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	case tabAgents:
-		return m, m.agents.update(msg)
+		cmd := m.agents.update(msg)
+		if m.agents.flash != "" {
+			m.message = m.agents.flash
+			m.agents.flash = ""
+		}
+		return m, cmd
 	case tabCommands:
-		return m, m.commands.update(msg)
+		cmd := m.commands.update(msg)
+		if m.commands.flash != "" {
+			m.message = m.commands.flash
+			m.commands.flash = ""
+		}
+		return m, cmd
 	case tabProfiles:
 		cmd := m.profiles.update(msg)
 		if m.profiles.flash != "" {

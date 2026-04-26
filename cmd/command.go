@@ -163,7 +163,7 @@ var commandResolveCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			if !ig.Add(match.Effective) {
+			if ig.Has(match.Effective) {
 				fmt.Printf("%q was already ignored\n", match.Effective)
 				return nil
 			}
@@ -171,6 +171,7 @@ var commandResolveCmd = &cobra.Command{
 				fmt.Printf("[dry-run] would add %q to %s\n", match.Effective, p.Ignores)
 				return nil
 			}
+			ig.Add(match.Effective)
 			if err := ig.Save(); err != nil {
 				return err
 			}

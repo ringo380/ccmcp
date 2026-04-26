@@ -41,10 +41,12 @@ func skillSetEnabled(enable bool) func(*cobra.Command, []string) error {
 		if err != nil {
 			return err
 		}
+		// First pass: determine what would change without mutating settings.
 		var changed []string
 		for _, name := range args {
 			if enable {
-				if settings.RemoveSkillOverride(name) {
+				cur, has := settings.SkillOverride(name)
+				if has && cur == "off" {
 					changed = append(changed, name)
 				}
 			} else {
@@ -52,7 +54,6 @@ func skillSetEnabled(enable bool) func(*cobra.Command, []string) error {
 				if has && cur == "off" {
 					continue
 				}
-				settings.SetSkillOverride(name, "off")
 				changed = append(changed, name)
 			}
 		}
@@ -67,6 +68,14 @@ func skillSetEnabled(enable bool) func(*cobra.Command, []string) error {
 		if flagDryRun {
 			fmt.Printf("[dry-run] would %s: %s\n", verb, strings.Join(changed, ", "))
 			return nil
+		}
+		// Apply changes only after dry-run check.
+		for _, name := range changed {
+			if enable {
+				settings.RemoveSkillOverride(name)
+			} else {
+				settings.SetSkillOverride(name, "off")
+			}
 		}
 		if err := config.Backup(settings.Path, p.BackupsDir); err != nil {
 			return err
