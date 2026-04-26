@@ -163,12 +163,12 @@ var commandResolveCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			if !ig.Add(match.Effective) {
-				fmt.Printf("%q was already ignored\n", match.Effective)
-				return nil
-			}
 			if flagDryRun {
 				fmt.Printf("[dry-run] would add %q to %s\n", match.Effective, p.Ignores)
+				return nil
+			}
+			if !ig.Add(match.Effective) {
+				fmt.Printf("%q was already ignored\n", match.Effective)
 				return nil
 			}
 			if err := ig.Save(); err != nil {

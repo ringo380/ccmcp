@@ -42,12 +42,13 @@ func (v *skillView) rebuild() {
 		v.rows = all
 	} else {
 		needle := strings.ToLower(v.filterText)
-		v.rows = v.rows[:0]
+		var filtered []skills.Skill
 		for _, s := range all {
 			if strings.Contains(strings.ToLower(s.Name), needle) {
-				v.rows = append(v.rows, s)
+				filtered = append(filtered, s)
 			}
 		}
+		v.rows = filtered
 	}
 	if v.index >= len(v.rows) {
 		v.index = len(v.rows) - 1

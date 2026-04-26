@@ -24,6 +24,8 @@ type agentView struct {
 	filter       textinput.Model
 	filterActive bool
 	filterText   string
+
+	flash string
 }
 
 func newAgentView(st *state) *agentView {
@@ -41,12 +43,13 @@ func (v *agentView) rebuild() {
 		v.rows = all
 	} else {
 		needle := strings.ToLower(v.filterText)
-		v.rows = v.rows[:0]
+		var filtered []agents.Agent
 		for _, a := range all {
 			if strings.Contains(strings.ToLower(a.Name), needle) {
-				v.rows = append(v.rows, a)
+				filtered = append(filtered, a)
 			}
 		}
+		v.rows = filtered
 	}
 	if v.index >= len(v.rows) {
 		v.index = len(v.rows) - 1

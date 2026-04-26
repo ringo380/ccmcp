@@ -27,6 +27,8 @@ type commandView struct {
 
 	conflictsOnly bool
 	conflictSet   map[string]commands.ConflictKind
+
+	flash string
 }
 
 func newCommandView(st *state) *commandView {
@@ -46,7 +48,7 @@ func (v *commandView) rebuild() {
 	for _, c := range conflicts {
 		v.conflictSet[c.Effective] = c.Kind
 	}
-	v.rows = v.rows[:0]
+	var filtered []commands.Command
 	for _, c := range all {
 		if v.conflictsOnly {
 			if _, ok := v.conflictSet[c.Effective]; !ok {
@@ -62,8 +64,9 @@ func (v *commandView) rebuild() {
 				continue
 			}
 		}
-		v.rows = append(v.rows, c)
+		filtered = append(filtered, c)
 	}
+	v.rows = filtered
 	if v.index >= len(v.rows) {
 		v.index = len(v.rows) - 1
 	}
