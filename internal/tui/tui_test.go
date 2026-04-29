@@ -180,8 +180,12 @@ func TestTUIEffectiveSpaceTogglesPerProjectOverride(t *testing.T) {
 func TestTUIEffectiveSpaceOnStashHints(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
-	// find a stash row and place cursor there
-	for i, r := range m.mcps.rows {
+	// Stash rows are hidden in the effective view by default — reveal them so this
+	// "space on a stash row is a no-op" assertion can actually reach a stash row.
+	m.mcps.showHidden = true
+	// find a stash row and place cursor there (use visible-row index so update() sees it)
+	visible := m.mcps.visibleRows()
+	for i, r := range visible {
 		if r.Source == "stash" {
 			m.mcps.index = i
 			break
@@ -205,8 +209,14 @@ func TestTUIEffectiveViewShowsUserAndLocalMCPs(t *testing.T) {
 			t.Errorf("effective view should list %q", name)
 		}
 	}
+	// Stash entries are HIDDEN by default in the effective scope (they don't load).
+	// Pressing `H` reveals them.
+	if strings.Contains(view, "stashed-a") {
+		t.Error("stashed MCPs should NOT appear in the default effective view (press H to reveal)")
+	}
+	view = drive(m, "H")
 	if !strings.Contains(view, "stashed-a") {
-		t.Error("stashed MCPs should still appear in the list (as inactive)")
+		t.Error("after pressing H, stashed MCPs should appear in the effective view")
 	}
 }
 
@@ -349,6 +359,9 @@ func TestTUIStashShortcut(t *testing.T) {
 func TestTUIUnstashShortcut(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
+	// Stash rows are hidden in the effective scope by default — reveal them so the
+	// filter can land on `stashed-a`.
+	m.mcps.showHidden = true
 
 	// Filter to an existing stash row, press S → should move it to user scope (unstash).
 	drive(m, "/")
@@ -398,6 +411,52 @@ func TestTUIMCPScopeCycling(t *testing.T) {
 		if m.mcps.scope != want {
 			t.Errorf("cycle: want %s, got %s", want, m.mcps.scope)
 		}
+	}
+}
+
+// TestTUIEffectiveHidesNoise covers the default-view filtering: stash rows, MCPs from
+// installed-but-globally-disabled plugins, and orphan rows for stale `disabledMcpServers`
+// keys all stay hidden until the user presses `H`. Other scopes are unaffected.
+func TestTUIEffectiveHidesNoise(t *testing.T) {
+	st, _ := buildState(t)
+	// Inject an orphan override: a plain stdio name that has no source anywhere.
+	// classify.Classify treats this as OrphanStdio; rebuild() emits a row with
+	// UnknownReason set, which isHiddenInEffective should suppress.
+	st.cj.AddProjectDisabledMcpServer(st.project, "ghost-orphan")
+	m := newModel(st)
+	view := drive(m)
+
+	// Stash rows hidden by default
+	if strings.Contains(view, "stashed-a") || strings.Contains(view, "stashed-b") {
+		t.Error("stash rows should be hidden by default in effective scope")
+	}
+	// Orphan hidden by default
+	if strings.Contains(view, "ghost-orphan") {
+		t.Error("orphan rows should be hidden by default in effective scope")
+	}
+	// Title should advertise hidden count + the H hint
+	if !strings.Contains(view, "hidden") || !strings.Contains(view, "H") {
+		t.Errorf("title should include hidden count and `H` hint; got:\n%s", view)
+	}
+
+	// Press H — everything reappears
+	view = drive(m, "H")
+	for _, want := range []string{"stashed-a", "stashed-b", "ghost-orphan"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("after H, expected %q to appear; got:\n%s", want, view)
+		}
+	}
+
+	// Press H again — back to hidden
+	view = drive(m, "H")
+	if strings.Contains(view, "stashed-a") {
+		t.Error("second H should re-hide stash rows")
+	}
+
+	// Other scopes: stash scope should always show stash rows regardless of showHidden
+	view = drive(m, "s", "s", "s", "s") // effective → local → user → project → stash
+	if !strings.Contains(view, "stashed-a") {
+		t.Errorf("stash scope should always show stash rows; got:\n%s", view)
 	}
 }
 
@@ -708,6 +767,9 @@ func TestTUIDoctorTabRerun(t *testing.T) {
 func TestTUIFilterNarrowsVisible(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
+	// Stash rows are hidden in the effective scope by default; this test searches for
+	// them, so reveal hidden rows so the filter has something to match.
+	m.mcps.showHidden = true
 
 	// Open filter, type "stashed", press enter (filterActive=false now, value stays)
 	_ = drive(m, "/")
