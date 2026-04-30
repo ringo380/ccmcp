@@ -47,6 +47,13 @@ type mcpView struct {
 	moveActive bool
 	moveForKey string // RowKey (not just Name — we need the source too)
 
+	// showHidden, only meaningful in scopeEffective: when false (the default), rows that
+	// can never load in this project are filtered out — stash entries, plugin MCPs whose
+	// plugin is globally disabled, and orphan entries (UnknownReason set). The point of
+	// the effective scope is to mirror what `/mcp` shows; those rows just clutter it.
+	// Press `H` to flip and reveal them (rows are interleaved alphabetically — no divider).
+	showHidden bool
+
 	flash string
 }
 
@@ -256,6 +263,37 @@ func (v *mcpView) rebuild() {
 	}
 }
 
+// isHiddenInEffective: in the effective scope, rows that are neither loading now nor
+// merely overridden-here have no business cluttering the default view. They're stash
+// entries, MCPs from globally-disabled plugins, and orphan rows for stale override keys.
+// Press `H` to reveal them.
+//
+// Order matters: sources that can never load (stash, disabled plugins, orphans) are
+// hidden BEFORE the DisabledHere check, because a per-project override on top of a
+// non-loading source is redundant — the override won't kick in until the source itself
+// becomes loadable, at which point the user is in the Plugins/Stash tab anyway.
+//
+// UnknownReason is the orphan-row contract from rebuild() (set only inside the orphan
+// loop). If a future bucket reuses that field for a row that should still be visible,
+// this gate must be revisited.
+func isHiddenInEffective(r mcpRow) bool {
+	if r.UnknownReason != "" {
+		return true // orphan — no source to recover from
+	}
+	switch r.Source {
+	case config.SourceStash:
+		return true
+	case config.SourcePlugin:
+		if !r.PluginEnabled {
+			return true // installed-but-disabled plugin: MCP can't load regardless of DisabledHere
+		}
+	}
+	if r.DisabledHere {
+		return false // overridden here but recoverable with `space` — keep visible
+	}
+	return false
+}
+
 // isEffective: would Claude Code actually load this row in the current project?
 // Sources that can be effective: user, local, project (.mcp.json unless denied),
 // enabled plugins (PluginEnabled=true), claude.ai. Disabled-but-installed plugin
@@ -394,6 +432,19 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 		v.bulkToggle(visible, true)
 	case "N":
 		v.bulkToggle(visible, false)
+	case "H":
+		// Reveal/hide the noise rows (stash, disabled-plugin, orphans) in the effective scope.
+		// In other scopes this is a no-op — visibleRows() doesn't apply the filter there.
+		// Reset cursor + viewport so toggling doesn't leave the cursor pointing at an
+		// arbitrary row whose content shifted under it.
+		v.showHidden = !v.showHidden
+		v.index = 0
+		v.top = 0
+		if v.showHidden {
+			v.flash = styleDim.Render("showing hidden rows (stash / disabled plugins / orphans)")
+		} else {
+			v.flash = styleDim.Render("hiding inactive rows — press H to show again")
+		}
 	}
 	return nil
 }
@@ -761,9 +812,13 @@ func (v *mcpView) doMove(rowKey, target string) {
 
 func (v *mcpView) visibleRows() []mcpRow {
 	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
+	hideNoise := v.scope == scopeEffective && !v.showHidden
 	out := make([]mcpRow, 0, len(v.rows))
 	for _, r := range v.rows {
 		if q != "" && !strings.Contains(strings.ToLower(r.Name), q) {
+			continue
+		}
+		if hideNoise && isHiddenInEffective(r) {
 			continue
 		}
 		out = append(out, r)
@@ -771,9 +826,59 @@ func (v *mcpView) visibleRows() []mcpRow {
 	return out
 }
 
+// hiddenCount returns how many rows the effective-scope filter is currently suppressing
+// (after the user's filter input is applied). Used in the title bar so users know noise
+// exists even when collapsed.
+func (v *mcpView) hiddenCount() int {
+	if v.scope != scopeEffective {
+		return 0
+	}
+	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
+	n := 0
+	for _, r := range v.rows {
+		if q != "" && !strings.Contains(strings.ToLower(r.Name), q) {
+			continue
+		}
+		if isHiddenInEffective(r) {
+			n++
+		}
+	}
+	return n
+}
+
 func (v *mcpView) render() string {
 	visible := v.visibleRows()
-	title := fmt.Sprintf("MCPs — scope: %s  %s  (%d shown)", styleBadge.Render(v.scope), styleDim.Render(scopeDesc[v.scope]), len(visible))
+	title := fmt.Sprintf("MCPs — scope: %s  %s", styleBadge.Render(v.scope), styleDim.Render(scopeDesc[v.scope]))
+	if v.scope == scopeEffective {
+		// Break out the effective-scope counts so the user sees what's loading vs
+		// merely-overridden vs hidden, instead of a single ambiguous "shown" total.
+		var active, dis int
+		for _, r := range visible {
+			// Orphans (UnknownReason set) are not "recoverable overrides" — they're stale
+			// entries with no source to re-enable. Don't lump them in with `dis` when the
+			// user has H toggled on, since the count means "press space to recover" rows.
+			if r.UnknownReason != "" {
+				continue
+			}
+			if r.DisabledHere {
+				dis++
+			} else if isEffective(r) {
+				active++
+			}
+		}
+		hidden := v.hiddenCount()
+		title += fmt.Sprintf("  (%d active · %d disabled here", active, dis)
+		if hidden > 0 {
+			if v.showHidden {
+				title += fmt.Sprintf(" · %d hidden shown", hidden)
+			} else {
+				title += fmt.Sprintf(" · %d hidden — press H", hidden)
+			}
+		}
+		title += ")"
+	} else {
+		title += fmt.Sprintf("  (%d shown)", len(visible))
+	}
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n")
@@ -809,9 +914,26 @@ func (v *mcpView) render() string {
 	if end > len(visible) {
 		end = len(visible)
 	}
+	// Count effective rows per name so we can flag duplicates inline. Two rows for the
+	// same display name are usually distinct entities (e.g. a user-scope `context7` and a
+	// plugin-registered `context7`), but Claude Code will try to load both — that's worth
+	// surfacing rather than letting it look like a redundant duplicate.
+	//
+	// Counting walks v.rows (not `visible`) so the warning survives any UI filter — a
+	// duplicate-load is a duplicate-load whether or not one of the rows is currently
+	// hidden by a text filter or by !showHidden.
+	effDup := map[string]int{}
+	for _, r := range v.rows {
+		if isEffective(r) {
+			effDup[r.Name]++
+		}
+	}
 	for i := v.top; i < end; i++ {
 		row := visible[i]
 		line := v.formatRow(row)
+		if effDup[row.Name] > 1 && isEffective(row) {
+			line += "  " + styleWarn.Render(fmt.Sprintf("⚠ %dx (also loads from another source)", effDup[row.Name]))
+		}
 		if i == v.index {
 			b.WriteString(styleSelected.Render("  " + line))
 		} else {
@@ -908,7 +1030,7 @@ func truncate(s string, n int) string {
 func (v *mcpView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *mcpView) helpText() string {
-	return "space: toggle  A/N: all on/off  S: stash/unstash  m: move  s: scope  /: filter"
+	return "space: toggle  A/N: all on/off  S: stash/unstash  m: move  s: scope  H: show hidden  /: filter"
 }
 
 func (v *mcpView) capturingInput() bool { return v.filterActive || v.moveActive }

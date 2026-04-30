@@ -180,8 +180,12 @@ func TestTUIEffectiveSpaceTogglesPerProjectOverride(t *testing.T) {
 func TestTUIEffectiveSpaceOnStashHints(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
-	// find a stash row and place cursor there
-	for i, r := range m.mcps.rows {
+	// Stash rows are hidden in the effective view by default — reveal them so this
+	// "space on a stash row is a no-op" assertion can actually reach a stash row.
+	m.mcps.showHidden = true
+	// find a stash row and place cursor there (use visible-row index so update() sees it)
+	visible := m.mcps.visibleRows()
+	for i, r := range visible {
 		if r.Source == "stash" {
 			m.mcps.index = i
 			break
@@ -205,8 +209,14 @@ func TestTUIEffectiveViewShowsUserAndLocalMCPs(t *testing.T) {
 			t.Errorf("effective view should list %q", name)
 		}
 	}
+	// Stash entries are HIDDEN by default in the effective scope (they don't load).
+	// Pressing `H` reveals them.
+	if strings.Contains(view, "stashed-a") {
+		t.Error("stashed MCPs should NOT appear in the default effective view (press H to reveal)")
+	}
+	view = drive(m, "H")
 	if !strings.Contains(view, "stashed-a") {
-		t.Error("stashed MCPs should still appear in the list (as inactive)")
+		t.Error("after pressing H, stashed MCPs should appear in the effective view")
 	}
 }
 
@@ -349,6 +359,9 @@ func TestTUIStashShortcut(t *testing.T) {
 func TestTUIUnstashShortcut(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
+	// Stash rows are hidden in the effective scope by default — reveal them so the
+	// filter can land on `stashed-a`.
+	m.mcps.showHidden = true
 
 	// Filter to an existing stash row, press S → should move it to user scope (unstash).
 	drive(m, "/")
@@ -398,6 +411,116 @@ func TestTUIMCPScopeCycling(t *testing.T) {
 		if m.mcps.scope != want {
 			t.Errorf("cycle: want %s, got %s", want, m.mcps.scope)
 		}
+	}
+}
+
+// TestTUIEffectiveHidesNoise covers the default-view filtering: stash rows, MCPs from
+// installed-but-globally-disabled plugins, and orphan rows for stale `disabledMcpServers`
+// keys all stay hidden until the user presses `H`. Other scopes are unaffected.
+func TestTUIEffectiveHidesNoise(t *testing.T) {
+	st, _ := buildState(t)
+	// Inject an orphan override: a plain stdio name that has no source anywhere.
+	// classify.Classify treats this as OrphanStdio; rebuild() emits a row with
+	// UnknownReason set, which isHiddenInEffective should suppress.
+	st.cj.AddProjectDisabledMcpServer(st.project, "ghost-orphan")
+	m := newModel(st)
+	view := drive(m)
+
+	// Stash rows hidden by default
+	if strings.Contains(view, "stashed-a") || strings.Contains(view, "stashed-b") {
+		t.Error("stash rows should be hidden by default in effective scope")
+	}
+	// Orphan hidden by default
+	if strings.Contains(view, "ghost-orphan") {
+		t.Error("orphan rows should be hidden by default in effective scope")
+	}
+	// Title should advertise hidden count + the H hint
+	if !strings.Contains(view, "hidden") || !strings.Contains(view, "H") {
+		t.Errorf("title should include hidden count and `H` hint; got:\n%s", view)
+	}
+
+	// Press H — everything reappears
+	view = drive(m, "H")
+	for _, want := range []string{"stashed-a", "stashed-b", "ghost-orphan"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("after H, expected %q to appear; got:\n%s", want, view)
+		}
+	}
+
+	// Press H again — back to hidden
+	view = drive(m, "H")
+	if strings.Contains(view, "stashed-a") {
+		t.Error("second H should re-hide stash rows")
+	}
+
+	// Other scopes: stash scope should always show stash rows regardless of showHidden
+	view = drive(m, "s", "s", "s", "s") // effective → local → user → project → stash
+	if !strings.Contains(view, "stashed-a") {
+		t.Errorf("stash scope should always show stash rows; got:\n%s", view)
+	}
+}
+
+// TestTUIEffectiveSpaceMapsToFilteredVisibleRow exercises the keypress→row mapping in the
+// default (showHidden=false) effective view. Catches the regression where update() reads
+// visible[v.index] but tests pre-position v.index against the unfiltered v.rows: any change
+// to visibleRows() that drops/reorders rows would map space onto the wrong row's
+// OverrideKey. The previous TestTUIEffectiveSpaceTogglesPerProjectOverride drives via
+// rows[]; this one drives via visibleRows().
+func TestTUIEffectiveSpaceMapsToFilteredVisibleRow(t *testing.T) {
+	st, _ := buildState(t)
+	// Inject an orphan to ensure the filter is actually dropping rows from view —
+	// otherwise the test could pass against an unfiltered visible list.
+	st.cj.AddProjectDisabledMcpServer(st.project, "ghost-mapping-test")
+	m := newModel(st)
+
+	visible := m.mcps.visibleRows()
+	if len(visible) == 0 {
+		t.Fatal("precondition: at least one visible row in default effective view")
+	}
+	// Confirm the orphan is hidden — guards the regression direction.
+	for _, r := range visible {
+		if r.Name == "ghost-mapping-test" {
+			t.Fatal("orphan should be hidden from default effective view")
+		}
+	}
+
+	// Position cursor on the last visible row and press space — should toggle THAT row's
+	// override key, not anything from the unfiltered v.rows.
+	target := visible[len(visible)-1]
+	m.mcps.index = len(visible) - 1
+	drive(m, " ")
+
+	if !st.dirtyClaude {
+		t.Fatal("space on filtered visible row should dirty claude.json")
+	}
+	disabled := st.cj.ProjectDisabledMcpServers(st.project)
+	found := false
+	for _, k := range disabled {
+		if k == target.OverrideKey {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("space should have toggled the visible target %q (override %q); got %v",
+			target.Name, target.OverrideKey, disabled)
+	}
+}
+
+// TestTUIHToggleResetsCursor ensures pressing `H` resets index/top so the cursor doesn't
+// drift onto an arbitrary row when the visible set changes size.
+func TestTUIHToggleResetsCursor(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	// Scroll partway down (need >0 visible rows for this to mean something)
+	if len(m.mcps.visibleRows()) < 2 {
+		t.Skip("not enough rows in fixture to scroll")
+	}
+	m.mcps.index = 1
+	m.mcps.top = 1
+
+	drive(m, "H")
+	if m.mcps.index != 0 || m.mcps.top != 0 {
+		t.Errorf("H toggle should reset index/top; got index=%d top=%d", m.mcps.index, m.mcps.top)
 	}
 }
 
@@ -708,6 +831,9 @@ func TestTUIDoctorTabRerun(t *testing.T) {
 func TestTUIFilterNarrowsVisible(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
+	// Stash rows are hidden in the effective scope by default; this test searches for
+	// them, so reveal hidden rows so the filter has something to match.
+	m.mcps.showHidden = true
 
 	// Open filter, type "stashed", press enter (filterActive=false now, value stays)
 	_ = drive(m, "/")

@@ -6,6 +6,21 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Changed
+
+- **MCPs tab default view is now load-accurate.** The effective scope
+  (the default when opening `ccmcp tui`) hides rows that can never load
+  in the current project — stash entries, MCPs from
+  installed-but-globally-disabled plugins, and orphan
+  `disabledMcpServers` keys whose source is gone. The title bar breaks
+  out the count as `(N active · M disabled here · K hidden)` so noise
+  is visible without cluttering the list. Press `H` to reveal the
+  hidden rows.
+- **Conflict indicator** — when the same MCP name is registered by
+  multiple effective sources (e.g. user scope + an enabled plugin),
+  rows are flagged with `⚠ 2x (also loads from another source)` so
+  duplicate-load situations don't masquerade as redundant duplicates.
+
 ## [0.3.0] — 2026-04-24
 
 ### Added
