@@ -460,6 +460,70 @@ func TestTUIEffectiveHidesNoise(t *testing.T) {
 	}
 }
 
+// TestTUIEffectiveSpaceMapsToFilteredVisibleRow exercises the keypress→row mapping in the
+// default (showHidden=false) effective view. Catches the regression where update() reads
+// visible[v.index] but tests pre-position v.index against the unfiltered v.rows: any change
+// to visibleRows() that drops/reorders rows would map space onto the wrong row's
+// OverrideKey. The previous TestTUIEffectiveSpaceTogglesPerProjectOverride drives via
+// rows[]; this one drives via visibleRows().
+func TestTUIEffectiveSpaceMapsToFilteredVisibleRow(t *testing.T) {
+	st, _ := buildState(t)
+	// Inject an orphan to ensure the filter is actually dropping rows from view —
+	// otherwise the test could pass against an unfiltered visible list.
+	st.cj.AddProjectDisabledMcpServer(st.project, "ghost-mapping-test")
+	m := newModel(st)
+
+	visible := m.mcps.visibleRows()
+	if len(visible) == 0 {
+		t.Fatal("precondition: at least one visible row in default effective view")
+	}
+	// Confirm the orphan is hidden — guards the regression direction.
+	for _, r := range visible {
+		if r.Name == "ghost-mapping-test" {
+			t.Fatal("orphan should be hidden from default effective view")
+		}
+	}
+
+	// Position cursor on the last visible row and press space — should toggle THAT row's
+	// override key, not anything from the unfiltered v.rows.
+	target := visible[len(visible)-1]
+	m.mcps.index = len(visible) - 1
+	drive(m, " ")
+
+	if !st.dirtyClaude {
+		t.Fatal("space on filtered visible row should dirty claude.json")
+	}
+	disabled := st.cj.ProjectDisabledMcpServers(st.project)
+	found := false
+	for _, k := range disabled {
+		if k == target.OverrideKey {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("space should have toggled the visible target %q (override %q); got %v",
+			target.Name, target.OverrideKey, disabled)
+	}
+}
+
+// TestTUIHToggleResetsCursor ensures pressing `H` resets index/top so the cursor doesn't
+// drift onto an arbitrary row when the visible set changes size.
+func TestTUIHToggleResetsCursor(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	// Scroll partway down (need >0 visible rows for this to mean something)
+	if len(m.mcps.visibleRows()) < 2 {
+		t.Skip("not enough rows in fixture to scroll")
+	}
+	m.mcps.index = 1
+	m.mcps.top = 1
+
+	drive(m, "H")
+	if m.mcps.index != 0 || m.mcps.top != 0 {
+		t.Errorf("H toggle should reset index/top; got index=%d top=%d", m.mcps.index, m.mcps.top)
+	}
+}
+
 func TestTUITabSwitching(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)

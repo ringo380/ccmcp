@@ -51,7 +51,7 @@ type mcpView struct {
 	// can never load in this project are filtered out — stash entries, plugin MCPs whose
 	// plugin is globally disabled, and orphan entries (UnknownReason set). The point of
 	// the effective scope is to mirror what `/mcp` shows; those rows just clutter it.
-	// Press `H` to flip and reveal them (with a `── hidden ──` section header).
+	// Press `H` to flip and reveal them (rows are interleaved alphabetically — no divider).
 	showHidden bool
 
 	flash string
@@ -267,21 +267,29 @@ func (v *mcpView) rebuild() {
 // merely overridden-here have no business cluttering the default view. They're stash
 // entries, MCPs from globally-disabled plugins, and orphan rows for stale override keys.
 // Press `H` to reveal them.
+//
+// Order matters: sources that can never load (stash, disabled plugins, orphans) are
+// hidden BEFORE the DisabledHere check, because a per-project override on top of a
+// non-loading source is redundant — the override won't kick in until the source itself
+// becomes loadable, at which point the user is in the Plugins/Stash tab anyway.
+//
+// UnknownReason is the orphan-row contract from rebuild() (set only inside the orphan
+// loop). If a future bucket reuses that field for a row that should still be visible,
+// this gate must be revisited.
 func isHiddenInEffective(r mcpRow) bool {
-	// Orphans first: they have DisabledHere=true (that's how rebuild emits them — they
-	// exist only as a stale entry in disabledMcpServers), but there's no source to
-	// re-enable, so they're pure noise in the default view.
 	if r.UnknownReason != "" {
-		return true
-	}
-	if r.DisabledHere {
-		return false // overridden here but recoverable with `space` — keep visible
+		return true // orphan — no source to recover from
 	}
 	switch r.Source {
 	case config.SourceStash:
 		return true
 	case config.SourcePlugin:
-		return !r.PluginEnabled // installed-but-disabled plugin
+		if !r.PluginEnabled {
+			return true // installed-but-disabled plugin: MCP can't load regardless of DisabledHere
+		}
+	}
+	if r.DisabledHere {
+		return false // overridden here but recoverable with `space` — keep visible
 	}
 	return false
 }
@@ -427,7 +435,11 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 	case "H":
 		// Reveal/hide the noise rows (stash, disabled-plugin, orphans) in the effective scope.
 		// In other scopes this is a no-op — visibleRows() doesn't apply the filter there.
+		// Reset cursor + viewport so toggling doesn't leave the cursor pointing at an
+		// arbitrary row whose content shifted under it.
 		v.showHidden = !v.showHidden
+		v.index = 0
+		v.top = 0
 		if v.showHidden {
 			v.flash = styleDim.Render("showing hidden rows (stash / disabled plugins / orphans)")
 		} else {
@@ -842,6 +854,12 @@ func (v *mcpView) render() string {
 		// merely-overridden vs hidden, instead of a single ambiguous "shown" total.
 		var active, dis int
 		for _, r := range visible {
+			// Orphans (UnknownReason set) are not "recoverable overrides" — they're stale
+			// entries with no source to re-enable. Don't lump them in with `dis` when the
+			// user has H toggled on, since the count means "press space to recover" rows.
+			if r.UnknownReason != "" {
+				continue
+			}
 			if r.DisabledHere {
 				dis++
 			} else if isEffective(r) {
@@ -900,8 +918,12 @@ func (v *mcpView) render() string {
 	// same display name are usually distinct entities (e.g. a user-scope `context7` and a
 	// plugin-registered `context7`), but Claude Code will try to load both — that's worth
 	// surfacing rather than letting it look like a redundant duplicate.
+	//
+	// Counting walks v.rows (not `visible`) so the warning survives any UI filter — a
+	// duplicate-load is a duplicate-load whether or not one of the rows is currently
+	// hidden by a text filter or by !showHidden.
 	effDup := map[string]int{}
-	for _, r := range visible {
+	for _, r := range v.rows {
 		if isEffective(r) {
 			effDup[r.Name]++
 		}
