@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-04-29
+
 ### Changed
 
 - **MCPs tab default view is now load-accurate.** The effective scope
@@ -216,7 +218,9 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.3.1
+[0.3.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.3.0
 [0.2.4]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.4
 [0.2.3]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.3
 [0.2.2]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.2
