@@ -69,6 +69,7 @@ func runCLI(t *testing.T, home string, args ...string) (string, error) {
 	profileExportOut = ""
 	profileWithConfig = false
 	profileOverwrite = false
+	pluginUpdateAll = false
 
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))

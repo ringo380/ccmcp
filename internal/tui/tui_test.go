@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/paths"
 )
 
@@ -633,6 +634,167 @@ func TestTUIPluginFilterMode(t *testing.T) {
 	_ = drive(m, "f")
 	if m.plugins.showOnly != "" {
 		t.Errorf("after 3x f: want empty, got %q", m.plugins.showOnly)
+	}
+}
+
+func TestTUIPluginRemoveTwoStepConfirm(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Switch to plugins tab, position at first row.
+	_ = drive(m, "2")
+	m.plugins.index = 0
+
+	visible := m.plugins.visibleRows()
+	if len(visible) == 0 {
+		t.Fatal("no visible plugin rows")
+	}
+	target := visible[0]
+	if target.IsRemote {
+		t.Skip("first row is remote — skipping remove test")
+	}
+
+	// First x: sets pendingRemove, no removal yet.
+	_ = drive(m, "x")
+	if m.plugins.pendingRemove != target.ID {
+		t.Errorf("pendingRemove should be %q, got %q", target.ID, m.plugins.pendingRemove)
+	}
+	if st.dirtySettings || st.dirtyPlugins {
+		t.Error("first x should not modify state")
+	}
+
+	// Second x: confirms removal.
+	_ = drive(m, "x")
+	if m.plugins.pendingRemove != "" {
+		t.Errorf("pendingRemove should be cleared after confirm, got %q", m.plugins.pendingRemove)
+	}
+	if !st.dirtySettings {
+		t.Error("dirtySettings should be set after confirmed remove")
+	}
+	if !st.dirtyPlugins {
+		t.Error("dirtyPlugins should be set after confirmed remove")
+	}
+	// Plugin should be gone from settings.
+	for _, e := range st.settings.PluginEntries() {
+		if e.ID == target.ID {
+			t.Errorf("plugin %q should have been removed from settings", target.ID)
+		}
+	}
+}
+
+func TestTUIPluginRemoveCancelOnOtherKey(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	_ = drive(m, "2")
+	visible := m.plugins.visibleRows()
+	if len(visible) == 0 {
+		t.Fatal("no visible plugin rows")
+	}
+	target := visible[0]
+	if target.IsRemote {
+		t.Skip("first row is remote")
+	}
+
+	// First x: starts pending.
+	_ = drive(m, "x")
+	if m.plugins.pendingRemove != target.ID {
+		t.Fatal("pendingRemove not set")
+	}
+
+	// Any other key cancels.
+	_ = drive(m, "j")
+	if m.plugins.pendingRemove != "" {
+		t.Errorf("pendingRemove should be cleared after non-x key, got %q", m.plugins.pendingRemove)
+	}
+	if st.dirtySettings || st.dirtyPlugins {
+		t.Error("cancelled remove must not modify state")
+	}
+}
+
+func TestTUIPluginUpdateResultApplied(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	_ = drive(m, "2")
+
+	// Simulate an async update completing with a new SHA.
+	var im tea.Model = m
+	im, _ = im.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	im, _ = im.Update(pluginUpdateResultMsg{
+		id:          "plug-one@mkt",
+		oldSha:      "oldshaFull",
+		oldInstPath: "/x/1",
+		result: &install.Result{
+			QualifiedID:  "plug-one@mkt",
+			InstallPath:  "/x/1-new",
+			Version:      "newsha",
+			GitCommitSha: "newshaFull",
+		},
+	})
+	updated := im.(*model)
+	if !updated.st.dirtyPlugins {
+		t.Error("dirtyPlugins should be set after update result")
+	}
+	// Check the installed entry was updated.
+	list := updated.st.installed.List()
+	var found bool
+	for _, ip := range list {
+		if ip.ID == "plug-one@mkt" && ip.InstallPath == "/x/1-new" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("installed entry should reflect new install path after update result")
+	}
+}
+
+func TestTUIPluginRemoteRowToggle(t *testing.T) {
+	st, _ := buildState(t)
+	// Add a claude.ai integration to the state.
+	st.claudeAi = []string{"claude.ai Stripe"}
+	m := newModel(st)
+
+	_ = drive(m, "2")
+	m.plugins.rebuild()
+
+	// Find the remote row in visibleRows and place cursor there.
+	visible := m.plugins.visibleRows()
+	remoteIdx := -1
+	for i, r := range visible {
+		if r.IsRemote && r.RemoteKey == "claude.ai Stripe" {
+			remoteIdx = i
+			break
+		}
+	}
+	if remoteIdx < 0 {
+		t.Fatal("remote row for claude.ai Stripe not found in visible rows")
+	}
+	m.plugins.index = remoteIdx
+
+	// Space: should disable the integration for this project.
+	_ = drive(m, " ")
+	if !st.dirtyClaude {
+		t.Error("toggling remote row should dirty claude.json")
+	}
+	disabled := st.cj.ProjectDisabledMcpServers(st.project)
+	found := false
+	for _, k := range disabled {
+		if k == "claude.ai Stripe" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("claude.ai Stripe should be in disabledMcpServers, got %v", disabled)
+	}
+
+	// Space again: should re-enable.
+	_ = drive(m, " ")
+	disabled = st.cj.ProjectDisabledMcpServers(st.project)
+	for _, k := range disabled {
+		if k == "claude.ai Stripe" {
+			t.Error("second toggle should have removed claude.ai Stripe from disabledMcpServers")
+		}
 	}
 }
 
