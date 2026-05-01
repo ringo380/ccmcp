@@ -136,8 +136,9 @@ func (v *pluginView) rebuild() {
 	}
 
 	v.rows = rows
-	if v.index >= len(rows) {
+	if visible := v.visibleRows(); v.index >= len(visible) {
 		v.index = 0
+		v.top = 0
 	}
 }
 
@@ -457,6 +458,8 @@ func (v *pluginView) updateAvailable(key tea.KeyMsg) tea.Cmd {
 	case "esc":
 		v.mode = ""
 		v.availErr = ""
+		v.index = 0
+		v.top = 0
 		return nil
 	case "up", "k":
 		if v.availIndex > 0 {
@@ -469,16 +472,20 @@ func (v *pluginView) updateAvailable(key tea.KeyMsg) tea.Cmd {
 	case "g":
 		v.availIndex = 0
 	case "G":
-		v.availIndex = len(v.availRows) - 1
+		if n := len(v.availRows); n > 0 {
+			v.availIndex = n - 1
+		}
 	case "pgup":
 		v.availIndex -= 10
 		if v.availIndex < 0 {
 			v.availIndex = 0
 		}
 	case "pgdn":
-		v.availIndex += 10
-		if v.availIndex >= len(v.availRows) {
-			v.availIndex = len(v.availRows) - 1
+		if n := len(v.availRows); n > 0 {
+			v.availIndex += 10
+			if v.availIndex >= n {
+				v.availIndex = n - 1
+			}
 		}
 	case "I":
 		if v.installing || v.availLoading || len(v.availRows) == 0 {
