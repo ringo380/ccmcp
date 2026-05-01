@@ -34,10 +34,12 @@ func (p *InstalledPlugins) Save() error {
 }
 
 type InstalledPlugin struct {
-	ID          string
-	Scope       string
-	InstallPath string
-	Version     string
+	ID           string
+	Scope        string
+	InstallPath  string
+	Version      string
+	GitCommitSha string
+	InstalledAt  string
 }
 
 func (p *InstalledPlugins) List() []InstalledPlugin {
@@ -55,6 +57,8 @@ func (p *InstalledPlugins) List() []InstalledPlugin {
 			inst.Scope, _ = entry["scope"].(string)
 			inst.InstallPath, _ = entry["installPath"].(string)
 			inst.Version, _ = entry["version"].(string)
+			inst.GitCommitSha, _ = entry["gitCommitSha"].(string)
+			inst.InstalledAt, _ = entry["installedAt"].(string)
 		}
 		out = append(out, inst)
 	}

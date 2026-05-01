@@ -388,6 +388,86 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	return err
 }
 
+// ListLocalMarketplaces returns the names of marketplace directories that have been
+// cloned (i.e. contain a .git subdirectory) under pluginsDir/marketplaces/.
+func ListLocalMarketplaces(p paths.Paths) ([]string, error) {
+	dir := filepath.Join(p.PluginsDir, "marketplaces")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, e.Name(), ".git")); err == nil {
+			names = append(names, e.Name())
+		}
+	}
+	return names, nil
+}
+
+// UpdateMarketplace runs `git pull --ff-only` in the cloned marketplace directory so
+// that subsequent Install calls see the latest plugin sources. Returns an error if the
+// marketplace directory has not been cloned (no .git).
+func UpdateMarketplace(p paths.Paths, name string) error {
+	dir := filepath.Join(p.PluginsDir, "marketplaces", name)
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		return fmt.Errorf("marketplace %q is not a git clone at %s; clone it first", name, dir)
+	}
+	cmd := exec.Command("git", "-C", dir, "pull", "--quiet", "--ff-only")
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git pull for marketplace %q: %w", name, err)
+	}
+	return nil
+}
+
+// UpdateInstall updates an existing installed_plugins.json entry after a re-fetch.
+// Unlike RegisterInstall it:
+//   - Preserves the original installedAt timestamp
+//   - Does NOT touch enabledPlugins (the user's enable/disable choice is unchanged)
+//   - Removes oldInstallPath from disk when it differs from r.InstallPath (GC)
+//
+// Caller is responsible for Save() + Backup() afterwards.
+func UpdateInstall(installed *config.InstalledPlugins, r *Result, oldInstallPath string) {
+	plugins, _ := installed.Raw["plugins"].(map[string]any)
+	if plugins == nil {
+		plugins = map[string]any{}
+	}
+	// Preserve installedAt from existing entry.
+	var installedAt string
+	if existing, ok := plugins[r.QualifiedID]; ok {
+		if arr, ok := existing.([]any); ok && len(arr) > 0 {
+			if entry, ok := arr[0].(map[string]any); ok {
+				installedAt, _ = entry["installedAt"].(string)
+			}
+		}
+	}
+	if installedAt == "" {
+		installedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	entry := map[string]any{
+		"scope":        "user",
+		"installPath":  r.InstallPath,
+		"version":      r.Version,
+		"installedAt":  installedAt,
+		"lastUpdated":  time.Now().UTC().Format(time.RFC3339),
+		"gitCommitSha": r.GitCommitSha,
+	}
+	plugins[r.QualifiedID] = []any{entry}
+	installed.Raw["plugins"] = plugins
+
+	// GC: remove the old versioned directory if it has changed.
+	if oldInstallPath != "" && oldInstallPath != r.InstallPath {
+		_ = os.RemoveAll(oldInstallPath)
+	}
+}
+
 // RegisterInstall patches installed_plugins.json with the new entry and flips
 // enabledPlugins[id] = true. Caller is responsible for Save() + Backup() afterwards.
 func RegisterInstall(settings *config.Settings, installed *config.InstalledPlugins, r *Result) {

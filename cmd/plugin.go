@@ -322,6 +322,103 @@ var pluginRemoveCmd = &cobra.Command{
 	},
 }
 
+var pluginUpdateAll bool
+
+var pluginUpdateCmd = &cobra.Command{
+	Use:   "update [<id>[@marketplace]] | --all",
+	Short: "Re-fetch and update installed plugin(s) to their latest version",
+	Long: `Re-fetch each plugin's source and update installed_plugins.json.
+For bare-string plugins (sourced from a marketplace repo) run
+'ccmcp marketplace update' first so the catalog reflects upstream changes.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !pluginUpdateAll && len(args) == 0 {
+			return fmt.Errorf("specify a plugin id or pass --all")
+		}
+		p, err := resolvePaths()
+		if err != nil {
+			return err
+		}
+		settings, err := config.LoadSettings(p.SettingsJSON)
+		if err != nil {
+			return err
+		}
+		installed, err := config.LoadInstalledPlugins(p.InstalledPlugins)
+		if err != nil {
+			return err
+		}
+
+		var targets []config.InstalledPlugin
+		if pluginUpdateAll {
+			targets = installed.List()
+			if len(targets) == 0 {
+				fmt.Println("no plugins installed")
+				return nil
+			}
+		} else {
+			id, ambiguous := resolveQualifiedID(args[0], settings, installed)
+			if id == "" {
+				if len(ambiguous) > 0 {
+					return fmt.Errorf("%q is ambiguous; pick one of: %s", args[0], strings.Join(ambiguous, ", "))
+				}
+				return fmt.Errorf("plugin %q not found in settings or installed_plugins", args[0])
+			}
+			ip := installed.List()
+			var found config.InstalledPlugin
+			for _, x := range ip {
+				if x.ID == id {
+					found = x
+					break
+				}
+			}
+			if found.ID == "" {
+				return fmt.Errorf("plugin %q is not installed (use 'ccmcp plugin install')", id)
+			}
+			targets = []config.InstalledPlugin{found}
+		}
+
+		var anyChanged bool
+		for _, ip := range targets {
+			name, mkt := config.ParsePluginID(ip.ID)
+			if mkt == "" {
+				fmt.Fprintf(os.Stderr, "skip %s: unqualified ID\n", ip.ID)
+				continue
+			}
+			if flagDryRun {
+				fmt.Printf("[dry-run] would re-fetch %s from %s\n", name, mkt)
+				continue
+			}
+			result, err := install.Install(p, mkt, name)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error updating %s: %v\n", ip.ID, err)
+				continue
+			}
+			if result.GitCommitSha != "" && result.GitCommitSha == ip.GitCommitSha {
+				fmt.Printf("already up to date: %s\n", ip.ID)
+				continue
+			}
+			oldSha := firstN(ip.GitCommitSha, 8)
+			newSha := firstN(result.GitCommitSha, 8)
+			install.UpdateInstall(installed, result, ip.InstallPath)
+			anyChanged = true
+			fmt.Printf("updated %s: %s → %s\n", ip.ID, oldSha, newSha)
+		}
+
+		if flagDryRun || !anyChanged {
+			return nil
+		}
+		if err := config.Backup(installed.Path, p.BackupsDir); err != nil {
+			return err
+		}
+		if err := installed.Save(); err != nil {
+			return err
+		}
+		fmt.Println("restart Claude Code (or reload the window) to pick up updated plugins.")
+		return nil
+	},
+}
+
+// --- marketplace subcommand -----------------------------------------------
+
 func resolveQualifiedID(id string, s *config.Settings, i *config.InstalledPlugins) (string, []string) {
 	if strings.Contains(id, "@") {
 		return id, nil
@@ -338,6 +435,45 @@ var marketplaceCmd = &cobra.Command{
 	Use:     "marketplace",
 	Aliases: []string{"mkt", "marketplaces"},
 	Short:   "Manage plugin marketplaces (extraKnownMarketplaces)",
+}
+
+var marketplaceUpdateCmd = &cobra.Command{
+	Use:   "update [name]",
+	Short: "Refresh marketplace catalog(s) via git pull",
+	Long: `Run 'git pull --ff-only' in each locally-cloned marketplace directory so that
+subsequent 'ccmcp plugin update' or 'ccmcp plugin install' calls see the latest
+plugin list. With no arguments, updates every cloned marketplace.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p, err := resolvePaths()
+		if err != nil {
+			return err
+		}
+		var names []string
+		if len(args) > 0 {
+			names = args
+		} else {
+			names, err = install.ListLocalMarketplaces(p)
+			if err != nil {
+				return err
+			}
+			if len(names) == 0 {
+				fmt.Println("no locally-cloned marketplaces found")
+				return nil
+			}
+		}
+		for _, name := range names {
+			if flagDryRun {
+				fmt.Printf("[dry-run] would git pull marketplace %s\n", name)
+				continue
+			}
+			if err := install.UpdateMarketplace(p, name); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				continue
+			}
+			fmt.Printf("updated marketplace %s\n", name)
+		}
+		return nil
+	},
 }
 
 var marketplaceListCmd = &cobra.Command{
@@ -453,14 +589,15 @@ var marketplaceRemoveCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(pluginCmd, marketplaceCmd)
-	pluginCmd.AddCommand(pluginListCmd, pluginEnableCmd, pluginDisableCmd, pluginInstallCmd, pluginRemoveCmd)
-	marketplaceCmd.AddCommand(marketplaceListCmd, marketplaceAddCmd, marketplaceRemoveCmd)
+	pluginCmd.AddCommand(pluginListCmd, pluginEnableCmd, pluginDisableCmd, pluginInstallCmd, pluginRemoveCmd, pluginUpdateCmd)
+	marketplaceCmd.AddCommand(marketplaceListCmd, marketplaceAddCmd, marketplaceRemoveCmd, marketplaceUpdateCmd)
 
 	pluginListCmd.Flags().BoolVar(&pluginFilterEnabled, "enabled", false, "show only enabled plugins")
 	pluginListCmd.Flags().BoolVar(&pluginFilterDisabled, "disabled", false, "show only disabled plugins")
 	pluginRemoveCmd.Flags().BoolVar(&pluginPurge, "purge", false, "also delete the plugin's cache directory")
 	pluginInstallCmd.Flags().BoolVar(&pluginRegisterOnly, "register-only", false, "skip fetch, only register bookkeeping")
-	for _, c := range []*cobra.Command{pluginEnableCmd, pluginDisableCmd, pluginInstallCmd, pluginRemoveCmd} {
+	pluginUpdateCmd.Flags().BoolVar(&pluginUpdateAll, "all", false, "update all installed plugins")
+	for _, c := range []*cobra.Command{pluginEnableCmd, pluginDisableCmd, pluginInstallCmd, pluginRemoveCmd, pluginUpdateCmd} {
 		c.Flags().StringVar(&pluginMarketplace, "marketplace", "", "marketplace name (disambiguates bare plugin names)")
 	}
 

@@ -61,6 +61,41 @@ func TestInstalledPluginsRemove(t *testing.T) {
 	}
 }
 
+func TestInstalledPluginFieldsParsed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "installed.json")
+	mustWriteJSON(t, path, map[string]any{
+		"version": float64(2),
+		"plugins": map[string]any{
+			"myplugin@mkt": []any{
+				map[string]any{
+					"scope":        "user",
+					"installPath":  "/cache/myplugin/abc123",
+					"version":      "abc123",
+					"gitCommitSha": "abc123def456",
+					"installedAt":  "2026-01-01T00:00:00Z",
+					"lastUpdated":  "2026-04-01T00:00:00Z",
+				},
+			},
+		},
+	})
+	ip, err := LoadInstalledPlugins(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := ip.List()
+	if len(list) != 1 {
+		t.Fatalf("want 1 plugin, got %d", len(list))
+	}
+	p := list[0]
+	if p.GitCommitSha != "abc123def456" {
+		t.Errorf("GitCommitSha: got %q", p.GitCommitSha)
+	}
+	if p.InstalledAt != "2026-01-01T00:00:00Z" {
+		t.Errorf("InstalledAt: got %q", p.InstalledAt)
+	}
+}
+
 func TestResolvePluginID(t *testing.T) {
 	dir := t.TempDir()
 	settingsPath := filepath.Join(dir, "settings.json")

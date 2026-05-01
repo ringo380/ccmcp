@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/paths"
 )
 
@@ -129,6 +130,156 @@ func TestWithinDirRejectsSiblingPrefix(t *testing.T) {
 		if got := withinDir(c.candidate, c.root); got != c.want {
 			t.Errorf("withinDir(%q, %q) = %v, want %v", c.candidate, c.root, got, c.want)
 		}
+	}
+}
+
+func TestListLocalMarketplaces(t *testing.T) {
+	dir := t.TempDir()
+	p := paths.Paths{PluginsDir: filepath.Join(dir, "plugins")}
+	mktsDir := filepath.Join(p.PluginsDir, "marketplaces")
+
+	// Create one cloned marketplace (has .git) and one non-git dir.
+	if err := os.MkdirAll(filepath.Join(mktsDir, "official", ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(mktsDir, "local-copy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	names, err := ListLocalMarketplaces(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "official" {
+		t.Errorf("want [official], got %v", names)
+	}
+}
+
+func TestListLocalMarketplacesEmpty(t *testing.T) {
+	dir := t.TempDir()
+	p := paths.Paths{PluginsDir: filepath.Join(dir, "plugins")}
+	// marketplaces dir doesn't exist yet — should return nil, not error.
+	names, err := ListLocalMarketplaces(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 0 {
+		t.Errorf("want empty, got %v", names)
+	}
+}
+
+func TestUpdateInstallPreservesInstalledAt(t *testing.T) {
+	dir := t.TempDir()
+	installedPath := filepath.Join(dir, "installed.json")
+	writeInstalledJSON(t, installedPath, "myplugin@mkt", map[string]any{
+		"scope":        "user",
+		"installPath":  "/cache/myplugin/oldsha",
+		"version":      "oldsha",
+		"gitCommitSha": "oldshaFull",
+		"installedAt":  "2025-01-01T00:00:00Z",
+		"lastUpdated":  "2025-01-01T00:00:00Z",
+	})
+
+	installed, err := config.LoadInstalledPlugins(installedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newInstPath := filepath.Join(dir, "cache", "newsha")
+	if err := os.MkdirAll(newInstPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &Result{
+		QualifiedID:  "myplugin@mkt",
+		InstallPath:  newInstPath,
+		Version:      "newsha",
+		GitCommitSha: "newshaFull",
+	}
+	UpdateInstall(installed, r, "/cache/myplugin/oldsha")
+
+	list := installed.List()
+	if len(list) != 1 {
+		t.Fatalf("want 1, got %d", len(list))
+	}
+	got := list[0]
+	if got.InstalledAt != "2025-01-01T00:00:00Z" {
+		t.Errorf("InstalledAt changed: got %q", got.InstalledAt)
+	}
+	if got.InstallPath != newInstPath {
+		t.Errorf("InstallPath: got %q", got.InstallPath)
+	}
+	if got.GitCommitSha != "newshaFull" {
+		t.Errorf("GitCommitSha: got %q", got.GitCommitSha)
+	}
+}
+
+func TestUpdateInstallDoesNotTouchEnabledPlugins(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"enabledPlugins":{"myplugin@mkt":false}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.LoadSettings(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	installedPath := filepath.Join(dir, "installed.json")
+	writeInstalledJSON(t, installedPath, "myplugin@mkt", map[string]any{
+		"scope": "user", "installPath": "/old", "version": "old",
+	})
+	installed, err := config.LoadInstalledPlugins(installedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := &Result{QualifiedID: "myplugin@mkt", InstallPath: "/new", Version: "new", GitCommitSha: "new"}
+	UpdateInstall(installed, r, "/old")
+
+	// enabledPlugins should still be false — UpdateInstall must not flip it.
+	if enabled, _ := settings.PluginEnabled("myplugin@mkt"); enabled {
+		t.Error("UpdateInstall must not enable a deliberately-disabled plugin")
+	}
+}
+
+func TestUpdateInstallGCsOldPath(t *testing.T) {
+	dir := t.TempDir()
+	oldDir := filepath.Join(dir, "old-version")
+	if err := os.MkdirAll(oldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldDir, "file.txt"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	installedPath := filepath.Join(dir, "installed.json")
+	writeInstalledJSON(t, installedPath, "p@m", map[string]any{"scope": "user", "installPath": oldDir})
+	installed, err := config.LoadInstalledPlugins(installedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newPath := filepath.Join(dir, "new-version")
+	r := &Result{QualifiedID: "p@m", InstallPath: newPath, Version: "new"}
+	UpdateInstall(installed, r, oldDir)
+
+	if _, err := os.Stat(oldDir); err == nil {
+		t.Error("old version directory should have been removed by GC")
+	}
+}
+
+func writeInstalledJSON(t *testing.T, path, id string, entry map[string]any) {
+	t.Helper()
+	raw := map[string]any{
+		"version": float64(2),
+		"plugins": map[string]any{
+			id: []any{entry},
+		},
+	}
+	b, _ := json.Marshal(raw)
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
