@@ -6,6 +6,33 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-04-30
+
+### Added
+
+- **Plugin install/update/uninstall** — `ccmcp plugin install <id>` and
+  `ccmcp plugin update [id|--all]` fetch or refresh source from the
+  marketplace; `ccmcp plugin update --all` bulk-updates every installed
+  plugin. SHA comparison skips no-op updates with "already up to date".
+- **Marketplace refresh** — `ccmcp marketplace update [name]` runs
+  `git pull --ff-only` on each locally-cloned marketplace catalog;
+  no args updates all.
+- **`InstalledPlugin` metadata** — `gitCommitSha` and `installedAt`
+  fields are now stored and parsed, enabling update-skip detection and
+  preserving original install timestamps across updates.
+- **Old-version GC** — `plugin update` automatically removes the
+  previous versioned cache directory after a successful update.
+- **claude.ai integration rows in the Plugins tab** — remote integrations
+  (e.g. Stripe, Supabase) appear in the Plugins tab with `[~]` / `[-]`
+  markers; `space` toggles their per-project disable state.
+- **TUI `U` key** — async in-place plugin update from the Plugins tab;
+  flashes old→new SHA on success.
+- **TUI `x` key** — two-step confirmation to remove an installed plugin
+  from the Plugins tab (press `x` again to confirm, any other key cancels).
+- **TUI `I` key** — browse-and-install sub-view that loads available
+  plugins from all locally-cloned marketplace catalogs, filtered to
+  uninstalled entries; press `I` on a row to install.
+
 ## [0.3.1] — 2026-04-29
 
 ### Changed
@@ -218,7 +245,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.4.0
 [0.3.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.3.1
 [0.3.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.3.0
 [0.2.4]: https://github.com/ringo380/ccmcp/releases/tag/v0.2.4
