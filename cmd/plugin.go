@@ -7,6 +7,7 @@ import (
 
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/install"
+	"github.com/ringo380/ccmcp/internal/updates"
 	"github.com/spf13/cobra"
 )
 
@@ -521,6 +522,8 @@ var (
 	mktRepo       string
 	mktLocalPath  string
 	mktAutoUpdate bool
+	mktPurge      bool
+	mktNoClone    bool
 )
 
 var marketplaceAddCmd = &cobra.Command{
@@ -537,12 +540,18 @@ var marketplaceAddCmd = &cobra.Command{
 			return err
 		}
 		mp := config.Marketplace{Name: args[0], SourceType: mktSource, Repo: mktRepo, Path: mktLocalPath, AutoUpdate: mktAutoUpdate}
-		if err := settings.AddMarketplace(mp); err != nil {
-			return err
-		}
 		if flagDryRun {
-			fmt.Printf("[dry-run] would add marketplace %s (%s)\n", mp.Name, mp.SourceType)
+			fmt.Printf("[dry-run] would add marketplace %s (%s) and clone\n", mp.Name, mp.SourceType)
 			return nil
+		}
+		if mktNoClone {
+			if err := settings.AddMarketplace(mp); err != nil {
+				return err
+			}
+		} else {
+			if err := install.AddMarketplace(p, settings, mp); err != nil {
+				return err
+			}
 		}
 		if err := config.Backup(settings.Path, p.BackupsDir); err != nil {
 			return err
@@ -569,12 +578,20 @@ var marketplaceRemoveCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if !settings.RemoveMarketplace(args[0]) {
-			return fmt.Errorf("marketplace %q not found in extraKnownMarketplaces", args[0])
+		installed, err := config.LoadInstalledPlugins(p.InstalledPlugins)
+		if err != nil {
+			return err
 		}
 		if flagDryRun {
-			fmt.Printf("[dry-run] would remove marketplace %s\n", args[0])
+			fmt.Printf("[dry-run] would remove marketplace %s", args[0])
+			if mktPurge {
+				fmt.Print(" + delete clone dir")
+			}
+			fmt.Println()
 			return nil
+		}
+		if err := install.RemoveMarketplace(p, settings, installed, args[0], mktPurge); err != nil {
+			return err
 		}
 		if err := config.Backup(settings.Path, p.BackupsDir); err != nil {
 			return err
@@ -587,10 +604,91 @@ var marketplaceRemoveCmd = &cobra.Command{
 	},
 }
 
+var pluginOutdatedCmd = &cobra.Command{
+	Use:   "outdated",
+	Short: "List installed plugins with a newer upstream version available",
+	Long: `Probes each installed plugin's upstream source (the marketplace HEAD for
+bare-string plugins, or the explicit git URL for url/github/git-subdir sources)
+and prints rows whose local gitCommitSha differs from upstream.
+
+Network access is required. Plugins whose source can't be reached are reported
+with an err note and skipped.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p, err := resolvePaths()
+		if err != nil {
+			return err
+		}
+		installed, err := config.LoadInstalledPlugins(p.InstalledPlugins)
+		if err != nil {
+			return err
+		}
+		list := installed.List()
+		if len(list) == 0 {
+			fmt.Println("(no plugins installed)")
+			return nil
+		}
+		var outdated, skipped int
+		for _, ip := range list {
+			_, mkt := config.ParsePluginID(ip.ID)
+			head := install.LocalMarketplaceHead(p, mkt)
+			s := updates.CheckPlugin(p, ip, head)
+			switch {
+			case s.Err != nil:
+				skipped++
+			case s.Outdated:
+				outdated++
+				fmt.Printf("  ↑ %s  %s → %s\n", ip.ID, firstN(s.Local, 8), firstN(s.Remote, 8))
+			}
+		}
+		if outdated == 0 {
+			fmt.Println("all installed plugins are up to date")
+		} else {
+			fmt.Printf("\n%d outdated, %d skipped\n", outdated, skipped)
+		}
+		return nil
+	},
+}
+
+var marketplaceOutdatedCmd = &cobra.Command{
+	Use:   "outdated",
+	Short: "List cloned marketplaces whose upstream HEAD has advanced",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p, err := resolvePaths()
+		if err != nil {
+			return err
+		}
+		names, err := install.ListLocalMarketplaces(p)
+		if err != nil {
+			return err
+		}
+		if len(names) == 0 {
+			fmt.Println("(no cloned marketplaces)")
+			return nil
+		}
+		var outdated, skipped int
+		for _, n := range names {
+			s := updates.CheckMarketplace(p, n)
+			switch {
+			case s.Err != nil:
+				skipped++
+			case s.Outdated:
+				outdated++
+				fmt.Printf("  ↑ %s  %s → %s\n", n, firstN(s.Local, 8), firstN(s.Remote, 8))
+			}
+		}
+		if outdated == 0 {
+			fmt.Println("all marketplaces are up to date")
+		} else {
+			fmt.Printf("\n%d outdated, %d skipped\n", outdated, skipped)
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(pluginCmd, marketplaceCmd)
-	pluginCmd.AddCommand(pluginListCmd, pluginEnableCmd, pluginDisableCmd, pluginInstallCmd, pluginRemoveCmd, pluginUpdateCmd)
-	marketplaceCmd.AddCommand(marketplaceListCmd, marketplaceAddCmd, marketplaceRemoveCmd, marketplaceUpdateCmd)
+	pluginCmd.AddCommand(pluginListCmd, pluginEnableCmd, pluginDisableCmd, pluginInstallCmd, pluginRemoveCmd, pluginUpdateCmd, pluginOutdatedCmd)
+	marketplaceCmd.AddCommand(marketplaceListCmd, marketplaceAddCmd, marketplaceRemoveCmd, marketplaceUpdateCmd, marketplaceOutdatedCmd)
 
 	pluginListCmd.Flags().BoolVar(&pluginFilterEnabled, "enabled", false, "show only enabled plugins")
 	pluginListCmd.Flags().BoolVar(&pluginFilterDisabled, "disabled", false, "show only disabled plugins")
@@ -605,4 +703,6 @@ func init() {
 	marketplaceAddCmd.Flags().StringVar(&mktRepo, "repo", "", "repo (owner/name for github, URL for git)")
 	marketplaceAddCmd.Flags().StringVar(&mktLocalPath, "path", "", "local filesystem path (for --source local)")
 	marketplaceAddCmd.Flags().BoolVar(&mktAutoUpdate, "auto-update", true, "enable auto-update")
+	marketplaceAddCmd.Flags().BoolVar(&mktNoClone, "no-clone", false, "register only — skip git clone")
+	marketplaceRemoveCmd.Flags().BoolVar(&mktPurge, "purge", false, "also delete the marketplace clone directory")
 }

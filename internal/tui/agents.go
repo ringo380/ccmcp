@@ -12,8 +12,6 @@ import (
 	"github.com/ringo380/ccmcp/internal/config"
 )
 
-// agentView is a read-only listing. Toggling isn't wired yet because Claude Code
-// has no native agent-override mechanism; CRUD happens via the CLI.
 type agentView struct {
 	st    *state
 	rows  []agents.Agent
@@ -25,14 +23,31 @@ type agentView struct {
 	filterActive bool
 	filterText   string
 
+	// new agent name input
+	input       textinput.Model
+	inputActive bool
+
+	// move mode
+	moveActive bool
+	moveName   string
+	moveFrom   agents.Scope
+
+	// delete confirm
+	pendingRm string
+
 	flash string
 }
 
 func newAgentView(st *state) *agentView {
-	ti := textinput.New()
-	ti.Prompt = "filter: "
-	ti.CharLimit = 64
-	v := &agentView{st: st, filter: ti}
+	filter := textinput.New()
+	filter.Prompt = "filter: "
+	filter.CharLimit = 64
+
+	nameInput := textinput.New()
+	nameInput.Prompt = "agent name: "
+	nameInput.CharLimit = 64
+
+	v := &agentView{st: st, filter: filter, input: nameInput}
 	v.rebuild()
 	return v
 }
@@ -60,6 +75,36 @@ func (v *agentView) rebuild() {
 }
 
 func (v *agentView) update(msg tea.Msg) tea.Cmd {
+	// New agent name input mode.
+	if v.inputActive {
+		var cmd tea.Cmd
+		v.input, cmd = v.input.Update(msg)
+		if k, ok := msg.(tea.KeyMsg); ok {
+			switch k.String() {
+			case "enter":
+				name := strings.TrimSpace(v.input.Value())
+				if name != "" {
+					path, err := agents.Scaffold(name, "", "sonnet", agents.ScopeUser, v.st.paths.ClaudeConfigDir, v.st.project)
+					if err != nil {
+						v.flash = styleErr.Render("scaffold: " + err.Error())
+					} else {
+						v.flash = styleOK.Render(fmt.Sprintf("created agent %q at %s", name, path))
+						v.rebuild()
+					}
+				}
+				v.inputActive = false
+				v.input.SetValue("")
+				v.input.Blur()
+			case "esc":
+				v.inputActive = false
+				v.input.SetValue("")
+				v.input.Blur()
+			}
+		}
+		return cmd
+	}
+
+	// Filter input mode.
 	if v.filterActive {
 		var cmd tea.Cmd
 		v.filter, cmd = v.filter.Update(msg)
@@ -81,10 +126,35 @@ func (v *agentView) update(msg tea.Msg) tea.Cmd {
 		}
 		return cmd
 	}
+
+	// Move scope picker mode.
+	if v.moveActive {
+		k, ok := msg.(tea.KeyMsg)
+		if !ok {
+			return nil
+		}
+		switch k.String() {
+		case "u":
+			v.doMove(agents.ScopeUser)
+		case "p":
+			v.doMove(agents.ScopeProject)
+		case "esc":
+			v.moveActive = false
+			v.flash = styleDim.Render("move cancelled")
+		}
+		return nil
+	}
+
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return nil
 	}
+
+	// Any key other than 'd' clears a pending delete.
+	if v.pendingRm != "" && key.String() != "d" {
+		v.pendingRm = ""
+	}
+
 	switch key.String() {
 	case "up", "k":
 		if v.index > 0 {
@@ -98,7 +168,9 @@ func (v *agentView) update(msg tea.Msg) tea.Cmd {
 		v.index = 0
 		v.top = 0
 	case "G", "end":
-		v.index = len(v.rows) - 1
+		if n := len(v.rows); n > 0 {
+			v.index = n - 1
+		}
 	case "pgup":
 		v.index -= 10
 		if v.index < 0 {
@@ -117,8 +189,64 @@ func (v *agentView) update(msg tea.Msg) tea.Cmd {
 		v.filterText = ""
 		v.filter.SetValue("")
 		v.rebuild()
+	case "n":
+		v.inputActive = true
+		v.input.Focus()
+		return textinput.Blink
+	case "m":
+		if len(v.rows) == 0 {
+			return nil
+		}
+		cur := v.rows[v.index]
+		if cur.Scope == agents.ScopePlugin {
+			v.flash = styleWarn.Render("plugin agents are read-only")
+			return nil
+		}
+		v.moveName = cur.Name
+		v.moveFrom = cur.Scope
+		v.moveActive = true
+		v.flash = styleDim.Render(fmt.Sprintf("move %q — target scope: [u]ser / [p]roject / esc: cancel", cur.Name))
+	case "d":
+		if len(v.rows) == 0 {
+			return nil
+		}
+		cur := v.rows[v.index]
+		if cur.Scope == agents.ScopePlugin {
+			v.flash = styleWarn.Render("plugin agents are read-only")
+			return nil
+		}
+		if v.pendingRm == cur.Name {
+			_, found, err := agents.Remove(cur.Name, cur.Scope, v.st.paths.ClaudeConfigDir, v.st.project)
+			if err != nil {
+				v.flash = styleErr.Render("remove: " + err.Error())
+			} else if !found {
+				v.flash = styleWarn.Render(cur.Name + " not found on disk")
+			} else {
+				v.flash = styleDim.Render("removed " + cur.Name)
+			}
+			v.pendingRm = ""
+			v.rebuild()
+		} else {
+			v.pendingRm = cur.Name
+			v.flash = styleWarn.Render(fmt.Sprintf("press 'd' again to remove %q, any other key cancels", cur.Name))
+		}
 	}
 	return nil
+}
+
+func (v *agentView) doMove(to agents.Scope) {
+	v.moveActive = false
+	if v.moveFrom == to {
+		v.flash = styleDim.Render(fmt.Sprintf("%q is already in %s scope", v.moveName, to))
+		return
+	}
+	_, _, err := agents.Move(v.moveName, v.moveFrom, to, v.st.paths.ClaudeConfigDir, v.st.project)
+	if err != nil {
+		v.flash = styleErr.Render("move: " + err.Error())
+	} else {
+		v.flash = styleOK.Render(fmt.Sprintf("moved %q → %s", v.moveName, to))
+		v.rebuild()
+	}
 }
 
 func (v *agentView) render() string {
@@ -128,11 +256,13 @@ func (v *agentView) render() string {
 		b.WriteString(styleDim.Render(fmt.Sprintf("  filter: %q", v.filterText)))
 	}
 	b.WriteString("\n")
-	if v.filterActive {
+	if v.inputActive {
+		b.WriteString(v.input.View() + "\n")
+	} else if v.filterActive {
 		b.WriteString(v.filter.View() + "\n")
 	}
 	if len(v.rows) == 0 {
-		b.WriteString(styleDim.Render("  (no agents match)"))
+		b.WriteString(styleDim.Render("  (no agents match — press 'n' to create one)"))
 		return b.String()
 	}
 	pageH := v.h - 4
@@ -175,7 +305,10 @@ func (v *agentView) render() string {
 func (v *agentView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *agentView) helpText() string {
-	return "/: filter  c: clear  (CRUD via CLI: ccmcp agent new|move|rm|show)"
+	if v.moveActive {
+		return "[u]ser / [p]roject / esc: cancel"
+	}
+	return "n: new  m: move  d: delete  /: filter  c: clear"
 }
 
-func (v *agentView) capturingInput() bool { return v.filterActive }
+func (v *agentView) capturingInput() bool { return v.filterActive || v.inputActive }

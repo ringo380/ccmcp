@@ -13,7 +13,8 @@ import (
 	"github.com/ringo380/ccmcp/internal/skills"
 )
 
-// commandView lists discovered slash commands; `!` toggles a conflict-only view.
+// commandView lists discovered slash commands; `!` toggles a conflict-only view,
+// `r` opens an inline resolution picker for conflicted rows.
 type commandView struct {
 	st    *state
 	rows  []commands.Command
@@ -26,7 +27,12 @@ type commandView struct {
 	filterText   string
 
 	conflictsOnly bool
-	conflictSet   map[string]commands.ConflictKind
+	conflictMap   map[string]commands.Conflict // effective → conflict
+
+	// resolve picker: active when user presses 'r' on a conflicted row
+	resolveActive    bool
+	resolveConflict  *commands.Conflict
+	resolveCanDisable bool // true when Kind == SkillVsCommand
 
 	flash string
 }
@@ -44,18 +50,17 @@ func (v *commandView) rebuild() {
 	all := commands.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
 	skls := skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
 	conflicts := commands.FindConflicts(all, skls)
-	v.conflictSet = map[string]commands.ConflictKind{}
+	v.conflictMap = map[string]commands.Conflict{}
 	for _, c := range conflicts {
-		v.conflictSet[c.Effective] = c.Kind
+		v.conflictMap[c.Effective] = c
 	}
 	var filtered []commands.Command
 	for _, c := range all {
 		if v.conflictsOnly {
-			if _, ok := v.conflictSet[c.Effective]; !ok {
-				// Also consider slug matches (SkillVsCommand keys by skill name / command slug)
-				if _, ok2 := v.conflictSet[c.Slug]; !ok2 {
-					continue
-				}
+			_, byEff := v.conflictMap[c.Effective]
+			_, bySlug := v.conflictMap[c.Slug]
+			if !byEff && !bySlug {
+				continue
 			}
 		}
 		if v.filterText != "" {
@@ -76,6 +81,27 @@ func (v *commandView) rebuild() {
 }
 
 func (v *commandView) update(msg tea.Msg) tea.Cmd {
+	// Resolve picker mode.
+	if v.resolveActive {
+		k, ok := msg.(tea.KeyMsg)
+		if !ok {
+			return nil
+		}
+		switch k.String() {
+		case "s":
+			if v.resolveCanDisable {
+				v.applyResolveDisableSkill()
+			}
+		case "i":
+			v.applyResolveIgnore()
+		case "esc":
+			v.resolveActive = false
+			v.resolveConflict = nil
+			v.flash = styleDim.Render("resolve cancelled")
+		}
+		return nil
+	}
+
 	if v.filterActive {
 		var cmd tea.Cmd
 		v.filter, cmd = v.filter.Update(msg)
@@ -97,6 +123,7 @@ func (v *commandView) update(msg tea.Msg) tea.Cmd {
 		}
 		return cmd
 	}
+
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return nil
@@ -114,7 +141,9 @@ func (v *commandView) update(msg tea.Msg) tea.Cmd {
 		v.index = 0
 		v.top = 0
 	case "G", "end":
-		v.index = len(v.rows) - 1
+		if n := len(v.rows); n > 0 {
+			v.index = n - 1
+		}
 	case "pgup":
 		v.index -= 10
 		if v.index < 0 {
@@ -136,18 +165,77 @@ func (v *commandView) update(msg tea.Msg) tea.Cmd {
 	case "!":
 		v.conflictsOnly = !v.conflictsOnly
 		v.rebuild()
+	case "r":
+		if len(v.rows) == 0 {
+			return nil
+		}
+		cur := v.rows[v.index]
+		cf, ok := v.conflictMap[cur.Effective]
+		if !ok {
+			cf, ok = v.conflictMap[cur.Slug]
+		}
+		if !ok {
+			v.flash = styleDim.Render("no conflict on this row")
+			return nil
+		}
+		v.resolveConflict = &cf
+		v.resolveCanDisable = cf.Kind == commands.SkillVsCommand
+		v.resolveActive = true
+		if v.resolveCanDisable {
+			v.flash = styleDim.Render(fmt.Sprintf("resolve /%s: [s]kill off / [i]gnore / esc", cur.Effective))
+		} else {
+			v.flash = styleDim.Render(fmt.Sprintf("resolve /%s: [i]gnore / esc", cur.Effective))
+		}
 	}
 	return nil
 }
 
+func (v *commandView) applyResolveDisableSkill() {
+	c := v.resolveConflict
+	v.resolveActive = false
+	v.resolveConflict = nil
+	v.st.settings.SetSkillOverride(c.Effective, "off")
+	if err := config.Backup(v.st.settings.Path, v.st.paths.BackupsDir); err != nil {
+		v.flash = styleErr.Render("backup: " + err.Error())
+		return
+	}
+	if err := v.st.settings.Save(); err != nil {
+		v.flash = styleErr.Render("save: " + err.Error())
+		return
+	}
+	v.flash = styleOK.Render(fmt.Sprintf("skill %q disabled via skillOverrides", c.Effective))
+	v.rebuild()
+}
+
+func (v *commandView) applyResolveIgnore() {
+	c := v.resolveConflict
+	v.resolveActive = false
+	v.resolveConflict = nil
+	ig, err := commands.LoadIgnores(v.st.paths.Ignores)
+	if err != nil {
+		v.flash = styleErr.Render("load ignores: " + err.Error())
+		return
+	}
+	if ig.Has(c.Effective) {
+		v.flash = styleDim.Render(fmt.Sprintf("%q was already ignored", c.Effective))
+		return
+	}
+	ig.Add(c.Effective)
+	if err := ig.Save(); err != nil {
+		v.flash = styleErr.Render("save ignores: " + err.Error())
+		return
+	}
+	v.flash = styleOK.Render(fmt.Sprintf("/%s added to ignore list", c.Effective))
+	v.rebuild()
+}
+
 func (v *commandView) render() string {
 	var b strings.Builder
-	total := len(v.rows)
 	mode := ""
 	if v.conflictsOnly {
 		mode = styleWarn.Render("  [conflicts only]")
 	}
-	fmt.Fprintf(&b, "Commands (%d)%s", total, mode)
+	fmt.Fprintf(&b, "Commands (%d)%s", len(v.rows), mode)
 	if v.filterText != "" {
 		b.WriteString(styleDim.Render(fmt.Sprintf("  filter: %q", v.filterText)))
 	}
@@ -180,10 +268,10 @@ func (v *commandView) render() string {
 			pname, _ := config.ParsePluginID(c.PluginID)
 			src = "P:" + pname
 		}
+		_, cfEff := v.conflictMap[c.Effective]
+		_, cfSlug := v.conflictMap[c.Slug]
 		warn := "   "
-		if _, ok := v.conflictSet[c.Effective]; ok {
-			warn = styleWarn.Render(" ⚠ ")
-		} else if _, ok := v.conflictSet[c.Slug]; ok {
+		if cfEff || cfSlug {
 			warn = styleWarn.Render(" ⚠ ")
 		}
 		desc := assets.Truncate(c.Description, 50)
@@ -201,7 +289,13 @@ func (v *commandView) render() string {
 func (v *commandView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *commandView) helpText() string {
-	return "/: filter  !: conflicts only  c: clear"
+	if v.resolveActive {
+		if v.resolveCanDisable {
+			return "[s]kill off / [i]gnore / esc: cancel"
+		}
+		return "[i]gnore / esc: cancel"
+	}
+	return "/: filter  !: conflicts only  r: resolve  c: clear"
 }
 
 func (v *commandView) capturingInput() bool { return v.filterActive }

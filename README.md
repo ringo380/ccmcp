@@ -231,7 +231,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-171 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+182 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 
@@ -249,8 +249,9 @@ internal/
   report/         snapshot / sweep / drift / audit report generators
   skills/         skill CRUD + file-backed store
   stringslice/    shared slice helpers
-  tui/            bubbletea app: 8 tabs (MCPs, Plugins, Skills, Agents,
-                  Commands, Profiles, Summary, Doctor)
+  tui/            bubbletea app: 9 tabs (MCPs, Plugins, Marketplaces, Skills,
+                  Agents, Commands, Profiles, Summary, Doctor)
+  updates/        upstream version probes for marketplaces, plugins, MCPs
 main.go
 ```
 

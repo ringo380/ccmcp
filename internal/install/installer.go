@@ -411,6 +411,171 @@ func ListLocalMarketplaces(p paths.Paths) ([]string, error) {
 	return names, nil
 }
 
+// MarketplaceDir returns the on-disk path where a marketplace clone lives (whether or
+// not it currently exists).
+func MarketplaceDir(p paths.Paths, name string) string {
+	return filepath.Join(p.PluginsDir, "marketplaces", name)
+}
+
+// IsMarketplaceCloned reports whether <pluginsDir>/marketplaces/<name>/.git exists.
+func IsMarketplaceCloned(p paths.Paths, name string) bool {
+	_, err := os.Stat(filepath.Join(MarketplaceDir(p, name), ".git"))
+	return err == nil
+}
+
+// CloneMarketplace clones a marketplace (github/git/local) into pluginsDir/marketplaces/<name>.
+// For "local" sources, no clone happens — the directory is expected to already exist (or be
+// symlinked) by the user. Returns nil when the clone already exists; callers needing a refresh
+// should use UpdateMarketplace.
+func CloneMarketplace(p paths.Paths, mp config.Marketplace) error {
+	if mp.Name == "" {
+		return fmt.Errorf("marketplace name required")
+	}
+	dst := MarketplaceDir(p, mp.Name)
+	if _, err := os.Stat(filepath.Join(dst, ".git")); err == nil {
+		return nil
+	}
+	switch mp.SourceType {
+	case "github":
+		if mp.Repo == "" {
+			return fmt.Errorf("github source: missing repo")
+		}
+		url := fmt.Sprintf("https://github.com/%s.git", mp.Repo)
+		return gitClone(url, dst)
+	case "git":
+		if mp.Repo == "" {
+			return fmt.Errorf("git source: missing repo URL")
+		}
+		return gitClone(mp.Repo, dst)
+	case "local":
+		if mp.Path == "" {
+			return fmt.Errorf("local source: missing path")
+		}
+		if _, err := os.Stat(mp.Path); err != nil {
+			return fmt.Errorf("local marketplace path %s: %w", mp.Path, err)
+		}
+		// Ensure the parent dir exists; do nothing else — Claude Code expects local
+		// marketplaces to be referenced in-place via settings, not copied.
+		return os.MkdirAll(filepath.Dir(dst), 0o755)
+	default:
+		return fmt.Errorf("unknown source type %q (use github|git|local)", mp.SourceType)
+	}
+}
+
+// AddMarketplace adds an entry to extraKnownMarketplaces and (for github/git source types)
+// clones the marketplace into pluginsDir/marketplaces/<name>. Caller is responsible for
+// Backup() + Save() afterwards.
+func AddMarketplace(p paths.Paths, settings *config.Settings, mp config.Marketplace) error {
+	if err := settings.AddMarketplace(mp); err != nil {
+		return err
+	}
+	return CloneMarketplace(p, mp)
+}
+
+// RemoveMarketplace removes a marketplace entry from extraKnownMarketplaces and (when
+// purgeClone is true) deletes pluginsDir/marketplaces/<name>. Returns an error if the
+// marketplace is referenced by an installed plugin (caller should warn / require purge).
+// Caller is responsible for Backup() + Save() afterwards.
+func RemoveMarketplace(p paths.Paths, settings *config.Settings, installed *config.InstalledPlugins, name string, purgeClone bool) error {
+	for _, ip := range installed.List() {
+		_, mkt := config.ParsePluginID(ip.ID)
+		if mkt == name {
+			return fmt.Errorf("marketplace %q is still referenced by installed plugin %q; uninstall the plugin first", name, ip.ID)
+		}
+	}
+	if !settings.RemoveMarketplace(name) {
+		return fmt.Errorf("marketplace %q not found in extraKnownMarketplaces", name)
+	}
+	if purgeClone {
+		_ = os.RemoveAll(MarketplaceDir(p, name))
+	}
+	return nil
+}
+
+// LocalMarketplaceHead returns the SHA of HEAD in the cloned marketplace directory,
+// empty string if the marketplace is not cloned or git fails.
+func LocalMarketplaceHead(p paths.Paths, name string) string {
+	dir := MarketplaceDir(p, name)
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		return ""
+	}
+	sha, _ := gitHeadSha(dir)
+	return sha
+}
+
+// RemoteMarketplaceHead runs `git ls-remote <origin> HEAD` for the marketplace's remote
+// and returns the upstream HEAD sha. Returns ("", err) when git fails or no remote is
+// configured (e.g. local-source marketplaces).
+func RemoteMarketplaceHead(p paths.Paths, name string) (string, error) {
+	dir := MarketplaceDir(p, name)
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		return "", fmt.Errorf("marketplace %q not cloned", name)
+	}
+	cmd := exec.Command("git", "-C", dir, "ls-remote", "--quiet", "origin", "HEAD")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git ls-remote: %w", err)
+	}
+	// Output: "<sha>\tHEAD"
+	line := strings.TrimSpace(out.String())
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return "", fmt.Errorf("empty ls-remote output")
+	}
+	return fields[0], nil
+}
+
+// RemoteSourceHead returns the upstream HEAD sha for a generic git URL (used to detect
+// updates for plugins whose source is a separate git/url/github source rather than the
+// marketplace itself). Empty string when the URL is unreachable.
+func RemoteSourceHead(url string) (string, error) {
+	if url == "" {
+		return "", fmt.Errorf("empty url")
+	}
+	cmd := exec.Command("git", "ls-remote", "--quiet", url, "HEAD")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	line := strings.TrimSpace(out.String())
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return "", fmt.Errorf("empty ls-remote output")
+	}
+	return fields[0], nil
+}
+
+// PluginSourceURL inspects a marketplace plugin entry and returns the upstream git URL
+// for its source (only meaningful for url/git-subdir/github sources). Empty string for
+// bare-string sources — those track the marketplace itself.
+func PluginSourceURL(entry MarketplacePlugin) string {
+	var asString string
+	if err := json.Unmarshal(entry.Source, &asString); err == nil && asString != "" {
+		return ""
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(entry.Source, &obj); err != nil {
+		return ""
+	}
+	switch obj["source"] {
+	case "url":
+		s, _ := obj["url"].(string)
+		return s
+	case "git-subdir":
+		s, _ := obj["url"].(string)
+		return s
+	case "github":
+		repo, _ := obj["repo"].(string)
+		if repo == "" {
+			return ""
+		}
+		return fmt.Sprintf("https://github.com/%s.git", repo)
+	}
+	return ""
+}
+
 // UpdateMarketplace runs `git pull --ff-only` in the cloned marketplace directory so
 // that subsequent Install calls see the latest plugin sources. Returns an error if the
 // marketplace directory has not been cloned (no .git).

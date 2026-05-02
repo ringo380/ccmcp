@@ -10,6 +10,7 @@ import (
 
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/stringslice"
+	"github.com/ringo380/ccmcp/internal/updates"
 )
 
 // Scope naming aligns with Claude Code's own terminology. "effective" is the default
@@ -54,7 +55,14 @@ type mcpView struct {
 	// Press `H` to flip and reveal them (rows are interleaved alphabetically — no divider).
 	showHidden bool
 
+	loaded bool // lazy-load gate for update probes
+
 	flash string
+}
+
+type mcpUpdateCheckMsg struct {
+	name   string
+	status updates.Status
 }
 
 // mcpRow represents one (display-name, source) pair. Two rows can share a Name
@@ -335,6 +343,10 @@ func (v *mcpView) classifyOrphan(key string, src config.MCPSource, name, pluginN
 // --- update (input handling) -----------------------------------------------
 
 func (v *mcpView) update(msg tea.Msg) tea.Cmd {
+	if m, ok := msg.(mcpUpdateCheckMsg); ok {
+		v.st.updates.PutMCP(m.name, m.status)
+		return nil
+	}
 	if v.filterActive {
 		var cmd tea.Cmd
 		v.filter, cmd = v.filter.Update(msg)
@@ -955,7 +967,65 @@ func (v *mcpView) formatRow(r mcpRow) string {
 		badgeStr = styleDim.Render("[" + badge + "]")
 	}
 	suffix := truncate(r.Description, 54)
-	return fmt.Sprintf("%s %-28s %s  %s", mark, r.Name, badgeStr, styleDim.Render(suffix))
+	line := fmt.Sprintf("%s %-28s %s  %s", mark, r.Name, badgeStr, styleDim.Render(suffix))
+	if s, ok := v.st.updates.MCP(r.Name); ok && s.Outdated {
+		line += "  " + styleWarn.Render("↑ "+s.Remote)
+	}
+	return line
+}
+
+// initialCheckCmd kicks off update probes for every MCP with a detectable npm/pypi
+// launcher pattern. Only runs once per session; press R to refresh.
+func (v *mcpView) initialCheckCmd() tea.Cmd {
+	if v.loaded {
+		return nil
+	}
+	v.loaded = true
+	return v.buildCheckCmd()
+}
+
+func (v *mcpView) buildCheckCmd() tea.Cmd {
+	type target struct {
+		name     string
+		launcher updates.MCPLauncher
+	}
+	seen := map[string]bool{}
+	var targets []target
+	for _, r := range v.rows {
+		if seen[r.Name] {
+			continue
+		}
+		seen[r.Name] = true
+		cfg, _ := r.Config.(map[string]any)
+		if cfg == nil {
+			continue
+		}
+		cmdStr, _ := cfg["command"].(string)
+		var args []string
+		if raw, ok := cfg["args"].([]any); ok {
+			for _, a := range raw {
+				if s, ok := a.(string); ok {
+					args = append(args, s)
+				}
+			}
+		}
+		l := updates.DetectMCPLauncher(cmdStr, args)
+		if l.Pkg == "" {
+			continue
+		}
+		targets = append(targets, target{name: r.Name, launcher: l})
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	cmds := make([]tea.Cmd, 0, len(targets))
+	for _, t := range targets {
+		tc := t
+		cmds = append(cmds, func() tea.Msg {
+			return mcpUpdateCheckMsg{name: tc.name, status: updates.CheckMCPLauncher(updates.DefaultRunner, tc.launcher)}
+		})
+	}
+	return tea.Batch(cmds...)
 }
 
 // markFor produces the [x] / [~] / [ ] mark per row for the current scope.

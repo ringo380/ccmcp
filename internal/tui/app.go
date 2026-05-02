@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/paths"
+	"github.com/ringo380/ccmcp/internal/updates"
 )
 
 // Run launches the bubbletea TUI.
@@ -34,6 +35,8 @@ func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 	switch tab {
 	case "plugins":
 		m.tab = tabPlugins
+	case "marketplaces", "markets", "mkt":
+		m.tab = tabMarketplaces
 	case "skills":
 		m.tab = tabSkills
 	case "agents":
@@ -93,6 +96,9 @@ type state struct {
 	// claudeAi: full list of "claude.ai <Name>" strings from claudeAiMcpEverConnected
 	claudeAi []string
 
+	// updates caches probe results (per session) for marketplaces, plugins, and MCPs.
+	updates *updates.Cache
+
 	// change tracking
 	dirtyClaude   bool
 	dirtyStash    bool
@@ -137,6 +143,7 @@ func loadState(p paths.Paths, project string) (*state, error) {
 		settings:  settings,
 		installed: installed,
 		profiles:  profiles,
+		updates:   updates.NewCache(),
 	}
 	st.rescanPluginMCPs()
 	st.claudeAi = cj.ClaudeAiEverConnected()

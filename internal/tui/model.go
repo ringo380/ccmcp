@@ -13,6 +13,7 @@ type tabID int
 const (
 	tabMCPs tabID = iota
 	tabPlugins
+	tabMarketplaces
 	tabSkills
 	tabAgents
 	tabCommands
@@ -27,6 +28,7 @@ var tabs = []struct {
 }{
 	{tabMCPs, "MCPs"},
 	{tabPlugins, "Plugins"},
+	{tabMarketplaces, "Marketplaces"},
 	{tabSkills, "Skills"},
 	{tabAgents, "Agents"},
 	{tabCommands, "Commands"},
@@ -43,27 +45,29 @@ type model struct {
 	message  string // transient status message
 	showHelp bool   // toggled by `?`; when true, View() renders the legend instead of tabs
 
-	mcps     *mcpView
-	plugins  *pluginView
-	skills   *skillView
-	agents   *agentView
-	commands *commandView
-	profiles *profileView
-	summary  *summaryView
-	doctor   *doctorView
+	mcps         *mcpView
+	plugins      *pluginView
+	marketplaces *marketplaceView
+	skills       *skillView
+	agents       *agentView
+	commands     *commandView
+	profiles     *profileView
+	summary      *summaryView
+	doctor       *doctorView
 }
 
 func newModel(st *state) *model {
 	return &model{
-		st:       st,
-		mcps:     newMCPView(st),
-		plugins:  newPluginView(st),
-		skills:   newSkillView(st),
-		agents:   newAgentView(st),
-		commands: newCommandView(st),
-		profiles: newProfileView(st),
-		summary:  newSummaryView(st),
-		doctor:   newDoctorView(st),
+		st:           st,
+		mcps:         newMCPView(st),
+		plugins:      newPluginView(st),
+		marketplaces: newMarketplaceView(st),
+		skills:       newSkillView(st),
+		agents:       newAgentView(st),
+		commands:     newCommandView(st),
+		profiles:     newProfileView(st),
+		summary:      newSummaryView(st),
+		doctor:       newDoctorView(st),
 	}
 }
 
@@ -76,6 +80,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.mcps.resize(msg.Width, msg.Height-reservedHeight)
 		m.plugins.resize(msg.Width, msg.Height-reservedHeight)
+		m.marketplaces.resize(msg.Width, msg.Height-reservedHeight)
 		m.skills.resize(msg.Width, msg.Height-reservedHeight)
 		m.agents.resize(msg.Width, msg.Height-reservedHeight)
 		m.commands.resize(msg.Width, msg.Height-reservedHeight)
@@ -129,32 +134,35 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "tab":
 			m.tab = (m.tab + 1) % tabID(len(tabs))
-			return m, nil
+			return m, m.tabEnterCmd()
 		case "shift+tab":
 			m.tab = (m.tab + tabID(len(tabs)) - 1) % tabID(len(tabs))
-			return m, nil
+			return m, m.tabEnterCmd()
 		case "1":
 			m.tab = tabMCPs
-			return m, nil
+			return m, m.mcps.initialCheckCmd()
 		case "2":
 			m.tab = tabPlugins
-			return m, nil
+			return m, m.plugins.initialCheckCmd()
 		case "3":
+			m.tab = tabMarketplaces
+			return m, m.marketplaces.initialCheckCmd()
+		case "4":
 			m.tab = tabSkills
 			return m, nil
-		case "4":
+		case "5":
 			m.tab = tabAgents
 			return m, nil
-		case "5":
+		case "6":
 			m.tab = tabCommands
 			return m, nil
-		case "6":
+		case "7":
 			m.tab = tabProfiles
 			return m, nil
-		case "7":
+		case "8":
 			m.tab = tabSummary
 			return m, nil
-		case "8":
+		case "9":
 			m.tab = tabDoctor
 			return m, nil
 		}
@@ -176,6 +184,13 @@ func (m *model) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.plugins.flash != "" {
 			m.message = m.plugins.flash
 			m.plugins.flash = ""
+		}
+		return m, cmd
+	case tabMarketplaces:
+		cmd := m.marketplaces.update(msg)
+		if m.marketplaces.flash != "" {
+			m.message = m.marketplaces.flash
+			m.marketplaces.flash = ""
 		}
 		return m, cmd
 	case tabSkills:
@@ -207,9 +222,19 @@ func (m *model) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	case tabSummary:
-		return m, m.summary.update(msg)
+		cmd := m.summary.update(msg)
+		if m.summary.flash != "" {
+			m.message = m.summary.flash
+			m.summary.flash = ""
+		}
+		return m, cmd
 	case tabDoctor:
-		return m, m.doctor.update(msg)
+		cmd := m.doctor.update(msg)
+		if m.doctor.flash != "" {
+			m.message = m.doctor.flash
+			m.doctor.flash = ""
+		}
+		return m, cmd
 	}
 	return m, nil
 }
@@ -220,6 +245,8 @@ func (m *model) activeView() view {
 		return m.mcps
 	case tabPlugins:
 		return m.plugins
+	case tabMarketplaces:
+		return m.marketplaces
 	case tabSkills:
 		return m.skills
 	case tabAgents:
@@ -281,6 +308,20 @@ func (m *model) View() string {
 func (m *model) footerHelp() string {
 	common := "tab: next  w: save  ?: help  q: quit"
 	return m.activeView().helpText() + "  │  " + common
+}
+
+// tabEnterCmd returns a one-shot Cmd to fire when the user navigates to a tab that
+// has lazy-loaded background work (e.g. update probes). Most tabs return nil.
+func (m *model) tabEnterCmd() tea.Cmd {
+	switch m.tab {
+	case tabMarketplaces:
+		return m.marketplaces.initialCheckCmd()
+	case tabPlugins:
+		return m.plugins.initialCheckCmd()
+	case tabMCPs:
+		return m.mcps.initialCheckCmd()
+	}
+	return nil
 }
 
 // reservedHeight is how much vertical space the header + footer + padding take.
