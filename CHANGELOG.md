@@ -6,6 +6,52 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-02
+
+### Added
+
+- **Marketplaces TUI tab** (key `3`) — full CRUD parity with Claude
+  Code's `/plugins` interface: add (`a`) with multi-step prompt, update
+  (`u`), bulk update (`B`), remove (`x`, two-step confirm with clone-dir
+  purge), filter (`/`), and refresh update probes (`R`). Lists installed
+  marketplaces with plugin counts and installed-vs-available badges.
+- **"Newer version available" indicators** — `↑` markers next to
+  outdated rows on the Plugins, Marketplaces, and MCPs tabs; aggregate
+  count surfaced at the top of the Summary tab.
+- **`internal/updates` package** — git `ls-remote` probes for
+  marketplaces and plugin sources; best-effort `npm view` / PyPI JSON
+  probes for npx- and uvx-launched stdio MCPs. Injectable `Runner` so
+  tests never hit the network. In-process session cache, invalidated
+  after successful updates.
+- **`ccmcp plugin outdated`** and **`ccmcp marketplace outdated`** —
+  CLI parity with the TUI indicators; reports rows whose upstream
+  has advanced.
+- **`marketplace add` clones automatically** — was settings-only;
+  `--no-clone` opt-out preserved. `marketplace remove --purge` deletes
+  the on-disk clone directory.
+
+### Fixed
+
+- Plugin bulk update (`B`) now applies state mutations on the main
+  bubbletea goroutine rather than the worker, eliminating a race on
+  `installed_plugins.json`. Sets `dirtyPlugins` and rescans plugin MCPs
+  to match the single-update path.
+- `marketplace remove --dry-run` now validates marketplace existence
+  and plugin references before the dry-run guard, so dry-run can no
+  longer promise success the real path would refuse.
+- TUI marketplace add/remove persists settings synchronously after disk
+  side-effects (clone / RemoveAll), preventing settings.json and the
+  on-disk clone from diverging on `Q` force-quit.
+- `install.RemoveMarketplace` surfaces `os.RemoveAll` errors instead
+  of silently swallowing them.
+
+### Changed
+
+- Numeric tab shortcuts shifted to **1–9** to accommodate the new
+  Marketplaces tab (was 1–8).
+- `.gitignore` now excludes `.DS_Store`, `.claude-dev-helper/`, and
+  `.plugin-config/`.
+
 ## [0.4.0] — 2026-04-30
 
 ### Added
@@ -245,7 +291,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.4.0
 [0.3.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.3.1
 [0.3.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.3.0
