@@ -12,6 +12,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/commands"
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/skills"
+	"github.com/ringo380/ccmcp/internal/stringslice"
 )
 
 // summaryView is the "Summary" tab: bird's-eye overview of every scope, plus
@@ -21,6 +22,9 @@ type summaryView struct {
 	st   *state
 	w, h int
 	top  int
+
+	pendingPrune bool
+	flash        string
 }
 
 func newSummaryView(st *state) *summaryView {
@@ -31,6 +35,10 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return nil
+	}
+	// Clear pending prune on any key other than 'p'.
+	if v.pendingPrune && key.String() != "p" {
+		v.pendingPrune = false
 	}
 	switch key.String() {
 	case "up", "k":
@@ -48,12 +56,74 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		v.top += 10
 	case "g", "home":
 		v.top = 0
+	case "p":
+		if v.pendingPrune {
+			v.doPrune()
+		} else {
+			v.pendingPrune = true
+			v.flash = styleWarn.Render("press 'p' again to prune orphaned overrides, any other key cancels")
+		}
 	}
 	return nil
 }
 
+func (v *summaryView) doPrune() {
+	v.pendingPrune = false
+	overrides := v.st.cj.ProjectDisabledMcpServers(v.st.project)
+	if len(overrides) == 0 {
+		v.flash = styleDim.Render("no overrides to prune")
+		return
+	}
+	userMCPs := v.st.cj.UserMCPNames()
+	projMCPs := v.st.cj.ProjectMCPNames(v.st.project)
+	claudeAi := v.st.cj.ClaudeAiEverConnected()
+	var stashNames []string
+	if v.st.stash != nil {
+		stashNames = v.st.stash.Names()
+	}
+	cls := classify.Classify(overrides, userMCPs, projMCPs, claudeAi, stashNames, v.st.pluginMCPs)
+	toRemove := append(cls.OrphanPlugin, cls.OrphanStdio...)
+	if len(toRemove) == 0 {
+		v.flash = styleDim.Render("no orphaned overrides found")
+		return
+	}
+	remaining := overrides
+	for _, k := range toRemove {
+		remaining = stringslice.Remove(remaining, k)
+	}
+	v.st.cj.SetProjectDisabledMcpServers(v.st.project, remaining)
+	if err := config.Backup(v.st.cj.Path, v.st.paths.BackupsDir); err != nil {
+		v.flash = styleErr.Render("backup: " + err.Error())
+		return
+	}
+	if err := v.st.cj.Save(); err != nil {
+		v.flash = styleErr.Render("save: " + err.Error())
+		return
+	}
+	v.flash = styleOK.Render(fmt.Sprintf("pruned %d orphaned entr%s", len(toRemove), classify.PluralY(len(toRemove))))
+}
+
 func (v *summaryView) render() string {
 	var b strings.Builder
+
+	// --- Updates available (top-of-page so it's hard to miss) ----------
+	if v.st.updates != nil {
+		mkt, plg, mcp := v.st.updates.CountOutdated()
+		if mkt+plg+mcp > 0 {
+			b.WriteString(styleTitle.Render("Updates available") + "\n")
+			parts := []string{}
+			if plg > 0 {
+				parts = append(parts, fmt.Sprintf("%d plugin(s)", plg))
+			}
+			if mkt > 0 {
+				parts = append(parts, fmt.Sprintf("%d marketplace(s)", mkt))
+			}
+			if mcp > 0 {
+				parts = append(parts, fmt.Sprintf("%d MCP launcher(s)", mcp))
+			}
+			b.WriteString("  " + styleWarn.Render("↑ "+strings.Join(parts, ", ")) + "\n\n")
+		}
+	}
 
 	// --- MCPs -----------------------------------------------------------
 	userMCPs := v.st.cj.UserMCPNames()
@@ -348,7 +418,7 @@ func (v *summaryView) render() string {
 func (v *summaryView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *summaryView) helpText() string {
-	return "j/k: scroll  g: top"
+	return "j/k: scroll  g: top  p: prune orphans"
 }
 
 func (v *summaryView) capturingInput() bool { return false }

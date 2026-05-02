@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/paths"
+	"github.com/ringo380/ccmcp/internal/updates"
 )
 
 // Run launches the bubbletea TUI.
@@ -24,7 +25,12 @@ func Run(p paths.Paths, projectPath string) error {
 }
 
 // Dump returns the TUI's first render for diagnostic purposes (no TTY, no interaction).
-// tab can be "mcps" | "plugins" | "skills" | "agents" | "commands" | "profiles" | "summary" | "doctor".
+// tab can be "mcps" | "plugins" | "marketplaces" (alias: "markets"|"mkt") | "skills" |
+// "agents" | "commands" | "profiles" | "summary" | "doctor" | "help".
+//
+// Note: lazy-loaded update probes (plugins/marketplaces/MCPs "↑ update available"
+// indicators) fire from update(), not render(), so Dump() will not show them — by
+// design, since Dump is a one-shot diagnostic and shouldn't fire network calls.
 func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 	st, err := loadState(p, projectPath)
 	if err != nil {
@@ -34,6 +40,8 @@ func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 	switch tab {
 	case "plugins":
 		m.tab = tabPlugins
+	case "marketplaces", "markets", "mkt":
+		m.tab = tabMarketplaces
 	case "skills":
 		m.tab = tabSkills
 	case "agents":
@@ -93,6 +101,9 @@ type state struct {
 	// claudeAi: full list of "claude.ai <Name>" strings from claudeAiMcpEverConnected
 	claudeAi []string
 
+	// updates caches probe results (per session) for marketplaces, plugins, and MCPs.
+	updates *updates.Cache
+
 	// change tracking
 	dirtyClaude   bool
 	dirtyStash    bool
@@ -137,6 +148,7 @@ func loadState(p paths.Paths, project string) (*state, error) {
 		settings:  settings,
 		installed: installed,
 		profiles:  profiles,
+		updates:   updates.NewCache(),
 	}
 	st.rescanPluginMCPs()
 	st.claudeAi = cj.ClaudeAiEverConnected()

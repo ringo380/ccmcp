@@ -10,6 +10,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/stringslice"
+	"github.com/ringo380/ccmcp/internal/updates"
 )
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,7 @@ type pluginRowView struct {
 	IsRemote  bool   // claude.ai integration row
 	RemoteKey string // override key e.g. "claude.ai Stripe"
 	DisabledHere bool // per-project disabled (remote rows only)
+	Outdated  bool   // a newer upstream version is available
 }
 
 type availPluginRow struct {
@@ -45,9 +47,29 @@ type pluginUpdateResultMsg struct {
 	err          error
 }
 
+type pluginBulkUpdateResultMsg struct {
+	// applied carries each successful re-fetch so install.UpdateInstall runs on the
+	// main bubbletea goroutine. Mutating v.st.installed inside the worker goroutine
+	// races against rebuild() / List() on the render thread.
+	applied []bulkUpdateApplied
+	skipped []string
+	failed  []string
+}
+
+type bulkUpdateApplied struct {
+	id          string
+	result      *install.Result
+	oldInstPath string
+}
+
 type pluginInstallResultMsg struct {
 	result *install.Result
 	err    error
+}
+
+type pluginUpdateCheckMsg struct {
+	id     string
+	status updates.Status
 }
 
 type availLoadedMsg struct {
@@ -61,6 +83,8 @@ type availLoadedMsg struct {
 
 type pluginView struct {
 	st *state
+
+	loaded bool
 
 	rows  []pluginRowView
 	index int
@@ -81,8 +105,9 @@ type pluginView struct {
 	availErr    string
 
 	// async operation state
-	updating  bool
-	installing bool
+	updating     bool
+	bulkUpdating bool
+	installing   bool
 
 	// two-step remove confirmation
 	pendingRemove string
@@ -111,13 +136,21 @@ func (v *pluginView) rebuild() {
 	for _, e := range v.st.settings.PluginEntries() {
 		seen[e.ID] = true
 		ip := installedIdx[e.ID]
-		rows = append(rows, pluginRowView{ID: e.ID, Enabled: e.Enabled, Known: true, Installed: ip.InstallPath != "", Version: ip.Version})
+		row := pluginRowView{ID: e.ID, Enabled: e.Enabled, Known: true, Installed: ip.InstallPath != "", Version: ip.Version}
+		if s, ok := v.st.updates.Plugin(e.ID); ok && s.Outdated {
+			row.Outdated = true
+		}
+		rows = append(rows, row)
 	}
 	for _, ip := range v.st.installed.List() {
 		if seen[ip.ID] {
 			continue
 		}
-		rows = append(rows, pluginRowView{ID: ip.ID, Installed: true, Version: ip.Version})
+		row := pluginRowView{ID: ip.ID, Installed: true, Version: ip.Version}
+		if s, ok := v.st.updates.Plugin(ip.ID); ok && s.Outdated {
+			row.Outdated = true
+		}
+		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
 
@@ -188,6 +221,36 @@ func firstRemoteIdx(rows []pluginRowView) int {
 func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 	// Handle async result messages regardless of mode.
 	switch m := msg.(type) {
+	case pluginBulkUpdateResultMsg:
+		v.bulkUpdating = false
+		// Apply UpdateInstall on the main goroutine to avoid racing with rebuild()'s
+		// reads of v.st.installed.
+		for _, a := range m.applied {
+			install.UpdateInstall(v.st.installed, a.result, a.oldInstPath)
+			v.st.updates.InvalidatePlugin(a.id)
+		}
+		if len(m.applied) > 0 {
+			v.st.dirtyPlugins = true
+			v.st.rescanPluginMCPs()
+		}
+		parts := []string{}
+		if len(m.applied) > 0 {
+			parts = append(parts, fmt.Sprintf("%d updated", len(m.applied)))
+		}
+		if len(m.skipped) > 0 {
+			parts = append(parts, fmt.Sprintf("%d already up to date", len(m.skipped)))
+		}
+		if len(m.failed) > 0 {
+			parts = append(parts, styleErr.Render(fmt.Sprintf("%d failed", len(m.failed))))
+		}
+		if len(parts) == 0 {
+			v.flash = styleDim.Render("no installed plugins to update")
+		} else {
+			v.flash = styleOK.Render("bulk update: " + strings.Join(parts, ", "))
+		}
+		v.rebuild()
+		return nil
+
 	case pluginUpdateResultMsg:
 		v.updating = false
 		if m.err != nil {
@@ -201,6 +264,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		install.UpdateInstall(v.st.installed, m.result, m.oldInstPath)
 		v.st.dirtyPlugins = true
 		v.st.rescanPluginMCPs()
+		v.st.updates.InvalidatePlugin(m.id)
 		v.rebuild()
 		oldS := pluginFirstN(m.oldSha, 8)
 		newS := pluginFirstN(m.result.GitCommitSha, 8)
@@ -230,6 +294,11 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			v.availErr = ""
 			v.availRows = m.rows
 		}
+		return nil
+
+	case pluginUpdateCheckMsg:
+		v.st.updates.PutPlugin(m.id, m.status)
+		v.rebuild()
 		return nil
 	}
 
@@ -449,8 +518,116 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		v.st.rescanPluginMCPs()
 		v.flash = styleDim.Render(fmt.Sprintf("disabled %d plugins (unsaved)", len(visible)))
 		v.rebuild()
+
+	case "R":
+		return v.initialCheckCmdForce()
+
+	case "B":
+		if v.bulkUpdating || v.updating {
+			return nil
+		}
+		// Collect all installed plugins with a qualified ID.
+		type updateTarget struct {
+			id          string
+			name        string
+			mkt         string
+			oldSha      string
+			oldInstPath string
+		}
+		var targets []updateTarget
+		for _, ip := range v.st.installed.List() {
+			name, mkt := config.ParsePluginID(ip.ID)
+			if mkt == "" {
+				continue
+			}
+			targets = append(targets, updateTarget{
+				id:          ip.ID,
+				name:        name,
+				mkt:         mkt,
+				oldSha:      ip.GitCommitSha,
+				oldInstPath: ip.InstallPath,
+			})
+		}
+		if len(targets) == 0 {
+			v.flash = styleDim.Render("no installed plugins to update")
+			return nil
+		}
+		v.bulkUpdating = true
+		v.flash = styleDim.Render(fmt.Sprintf("updating %d plugin(s)…", len(targets)))
+		p := v.st.paths
+		return func() tea.Msg {
+			var applied []bulkUpdateApplied
+			var skipped, failed []string
+			for _, t := range targets {
+				result, err := install.Install(p, t.mkt, t.name)
+				if err != nil {
+					failed = append(failed, t.id)
+					continue
+				}
+				// "skipped" only if we got a real sha back AND it matches: an empty
+				// sha (non-git source) plus an empty oldSha would otherwise spuriously
+				// match every iteration.
+				if result.GitCommitSha != "" && t.oldSha != "" && result.GitCommitSha == t.oldSha {
+					skipped = append(skipped, t.id)
+					continue
+				}
+				applied = append(applied, bulkUpdateApplied{id: t.id, result: result, oldInstPath: t.oldInstPath})
+			}
+			return pluginBulkUpdateResultMsg{applied: applied, skipped: skipped, failed: failed}
+		}
 	}
 	return nil
+}
+
+// initialCheckCmd is fired by the model when the user first switches to this tab. It
+// kicks off update probes for every installed plugin (and the marketplaces they live
+// in, so bare-string sources don't double-probe). Results arrive as pluginUpdateCheckMsg.
+func (v *pluginView) initialCheckCmd() tea.Cmd {
+	if v.loaded {
+		return nil
+	}
+	v.loaded = true
+	return v.buildCheckCmd()
+}
+
+// initialCheckCmdForce ignores the loaded flag (R key — manual refresh).
+func (v *pluginView) initialCheckCmdForce() tea.Cmd {
+	v.loaded = true
+	for _, ip := range v.st.installed.List() {
+		v.st.updates.InvalidatePlugin(ip.ID)
+	}
+	return v.buildCheckCmd()
+}
+
+func (v *pluginView) buildCheckCmd() tea.Cmd {
+	installed := v.st.installed.List()
+	if len(installed) == 0 {
+		return nil
+	}
+	p := v.st.paths
+	// Resolve marketplace HEADs first so bare-string plugins can reuse them.
+	mktHeads := map[string]string{}
+	for _, ip := range installed {
+		_, mkt := config.ParsePluginID(ip.ID)
+		if mkt == "" {
+			continue
+		}
+		if _, ok := mktHeads[mkt]; ok {
+			continue
+		}
+		mktHeads[mkt] = "" // placeholder; resolved in cmd
+	}
+	cmds := make([]tea.Cmd, 0, len(installed))
+	for _, ipx := range installed {
+		ip := ipx
+		cmds = append(cmds, func() tea.Msg {
+			_, mkt := config.ParsePluginID(ip.ID)
+			head := install.LocalMarketplaceHead(p, mkt)
+			s := updates.CheckPlugin(p, ip, head)
+			return pluginUpdateCheckMsg{id: ip.ID, status: s}
+		})
+	}
+	return tea.Batch(cmds...)
 }
 
 func (v *pluginView) updateAvailable(key tea.KeyMsg) tea.Cmd {
@@ -530,8 +707,17 @@ func (v *pluginView) render() string {
 	}
 	localCount := len(visible) - countRemote(visible)
 	remoteVis := countRemote(visible)
+	outdated := 0
+	for _, r := range v.rows {
+		if r.Outdated {
+			outdated++
+		}
+	}
 	title := fmt.Sprintf("Plugins — %s  (showing %d/%d local, %d remote; %d enabled, %d disabled)",
 		mode, localCount, len(v.rows)-remoteCount, remoteVis, enabled, disabled)
+	if outdated > 0 {
+		title += "  " + styleWarn.Render(fmt.Sprintf("(%d update available)", outdated))
+	}
 
 	var b strings.Builder
 	b.WriteString(title)
@@ -541,6 +727,9 @@ func (v *pluginView) render() string {
 	}
 	if v.updating {
 		b.WriteString(styleDim.Render("  (update in progress…)") + "\n")
+	}
+	if v.bulkUpdating {
+		b.WriteString(styleDim.Render("  (bulk update in progress…)") + "\n")
 	}
 
 	if len(visible) == 0 {
@@ -599,6 +788,9 @@ func (v *pluginView) render() string {
 		line := fmt.Sprintf("%s %s", mark, r.ID)
 		if !r.IsRemote && r.Version != "" {
 			line += "  " + styleDim.Render("v"+r.Version)
+		}
+		if r.Outdated {
+			line += "  " + styleWarn.Render("↑ update available")
 		}
 		if r.IsRemote && r.DisabledHere {
 			line += "  " + styleDim.Render("(disabled here)")
@@ -697,7 +889,7 @@ func (v *pluginView) helpText() string {
 	if v.mode == "available" {
 		return "I: install selected  esc: back  j/k: navigate"
 	}
-	return "space: toggle  U: update  x: remove  I: browse available  f: filter-mode  A/N: all on/off  /: search"
+	return "space: toggle  U: update  B: update all  x: remove  I: browse available  f: filter  A/N: all on/off  /: search"
 }
 
 func (v *pluginView) capturingInput() bool { return v.filterActive }

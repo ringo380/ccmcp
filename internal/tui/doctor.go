@@ -11,18 +11,35 @@ import (
 )
 
 // doctorView runs structural lint checks on CLAUDE.md and MEMORY.md and
-// displays the results. Read-only; press 'r' to re-run.
+// displays the results. Press 'r' to re-run lint; 'l' to run an LLM review.
 type doctorView struct {
 	st     *state
 	groups []docGroup
 	w, h   int
 	top    int
 	loaded bool // false until first lint run; set false again on 'r'
+
+	// LLM review state
+	llmRunning bool
+	llmResults []llmReviewResult
+	showLLM    bool
+
+	flash string
 }
 
 type docGroup struct {
 	label  string
 	issues []doctor.Issue
+}
+
+type llmReviewResult struct {
+	path    string
+	content string
+	err     error
+}
+
+type doctorLLMResultMsg struct {
+	results []llmReviewResult
 }
 
 func newDoctorView(st *state) *doctorView {
@@ -57,6 +74,15 @@ func tuiMemoryPath(claudeConfigDir, projectPath string) string {
 }
 
 func (v *doctorView) update(msg tea.Msg) tea.Cmd {
+	if result, ok := msg.(doctorLLMResultMsg); ok {
+		v.llmRunning = false
+		v.llmResults = result.results
+		v.showLLM = true
+		v.top = 0
+		v.flash = ""
+		return nil
+	}
+
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return nil
@@ -66,6 +92,33 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 	switch key.String() {
 	case "r":
 		v.loaded = false // render() will re-run lint on the next frame
+		v.showLLM = false
+		v.llmResults = nil
+	case "l":
+		if v.llmRunning {
+			return nil
+		}
+		v.llmRunning = true
+		v.showLLM = false
+		v.flash = styleDim.Render("running LLM review…")
+		claudePath := filepath.Join(v.st.project, "CLAUDE.md")
+		memDir := tuiMemoryPath(v.st.paths.ClaudeConfigDir, v.st.project)
+		memPath := filepath.Join(memDir, "MEMORY.md")
+		return func() tea.Msg {
+			opts := doctor.ReviewOptions{Provider: doctor.ProviderAnthropic}
+			var results []llmReviewResult
+			if content, err := doctor.Review(claudePath, opts); err != nil {
+				results = append(results, llmReviewResult{path: claudePath, err: err})
+			} else {
+				results = append(results, llmReviewResult{path: claudePath, content: content})
+			}
+			if content, err := doctor.Review(memPath, opts); err != nil {
+				results = append(results, llmReviewResult{path: memPath, err: err})
+			} else {
+				results = append(results, llmReviewResult{path: memPath, content: content})
+			}
+			return doctorLLMResultMsg{results: results}
+		}
 	case "j", "down":
 		if v.top < totalLines-pageH {
 			v.top++
@@ -98,9 +151,18 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 }
 
 func (v *doctorView) render() string {
-	if !v.loaded {
+	if !v.loaded && !v.llmRunning {
 		v.runLint()
 	}
+
+	if v.llmRunning {
+		return "Doctor — " + styleDim.Render("LLM review in progress…") + "\n" + v.flash
+	}
+
+	if v.showLLM {
+		return v.renderLLM()
+	}
+
 	total := 0
 	for _, g := range v.groups {
 		total += len(g.issues)
@@ -161,10 +223,45 @@ func (v *doctorView) render() string {
 	return b.String()
 }
 
+func (v *doctorView) renderLLM() string {
+	var b strings.Builder
+	b.WriteString("Doctor — LLM review\n")
+
+	var lines []string
+	for _, r := range v.llmResults {
+		lines = append(lines, styleDim.Render("── "+r.path+" ──"))
+		if r.err != nil {
+			lines = append(lines, styleErr.Render("  error: "+r.err.Error()))
+		} else {
+			for _, l := range strings.Split(r.content, "\n") {
+				lines = append(lines, "  "+l)
+			}
+		}
+		lines = append(lines, "")
+	}
+
+	pageH := v.pageHeight()
+	if v.top < 0 {
+		v.top = 0
+	}
+	end := v.top + pageH
+	if end > len(lines) {
+		end = len(lines)
+	}
+	for _, l := range lines[v.top:end] {
+		b.WriteString(l)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 func (v *doctorView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *doctorView) helpText() string {
-	return "r: re-run  j/k: scroll  g/G: top/bottom"
+	if v.llmRunning {
+		return "LLM review in progress…"
+	}
+	return "r: re-run lint  l: LLM review  j/k: scroll  g/G: top/bottom"
 }
 
 func (v *doctorView) capturingInput() bool { return false }
@@ -178,6 +275,19 @@ func (v *doctorView) pageHeight() int {
 }
 
 func (v *doctorView) totalLines() int {
+	if v.showLLM {
+		n := 0
+		for _, r := range v.llmResults {
+			n++ // group label
+			if r.err != nil {
+				n++ // error line
+			} else {
+				n += len(strings.Split(r.content, "\n"))
+			}
+			n++ // blank separator
+		}
+		return n
+	}
 	n := 0
 	for _, g := range v.groups {
 		n++ // group label

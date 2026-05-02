@@ -12,7 +12,6 @@ import (
 	"github.com/ringo380/ccmcp/internal/skills"
 )
 
-// skillView lists every discovered skill and supports space-toggle via skillOverrides.
 type skillView struct {
 	st    *state
 	rows  []skills.Skill
@@ -24,14 +23,31 @@ type skillView struct {
 	filterActive bool
 	filterText   string
 
+	// new skill input
+	input       textinput.Model
+	inputActive bool
+
+	// move mode: picking target scope
+	moveActive bool
+	moveName   string
+	moveFrom   skills.Scope
+
+	// delete confirm
+	pendingRm string
+
 	flash string
 }
 
 func newSkillView(st *state) *skillView {
-	ti := textinput.New()
-	ti.Prompt = "filter: "
-	ti.CharLimit = 64
-	v := &skillView{st: st, filter: ti}
+	filter := textinput.New()
+	filter.Prompt = "filter: "
+	filter.CharLimit = 64
+
+	nameInput := textinput.New()
+	nameInput.Prompt = "skill name: "
+	nameInput.CharLimit = 64
+
+	v := &skillView{st: st, filter: filter, input: nameInput}
 	v.rebuild()
 	return v
 }
@@ -59,6 +75,36 @@ func (v *skillView) rebuild() {
 }
 
 func (v *skillView) update(msg tea.Msg) tea.Cmd {
+	// New skill name input mode.
+	if v.inputActive {
+		var cmd tea.Cmd
+		v.input, cmd = v.input.Update(msg)
+		if k, ok := msg.(tea.KeyMsg); ok {
+			switch k.String() {
+			case "enter":
+				name := strings.TrimSpace(v.input.Value())
+				if name != "" {
+					path, err := skills.Scaffold(name, "", skills.ScopeUser, v.st.paths.ClaudeConfigDir, v.st.project)
+					if err != nil {
+						v.flash = styleErr.Render("scaffold: " + err.Error())
+					} else {
+						v.flash = styleOK.Render(fmt.Sprintf("created skill %q at %s", name, path))
+						v.rebuild()
+					}
+				}
+				v.inputActive = false
+				v.input.SetValue("")
+				v.input.Blur()
+			case "esc":
+				v.inputActive = false
+				v.input.SetValue("")
+				v.input.Blur()
+			}
+		}
+		return cmd
+	}
+
+	// Filter input mode.
 	if v.filterActive {
 		var cmd tea.Cmd
 		v.filter, cmd = v.filter.Update(msg)
@@ -80,10 +126,35 @@ func (v *skillView) update(msg tea.Msg) tea.Cmd {
 		}
 		return cmd
 	}
+
+	// Move scope picker mode.
+	if v.moveActive {
+		k, ok := msg.(tea.KeyMsg)
+		if !ok {
+			return nil
+		}
+		switch k.String() {
+		case "u":
+			v.doMove(skills.ScopeUser)
+		case "p":
+			v.doMove(skills.ScopeProject)
+		case "esc":
+			v.moveActive = false
+			v.flash = styleDim.Render("move cancelled")
+		}
+		return nil
+	}
+
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return nil
 	}
+
+	// Any key other than 'd' clears a pending delete.
+	if v.pendingRm != "" && key.String() != "d" {
+		v.pendingRm = ""
+	}
+
 	switch key.String() {
 	case "up", "k":
 		if v.index > 0 {
@@ -97,7 +168,9 @@ func (v *skillView) update(msg tea.Msg) tea.Cmd {
 		v.index = 0
 		v.top = 0
 	case "G", "end":
-		v.index = len(v.rows) - 1
+		if n := len(v.rows); n > 0 {
+			v.index = n - 1
+		}
 	case "pgup":
 		v.index -= 10
 		if v.index < 0 {
@@ -125,6 +198,47 @@ func (v *skillView) update(msg tea.Msg) tea.Cmd {
 		cur := v.rows[v.index]
 		v.toggle(cur)
 		v.rebuild()
+	case "n":
+		v.inputActive = true
+		v.input.Focus()
+		return textinput.Blink
+	case "m":
+		if len(v.rows) == 0 {
+			return nil
+		}
+		cur := v.rows[v.index]
+		if cur.Scope == skills.ScopePlugin {
+			v.flash = styleWarn.Render("plugin skills are read-only — copy to user scope to customise")
+			return nil
+		}
+		v.moveName = cur.Name
+		v.moveFrom = cur.Scope
+		v.moveActive = true
+		v.flash = styleDim.Render(fmt.Sprintf("move %q — target scope: [u]ser / [p]roject / esc: cancel", cur.Name))
+	case "d":
+		if len(v.rows) == 0 {
+			return nil
+		}
+		cur := v.rows[v.index]
+		if cur.Scope == skills.ScopePlugin {
+			v.flash = styleWarn.Render("plugin skills are read-only — disable the plugin instead")
+			return nil
+		}
+		if v.pendingRm == cur.Name {
+			_, found, err := skills.Remove(cur.Name, cur.Scope, v.st.paths.ClaudeConfigDir, v.st.project)
+			if err != nil {
+				v.flash = styleErr.Render("remove: " + err.Error())
+			} else if !found {
+				v.flash = styleWarn.Render(cur.Name + " not found on disk")
+			} else {
+				v.flash = styleDim.Render("removed " + cur.Name)
+			}
+			v.pendingRm = ""
+			v.rebuild()
+		} else {
+			v.pendingRm = cur.Name
+			v.flash = styleWarn.Render(fmt.Sprintf("press 'd' again to remove %q, any other key cancels", cur.Name))
+		}
 	case "A":
 		for _, s := range v.rows {
 			v.st.settings.RemoveSkillOverride(s.Name)
@@ -147,6 +261,21 @@ func (v *skillView) update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
+func (v *skillView) doMove(to skills.Scope) {
+	v.moveActive = false
+	if v.moveFrom == to {
+		v.flash = styleDim.Render(fmt.Sprintf("%q is already in %s scope", v.moveName, to))
+		return
+	}
+	_, _, err := skills.Move(v.moveName, v.moveFrom, to, v.st.paths.ClaudeConfigDir, v.st.project)
+	if err != nil {
+		v.flash = styleErr.Render("move: " + err.Error())
+	} else {
+		v.flash = styleOK.Render(fmt.Sprintf("moved %q → %s", v.moveName, to))
+		v.rebuild()
+	}
+}
+
 func (v *skillView) toggle(s skills.Skill) {
 	if s.Enabled {
 		v.st.settings.SetSkillOverride(s.Name, "off")
@@ -165,14 +294,15 @@ func (v *skillView) render() string {
 		b.WriteString(styleDim.Render(fmt.Sprintf("  filter: %q", v.filterText)))
 	}
 	b.WriteString("\n")
-	if v.filterActive {
+	if v.inputActive {
+		b.WriteString(v.input.View() + "\n")
+	} else if v.filterActive {
 		b.WriteString(v.filter.View() + "\n")
 	}
 	if len(v.rows) == 0 {
-		b.WriteString(styleDim.Render("  (no skills match)"))
+		b.WriteString(styleDim.Render("  (no skills match — press 'n' to create one)"))
 		return b.String()
 	}
-	// Scroll window
 	pageH := v.h - 4
 	if pageH < 4 {
 		pageH = 4
@@ -213,7 +343,10 @@ func (v *skillView) render() string {
 func (v *skillView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *skillView) helpText() string {
-	return "space: toggle  A/N: bulk  /: filter  c: clear"
+	if v.moveActive {
+		return "[u]ser / [p]roject / esc: cancel"
+	}
+	return "space: toggle  n: new  m: move  d: delete  A/N: bulk  /: filter"
 }
 
-func (v *skillView) capturingInput() bool { return v.filterActive }
+func (v *skillView) capturingInput() bool { return v.filterActive || v.inputActive }
