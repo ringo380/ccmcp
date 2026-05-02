@@ -25,7 +25,12 @@ func Run(p paths.Paths, projectPath string) error {
 }
 
 // Dump returns the TUI's first render for diagnostic purposes (no TTY, no interaction).
-// tab can be "mcps" | "plugins" | "skills" | "agents" | "commands" | "profiles" | "summary" | "doctor".
+// tab can be "mcps" | "plugins" | "marketplaces" (alias: "markets"|"mkt") | "skills" |
+// "agents" | "commands" | "profiles" | "summary" | "doctor" | "help".
+//
+// Note: lazy-loaded update probes (plugins/marketplaces/MCPs "↑ update available"
+// indicators) fire from update(), not render(), so Dump() will not show them — by
+// design, since Dump is a one-shot diagnostic and shouldn't fire network calls.
 func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 	st, err := loadState(p, projectPath)
 	if err != nil {

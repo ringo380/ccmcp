@@ -344,6 +344,11 @@ func (v *mcpView) classifyOrphan(key string, src config.MCPSource, name, pluginN
 
 func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 	if m, ok := msg.(mcpUpdateCheckMsg); ok {
+		// Match the plugin/marketplace pattern: store + trigger a re-render so any
+		// derived counts (e.g. summary aggregate) refresh promptly. formatRow reads
+		// the cache live so this isn't strictly required today, but mirrors the rest
+		// of the codebase and keeps the contract consistent if rendering is cached
+		// later.
 		v.st.updates.PutMCP(m.name, m.status)
 		return nil
 	}

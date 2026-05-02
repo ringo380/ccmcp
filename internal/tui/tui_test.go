@@ -1058,6 +1058,27 @@ func TestTUIMarketplacesAddRemoveCancel(t *testing.T) {
 	}
 }
 
+// TestTUIPluginBulkUpdateMessageHandlerSetsDirty verifies the bulk-update result
+// handler marks dirtyPlugins and rescans MCPs (regression for an earlier version
+// that mutated v.st.installed inside the worker goroutine and skipped both flags).
+func TestTUIPluginBulkUpdateMessageHandlerSetsDirty(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Simulate the worker goroutine returning two successful updates.
+	msg := pluginBulkUpdateResultMsg{
+		applied: []bulkUpdateApplied{
+			{id: "plug-one@mkt", result: &install.Result{QualifiedID: "plug-one@mkt", InstallPath: "/x/1-new", Version: "2.0", GitCommitSha: "newsha"}, oldInstPath: "/x/1"},
+		},
+	}
+	_ = drive(m, "2") // switch to plugins tab
+	_ = m.plugins.update(msg)
+
+	if !st.dirtyPlugins {
+		t.Error("bulk update result must mark dirtyPlugins (so 'w' flushes installed_plugins.json)")
+	}
+}
+
 func TestTUIMarketplacesUpdateIndicator(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)

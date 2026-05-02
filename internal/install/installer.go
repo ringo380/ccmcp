@@ -463,8 +463,9 @@ func CloneMarketplace(p paths.Paths, mp config.Marketplace) error {
 }
 
 // AddMarketplace adds an entry to extraKnownMarketplaces and (for github/git source types)
-// clones the marketplace into pluginsDir/marketplaces/<name>. Caller is responsible for
-// Backup() + Save() afterwards.
+// clones the marketplace into pluginsDir/marketplaces/<name>. For "local" source type
+// it stat-checks mp.Path and creates the parent directory but does not copy — local
+// marketplaces are referenced in-place. Caller is responsible for Backup() + Save() afterwards.
 func AddMarketplace(p paths.Paths, settings *config.Settings, mp config.Marketplace) error {
 	if err := settings.AddMarketplace(mp); err != nil {
 		return err
@@ -487,7 +488,10 @@ func RemoveMarketplace(p paths.Paths, settings *config.Settings, installed *conf
 		return fmt.Errorf("marketplace %q not found in extraKnownMarketplaces", name)
 	}
 	if purgeClone {
-		_ = os.RemoveAll(MarketplaceDir(p, name))
+		dir := MarketplaceDir(p, name)
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("delete clone dir %s: %w", dir, err)
+		}
 	}
 	return nil
 }

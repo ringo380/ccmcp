@@ -48,9 +48,18 @@ type pluginUpdateResultMsg struct {
 }
 
 type pluginBulkUpdateResultMsg struct {
-	updated []string
+	// applied carries each successful re-fetch so install.UpdateInstall runs on the
+	// main bubbletea goroutine. Mutating v.st.installed inside the worker goroutine
+	// races against rebuild() / List() on the render thread.
+	applied []bulkUpdateApplied
 	skipped []string
 	failed  []string
+}
+
+type bulkUpdateApplied struct {
+	id          string
+	result      *install.Result
+	oldInstPath string
 }
 
 type pluginInstallResultMsg struct {
@@ -214,9 +223,19 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 	switch m := msg.(type) {
 	case pluginBulkUpdateResultMsg:
 		v.bulkUpdating = false
+		// Apply UpdateInstall on the main goroutine to avoid racing with rebuild()'s
+		// reads of v.st.installed.
+		for _, a := range m.applied {
+			install.UpdateInstall(v.st.installed, a.result, a.oldInstPath)
+			v.st.updates.InvalidatePlugin(a.id)
+		}
+		if len(m.applied) > 0 {
+			v.st.dirtyPlugins = true
+			v.st.rescanPluginMCPs()
+		}
 		parts := []string{}
-		if len(m.updated) > 0 {
-			parts = append(parts, fmt.Sprintf("%d updated", len(m.updated)))
+		if len(m.applied) > 0 {
+			parts = append(parts, fmt.Sprintf("%d updated", len(m.applied)))
 		}
 		if len(m.skipped) > 0 {
 			parts = append(parts, fmt.Sprintf("%d already up to date", len(m.skipped)))
@@ -228,9 +247,6 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			v.flash = styleDim.Render("no installed plugins to update")
 		} else {
 			v.flash = styleOK.Render("bulk update: " + strings.Join(parts, ", "))
-		}
-		for _, id := range m.updated {
-			v.st.updates.InvalidatePlugin(id)
 		}
 		v.rebuild()
 		return nil
@@ -539,23 +555,25 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		v.bulkUpdating = true
 		v.flash = styleDim.Render(fmt.Sprintf("updating %d plugin(s)…", len(targets)))
 		p := v.st.paths
-		installed := v.st.installed
 		return func() tea.Msg {
-			var updated, skipped, failed []string
+			var applied []bulkUpdateApplied
+			var skipped, failed []string
 			for _, t := range targets {
 				result, err := install.Install(p, t.mkt, t.name)
 				if err != nil {
 					failed = append(failed, t.id)
 					continue
 				}
-				if result.GitCommitSha != "" && result.GitCommitSha == t.oldSha {
+				// "skipped" only if we got a real sha back AND it matches: an empty
+				// sha (non-git source) plus an empty oldSha would otherwise spuriously
+				// match every iteration.
+				if result.GitCommitSha != "" && t.oldSha != "" && result.GitCommitSha == t.oldSha {
 					skipped = append(skipped, t.id)
 					continue
 				}
-				install.UpdateInstall(installed, result, t.oldInstPath)
-				updated = append(updated, t.id)
+				applied = append(applied, bulkUpdateApplied{id: t.id, result: result, oldInstPath: t.oldInstPath})
 			}
-			return pluginBulkUpdateResultMsg{updated: updated, skipped: skipped, failed: failed}
+			return pluginBulkUpdateResultMsg{applied: applied, skipped: skipped, failed: failed}
 		}
 	}
 	return nil

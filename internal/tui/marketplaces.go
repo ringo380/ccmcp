@@ -209,7 +209,14 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 				v.flash = styleErr.Render("add error: " + m.err.Error())
 				return nil
 			}
-			v.st.dirtySettings = true
+			// install.AddMarketplace already mutated settings + cloned to disk. Save
+			// synchronously to keep settings.json in sync with the on-disk clone — a
+			// `Q` force-quit at this point would otherwise discard the settings change
+			// while leaving the clone behind.
+			if err := v.persistSettings(); err != nil {
+				v.flash = styleErr.Render("save error: " + err.Error())
+				return nil
+			}
 			v.rebuild()
 			v.flash = styleOK.Render("added marketplace " + m.name)
 			return v.checkAll()
@@ -218,7 +225,10 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 				v.flash = styleErr.Render("remove error: " + m.err.Error())
 				return nil
 			}
-			v.st.dirtySettings = true
+			if err := v.persistSettings(); err != nil {
+				v.flash = styleErr.Render("save error: " + err.Error())
+				return nil
+			}
 			v.st.updates.InvalidateMarketplace(m.name)
 			v.rebuild()
 			v.flash = styleOK.Render("removed marketplace " + m.name)
@@ -294,6 +304,7 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 		}
 	case "g":
 		v.index = 0
+		v.top = 0
 	case "G":
 		v.index = len(visible) - 1
 	case "pgup":
@@ -402,7 +413,7 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 
 // updateAddForm drives the multi-step add wizard. The sequence is:
 //   1. name
-//   2. source type (cycle github|git|local with space; enter to accept)
+//   2. source type — type "github", "git", or "local" (enter accepts; default github)
 //   3. repo (for github/git) or path (for local)
 //   4. submit — clones and saves
 func (v *marketplaceView) updateAddForm(msg tea.Msg) tea.Cmd {
@@ -511,13 +522,26 @@ func (v *marketplaceView) checkAll() tea.Cmd {
 }
 
 // initialCheckCmd returns the lazy-load update check Cmd if it hasn't fired yet.
-// Called by the model when the user first switches into this tab.
+// Lives in the update() path (not render()) by necessity — async network probes need
+// to be dispatched as tea.Cmds, which can only originate from update(). Dump() and
+// the very first render therefore won't show "↑ update available" indicators, which
+// is acceptable for diagnostics.
 func (v *marketplaceView) initialCheckCmd() tea.Cmd {
 	if v.loaded {
 		return nil
 	}
 	v.loaded = true
 	return v.checkAll()
+}
+
+// persistSettings flushes the settings file synchronously after a disk side-effect
+// (clone or remove) so the on-disk state and settings.json don't diverge if the user
+// later force-quits.
+func (v *marketplaceView) persistSettings() error {
+	if err := config.Backup(v.st.settings.Path, v.st.paths.BackupsDir); err != nil {
+		return err
+	}
+	return v.st.settings.Save()
 }
 
 // ---------------------------------------------------------------------------

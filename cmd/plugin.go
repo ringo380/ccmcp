@@ -541,7 +541,11 @@ var marketplaceAddCmd = &cobra.Command{
 		}
 		mp := config.Marketplace{Name: args[0], SourceType: mktSource, Repo: mktRepo, Path: mktLocalPath, AutoUpdate: mktAutoUpdate}
 		if flagDryRun {
-			fmt.Printf("[dry-run] would add marketplace %s (%s) and clone\n", mp.Name, mp.SourceType)
+			tail := " and clone"
+			if mktNoClone || mp.SourceType == "local" {
+				tail = ""
+			}
+			fmt.Printf("[dry-run] would add marketplace %s (%s)%s\n", mp.Name, mp.SourceType, tail)
 			return nil
 		}
 		if mktNoClone {
@@ -581,6 +585,18 @@ var marketplaceRemoveCmd = &cobra.Command{
 		installed, err := config.LoadInstalledPlugins(p.InstalledPlugins)
 		if err != nil {
 			return err
+		}
+		// Read-only validation runs before the dry-run guard so --dry-run can't
+		// promise success that the real path would refuse.
+		for _, ip := range installed.List() {
+			if _, mkt := config.ParsePluginID(ip.ID); mkt == args[0] {
+				return fmt.Errorf("marketplace %q is still referenced by installed plugin %q; uninstall the plugin first", args[0], ip.ID)
+			}
+		}
+		if _, ok := settings.Raw["extraKnownMarketplaces"].(map[string]any); !ok {
+			return fmt.Errorf("marketplace %q not found in extraKnownMarketplaces", args[0])
+		} else if mp := settings.Raw["extraKnownMarketplaces"].(map[string]any); mp[args[0]] == nil {
+			return fmt.Errorf("marketplace %q not found in extraKnownMarketplaces", args[0])
 		}
 		if flagDryRun {
 			fmt.Printf("[dry-run] would remove marketplace %s", args[0])

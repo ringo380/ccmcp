@@ -70,6 +70,8 @@ func runCLI(t *testing.T, home string, args ...string) (string, error) {
 	profileWithConfig = false
 	profileOverwrite = false
 	pluginUpdateAll = false
+	mktPurge = false
+	mktNoClone = false
 
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
@@ -146,6 +148,17 @@ func TestCLIStatusReadsAllScopes(t *testing.T) {
 	}
 	if !strings.Contains(out, "1 enabled / 2 known") {
 		t.Errorf("plugin counts wrong:\n%s", out)
+	}
+}
+
+// TestCLIMarketplaceRemoveDryRunValidates ensures --dry-run surfaces the same
+// "not found" / "still referenced" errors the real path would, instead of falsely
+// reporting success.
+func TestCLIMarketplaceRemoveDryRunValidates(t *testing.T) {
+	home := setupSandbox(t)
+	// Unknown name should fail dry-run.
+	if out, err := runCLI(t, home, "--dry-run", "marketplace", "remove", "does-not-exist"); err == nil {
+		t.Errorf("dry-run remove of unknown marketplace should fail; got out: %s", out)
 	}
 }
 
