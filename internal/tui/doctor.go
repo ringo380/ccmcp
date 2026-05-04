@@ -2,7 +2,10 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,14 +13,35 @@ import (
 	"github.com/ringo380/ccmcp/internal/doctor"
 )
 
+type fixKind int
+
+const (
+	fixInTUI fixKind = iota
+	fixClaudeCLI
+)
+
+type fixProposal struct {
+	summary string
+	kind    fixKind
+	inTUI   func() error // non-nil only for fixInTUI
+	cliArgs []string     // args for exec.Command("claude", cliArgs...)
+}
+
+type doctorFixDoneMsg struct{ err error }
+
 // doctorView runs structural lint checks on CLAUDE.md and MEMORY.md and
-// displays the results. Press 'r' to re-run lint; 'l' to run an LLM review.
+// displays the results. Press 'r' to re-run lint; 'l' to run an LLM review;
+// 'j/k' to navigate issues; 'f' to fix the selected issue.
 type doctorView struct {
 	st     *state
 	groups []docGroup
 	w, h   int
 	top    int
 	loaded bool // false until first lint run; set false again on 'r'
+
+	allIssues  []doctor.Issue // flattened after runLint, for cursor indexing
+	cursor     int
+	pendingFix *fixProposal
 
 	// LLM review state
 	llmRunning bool
@@ -65,6 +89,13 @@ func (v *doctorView) runLint() {
 
 	v.loaded = true
 	v.top = 0
+
+	// Rebuild flat issue list for cursor navigation.
+	v.allIssues = v.allIssues[:0]
+	for _, g := range v.groups {
+		v.allIssues = append(v.allIssues, g.issues...)
+	}
+	v.cursor = 0
 }
 
 // tuiMemoryPath derives the memory directory path using the same slug logic as cmd/doctor.go.
@@ -82,13 +113,35 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		v.flash = ""
 		return nil
 	}
+	if done, ok := msg.(doctorFixDoneMsg); ok {
+		if done.err != nil {
+			v.flash = styleErr.Render("fix failed: " + done.err.Error())
+		} else {
+			v.flash = styleOK.Render("fix applied")
+		}
+		v.loaded = false // trigger re-lint on next render
+		return nil
+	}
 
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return nil
 	}
-	totalLines := v.totalLines()
+
+	// Confirm dialog intercepts all keys.
+	if v.pendingFix != nil {
+		switch key.String() {
+		case "y":
+			return v.executeFix()
+		case "n", "esc":
+			v.pendingFix = nil
+		}
+		return nil
+	}
+
 	pageH := v.pageHeight()
+	numIssues := len(v.allIssues)
+
 	switch key.String() {
 	case "r":
 		v.loaded = false // render() will re-run lint on the next frame
@@ -119,35 +172,103 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			}
 			return doctorLLMResultMsg{results: results}
 		}
+	case "f":
+		if !v.showLLM && !v.llmRunning && numIssues > 0 {
+			proposal, ok := buildFixProposal(v.allIssues[v.cursor], v.st.project)
+			if !ok {
+				v.flash = styleDim.Render("no automatic fix for " + v.allIssues[v.cursor].Code)
+			} else {
+				v.pendingFix = proposal
+			}
+		}
 	case "j", "down":
-		if v.top < totalLines-pageH {
-			v.top++
+		if v.showLLM {
+			totalLines := v.totalLines()
+			if v.top < totalLines-pageH {
+				v.top++
+			}
+		} else if numIssues > 0 && v.cursor < numIssues-1 {
+			v.cursor++
 		}
 	case "k", "up":
-		if v.top > 0 {
-			v.top--
+		if v.showLLM {
+			if v.top > 0 {
+				v.top--
+			}
+		} else if v.cursor > 0 {
+			v.cursor--
 		}
 	case "g", "home":
 		v.top = 0
+		v.cursor = 0
 	case "G", "end":
-		if totalLines > pageH {
-			v.top = totalLines - pageH
+		if v.showLLM {
+			totalLines := v.totalLines()
+			if totalLines > pageH {
+				v.top = totalLines - pageH
+			}
+		} else if numIssues > 0 {
+			v.cursor = numIssues - 1
 		}
 	case "pgdn":
-		v.top += pageH
-		if v.top > totalLines-pageH {
-			v.top = totalLines - pageH
-		}
-		if v.top < 0 {
-			v.top = 0
+		if v.showLLM {
+			totalLines := v.totalLines()
+			v.top += pageH
+			if v.top > totalLines-pageH {
+				v.top = totalLines - pageH
+			}
+			if v.top < 0 {
+				v.top = 0
+			}
+		} else {
+			v.cursor += pageH
+			if v.cursor >= numIssues {
+				v.cursor = numIssues - 1
+			}
+			if v.cursor < 0 {
+				v.cursor = 0
+			}
 		}
 	case "pgup":
-		v.top -= pageH
-		if v.top < 0 {
-			v.top = 0
+		if v.showLLM {
+			v.top -= pageH
+			if v.top < 0 {
+				v.top = 0
+			}
+		} else {
+			v.cursor -= pageH
+			if v.cursor < 0 {
+				v.cursor = 0
+			}
 		}
 	}
 	return nil
+}
+
+func (v *doctorView) executeFix() tea.Cmd {
+	p := v.pendingFix
+	v.pendingFix = nil
+
+	if p.kind == fixInTUI {
+		if err := p.inTUI(); err != nil {
+			v.flash = styleErr.Render("fix failed: " + err.Error())
+		} else {
+			v.flash = styleOK.Render("fixed: " + p.summary)
+			v.loaded = false
+		}
+		return nil
+	}
+
+	// Claude CLI fix.
+	cliPath, err := exec.LookPath("claude")
+	if err != nil {
+		v.flash = styleErr.Render("claude not found in PATH")
+		return nil
+	}
+	cmd := exec.Command(cliPath, p.cliArgs...)
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return doctorFixDoneMsg{err: err}
+	})
 }
 
 func (v *doctorView) render() string {
@@ -178,8 +299,56 @@ func (v *doctorView) render() string {
 	}
 	b.WriteString("\n")
 
-	// Build all content lines, then apply scroll window.
-	var lines []string
+	lines, issueLineIndices := v.buildLintLines()
+
+	// Scroll to keep cursor visible.
+	pageH := v.pageHeight()
+	if v.pendingFix != nil {
+		pageH -= 4 // reserve space for confirm banner
+		if pageH < 1 {
+			pageH = 1
+		}
+	}
+	if len(issueLineIndices) > 0 && v.cursor < len(issueLineIndices) {
+		cursorLine := issueLineIndices[v.cursor]
+		if cursorLine < v.top {
+			v.top = cursorLine
+		} else if cursorLine >= v.top+pageH {
+			v.top = cursorLine - pageH + 1
+		}
+	}
+	if v.top < 0 {
+		v.top = 0
+	}
+	end := v.top + pageH
+	if end > len(lines) {
+		end = len(lines)
+	}
+	for _, l := range lines[v.top:end] {
+		b.WriteString(l)
+		b.WriteString("\n")
+	}
+
+	if v.pendingFix != nil {
+		b.WriteString(styleDim.Render(strings.Repeat("─", 44)))
+		b.WriteString("\n")
+		b.WriteString("Fix: " + v.pendingFix.summary + "\n")
+		if v.pendingFix.kind == fixClaudeCLI {
+			preview := "claude " + strings.Join(v.pendingFix.cliArgs, " ")
+			if len(preview) > 100 {
+				preview = preview[:100] + "…"
+			}
+			b.WriteString(styleDim.Render(preview) + "\n")
+		}
+		b.WriteString(styleWarn.Render("Apply? y / n"))
+	}
+
+	return b.String()
+}
+
+// buildLintLines returns the render lines plus the line-index of each issue (for cursor scroll).
+func (v *doctorView) buildLintLines() (lines []string, issueLineIndices []int) {
+	issueIdx := 0
 	for _, g := range v.groups {
 		lines = append(lines, styleDim.Render("── "+g.label+" ──"))
 		if len(g.issues) == 0 {
@@ -197,30 +366,24 @@ func (v *doctorView) render() string {
 				if iss.Line > 0 {
 					loc = fmt.Sprintf("%s:%d", iss.File, iss.Line)
 				}
-				lines = append(lines, fmt.Sprintf("  %s [%s] %s — %s",
+				cursor := "  "
+				if issueIdx == v.cursor {
+					cursor = styleOK.Render("▶ ")
+				}
+				issueLineIndices = append(issueLineIndices, len(lines))
+				lines = append(lines, fmt.Sprintf("%s%s [%s] %s — %s",
+					cursor,
 					icon,
 					styleDim.Render(iss.Code),
 					styleDim.Render(loc),
 					iss.Message,
 				))
+				issueIdx++
 			}
 		}
 		lines = append(lines, "")
 	}
-
-	pageH := v.pageHeight()
-	if v.top < 0 {
-		v.top = 0
-	}
-	end := v.top + pageH
-	if end > len(lines) {
-		end = len(lines)
-	}
-	for _, l := range lines[v.top:end] {
-		b.WriteString(l)
-		b.WriteString("\n")
-	}
-	return b.String()
+	return lines, issueLineIndices
 }
 
 func (v *doctorView) renderLLM() string {
@@ -261,7 +424,10 @@ func (v *doctorView) helpText() string {
 	if v.llmRunning {
 		return "LLM review in progress…"
 	}
-	return "r: re-run lint  l: LLM review  j/k: scroll  g/G: top/bottom"
+	if v.showLLM {
+		return "r: re-run lint  l: LLM review  j/k: scroll  g/G: top/bottom"
+	}
+	return "r: re-run lint  l: LLM review  j/k: navigate  f: fix issue  g/G: top/bottom"
 }
 
 func (v *doctorView) capturingInput() bool { return false }
@@ -299,4 +465,195 @@ func (v *doctorView) totalLines() int {
 		n++ // blank separator
 	}
 	return n
+}
+
+// buildFixProposal returns a fix proposal for the given issue, or nil/false if no fix is available.
+func buildFixProposal(issue doctor.Issue, projectPath string) (*fixProposal, bool) {
+	switch issue.Code {
+	case "MEM002":
+		// Remove the broken index entry line from MEMORY.md.
+		f := issue.File
+		ln := issue.Line
+		return &fixProposal{
+			summary: "Remove broken index entry from MEMORY.md",
+			kind:    fixInTUI,
+			inTUI: func() error {
+				return removeFileLine(f, ln)
+			},
+		}, true
+
+	case "MEM005":
+		// Add missing frontmatter field with a placeholder value.
+		field := extractQuotedWord(issue.Message)
+		if field == "" {
+			return nil, false
+		}
+		f := issue.File
+		return &fixProposal{
+			summary: fmt.Sprintf("Add missing frontmatter field %q to %s", field, filepath.Base(f)),
+			kind:    fixInTUI,
+			inTUI: func() error {
+				return addFrontmatterField(f, field)
+			},
+		}, true
+
+	case "MD003":
+		content := readLineContent(issue.File, issue.Line)
+		prompt := fmt.Sprintf(
+			"In %s at line %d, the line is too long (%s). Shorten it without losing meaning:\n\n%s",
+			issue.File, issue.Line, issue.Message, content,
+		)
+		return &fixProposal{
+			summary: fmt.Sprintf("Shorten line %d in %s", issue.Line, filepath.Base(issue.File)),
+			kind:    fixClaudeCLI,
+			cliArgs: claudeFixArgs(prompt),
+		}, true
+
+	case "MD004":
+		// Broken local link — extract target from message.
+		prompt := fmt.Sprintf(
+			"In %s at line %d, there is a broken markdown link (%s). Remove or fix the link.",
+			issue.File, issue.Line, issue.Message,
+		)
+		return &fixProposal{
+			summary: fmt.Sprintf("Fix broken link at line %d in %s", issue.Line, filepath.Base(issue.File)),
+			kind:    fixClaudeCLI,
+			cliArgs: claudeFixArgs(prompt),
+		}, true
+
+	case "MD005":
+		prompt := fmt.Sprintf(
+			"%s is too long (%s). Trim it to under 500 lines while preserving all critical content.",
+			issue.File, issue.Message,
+		)
+		return &fixProposal{
+			summary: fmt.Sprintf("Trim %s to under 500 lines", filepath.Base(issue.File)),
+			kind:    fixClaudeCLI,
+			cliArgs: claudeFixArgs(prompt),
+		}, true
+
+	case "MD002":
+		claudePath := filepath.Join(projectPath, "CLAUDE.md")
+		prompt := fmt.Sprintf(
+			"%s is empty. Add a minimal project overview and key development guidelines.",
+			claudePath,
+		)
+		return &fixProposal{
+			summary: "Populate empty CLAUDE.md",
+			kind:    fixClaudeCLI,
+			cliArgs: claudeFixArgs(prompt),
+		}, true
+
+	case "MEM001":
+		prompt := fmt.Sprintf(
+			"Create a MEMORY.md index file at %s for this project. It should be an empty memory index with just a level-1 heading.",
+			issue.File,
+		)
+		return &fixProposal{
+			summary: "Initialise MEMORY.md",
+			kind:    fixClaudeCLI,
+			cliArgs: claudeFixArgs(prompt),
+		}, true
+
+	case "MEM003":
+		content := readLineContent(issue.File, issue.Line)
+		prompt := fmt.Sprintf(
+			"In MEMORY.md at line %d, shorten this index entry to ≤150 characters without losing the key information:\n\n%s",
+			issue.Line, content,
+		)
+		return &fixProposal{
+			summary: fmt.Sprintf("Shorten MEMORY.md entry at line %d", issue.Line),
+			kind:    fixClaudeCLI,
+			cliArgs: claudeFixArgs(prompt),
+		}, true
+
+	case "MEM004":
+		prompt := fmt.Sprintf(
+			"Fix the frontmatter in memory file %s: %s",
+			issue.File, issue.Message,
+		)
+		return &fixProposal{
+			summary: fmt.Sprintf("Fix frontmatter in %s", filepath.Base(issue.File)),
+			kind:    fixClaudeCLI,
+			cliArgs: claudeFixArgs(prompt),
+		}, true
+
+	case "MEM006":
+		prompt := fmt.Sprintf(
+			"Fix the 'type' field in %s — must be one of: user, feedback, project, reference. %s",
+			issue.File, issue.Message,
+		)
+		return &fixProposal{
+			summary: fmt.Sprintf("Fix invalid type in %s", filepath.Base(issue.File)),
+			kind:    fixClaudeCLI,
+			cliArgs: claudeFixArgs(prompt),
+		}, true
+	}
+
+	return nil, false
+}
+
+func claudeFixArgs(prompt string) []string {
+	return []string{"--allowedTools", "Edit,Write,Read", "--permission-mode", "acceptEdits", "--print", prompt}
+}
+
+func removeFileLine(path string, lineNum int) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	if lineNum < 1 || lineNum > len(lines) {
+		return fmt.Errorf("line %d out of range (file has %d lines)", lineNum, len(lines))
+	}
+	lines = append(lines[:lineNum-1], lines[lineNum:]...)
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+func addFrontmatterField(path, field string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return fmt.Errorf("no frontmatter found in %s", path)
+	}
+	closeIdx := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			closeIdx = i
+			break
+		}
+	}
+	if closeIdx < 0 {
+		return fmt.Errorf("frontmatter block not closed in %s", path)
+	}
+	newLines := make([]string, 0, len(lines)+1)
+	newLines = append(newLines, lines[:closeIdx]...)
+	newLines = append(newLines, field+": ")
+	newLines = append(newLines, lines[closeIdx:]...)
+	return os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0644)
+}
+
+func readLineContent(path string, lineNum int) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(data), "\n")
+	if lineNum < 1 || lineNum > len(lines) {
+		return ""
+	}
+	return lines[lineNum-1]
+}
+
+// extractQuotedWord pulls the first double-quoted word from s (used to parse field names from lint messages).
+func extractQuotedWord(s string) string {
+	re := regexp.MustCompile(`"([^"]+)"`)
+	m := re.FindStringSubmatch(s)
+	if m == nil {
+		return ""
+	}
+	return m[1]
 }

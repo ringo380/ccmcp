@@ -6,6 +6,28 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-05-03
+
+### Added
+
+- **Doctor tab: actionable fix for every lint issue** — press `f` on any
+  selected issue to apply a fix. Trivial issues (MEM002 broken index link,
+  MEM005 missing frontmatter field) are resolved in-TUI with a y/n confirm.
+  Judgment-required issues (MD003 line too long, MD004 broken link, MD005
+  file too long, MEM001/MEM003/MEM004/MEM006, etc.) build a contextual
+  prompt and hand off to `claude` CLI via `tea.ExecProcess`; the TUI
+  resumes and re-runs lint automatically when the CLI session exits.
+- **Doctor tab: cursor navigation** — `j/k` moves a `▶` cursor through
+  issues; `g/G` jump to first/last; `pgup/pgdn` page through. Scroll
+  auto-follows the cursor in lint mode; `j/k` scroll the LLM review text
+  directly (unchanged behaviour).
+- **Marketplace update parity with Plugins tab** — `u` now shows
+  `"already up to date"` vs `"updated abc123 → def456"` SHA feedback.
+  Bulk update (`B`) reports updated / already-up-to-date / failed counts
+  separately. `R` (force refresh) now invalidates all marketplace cache
+  entries before re-probing, matching the behaviour of `R` on the Plugins
+  tab.
+
 ## [0.5.0] — 2026-05-02
 
 ### Added
@@ -291,7 +313,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.5.1
 [0.5.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.4.0
 [0.3.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.3.1

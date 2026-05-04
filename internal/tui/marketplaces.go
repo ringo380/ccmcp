@@ -44,8 +44,12 @@ type marketplaceOpResultMsg struct {
 	op   string // "add" | "remove" | "update" | "bulkUpdate"
 	name string
 	err  error
+	// individual update
+	oldSha string
+	newSha string
 	// bulk fields
 	updated []string
+	skipped []string
 	failed  []string
 }
 
@@ -238,14 +242,23 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 				v.flash = styleErr.Render("update error: " + m.err.Error())
 				return nil
 			}
+			if m.oldSha != "" && m.newSha == m.oldSha {
+				v.flash = styleDim.Render(m.name + " already up to date")
+				return nil
+			}
 			v.st.updates.InvalidateMarketplace(m.name)
 			v.rebuild()
-			v.flash = styleOK.Render("pulled marketplace " + m.name)
+			old := marketplaceFirstN(m.oldSha, 8)
+			nw := marketplaceFirstN(m.newSha, 8)
+			v.flash = styleOK.Render(fmt.Sprintf("updated %s: %s → %s", m.name, old, nw))
 			return v.checkOne(m.name)
 		case "bulkUpdate":
 			parts := []string{}
 			if len(m.updated) > 0 {
 				parts = append(parts, fmt.Sprintf("%d updated", len(m.updated)))
+			}
+			if len(m.skipped) > 0 {
+				parts = append(parts, fmt.Sprintf("%d already up to date", len(m.skipped)))
 			}
 			if len(m.failed) > 0 {
 				parts = append(parts, styleErr.Render(fmt.Sprintf("%d failed", len(m.failed))))
@@ -324,6 +337,9 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 	case "c":
 		v.filter.SetValue("")
 	case "R":
+		for _, r := range v.rows {
+			v.st.updates.InvalidateMarketplace(r.Name)
+		}
 		return v.checkAll()
 	case "a":
 		v.addMode = true
@@ -363,8 +379,10 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 		p := v.st.paths
 		name := r.Name
 		return func() tea.Msg {
+			oldSha := install.LocalMarketplaceHead(p, name)
 			err := install.UpdateMarketplace(p, name)
-			return marketplaceOpResultMsg{op: "update", name: name, err: err}
+			newSha := install.LocalMarketplaceHead(p, name)
+			return marketplaceOpResultMsg{op: "update", name: name, err: err, oldSha: oldSha, newSha: newSha}
 		}
 	case "B":
 		if v.bulkUpdating || v.updating {
@@ -384,15 +402,21 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 		v.flash = styleDim.Render(fmt.Sprintf("updating %d marketplace(s)…", len(targets)))
 		p := v.st.paths
 		return func() tea.Msg {
-			var updated, failed []string
+			var updated, skipped, failed []string
 			for _, n := range targets {
+				oldSha := install.LocalMarketplaceHead(p, n)
 				if err := install.UpdateMarketplace(p, n); err != nil {
 					failed = append(failed, n)
 					continue
 				}
-				updated = append(updated, n)
+				newSha := install.LocalMarketplaceHead(p, n)
+				if oldSha != "" && newSha != "" && oldSha == newSha {
+					skipped = append(skipped, n)
+				} else {
+					updated = append(updated, n)
+				}
 			}
-			return marketplaceOpResultMsg{op: "bulkUpdate", updated: updated, failed: failed}
+			return marketplaceOpResultMsg{op: "bulkUpdate", updated: updated, skipped: skipped, failed: failed}
 		}
 	case "I":
 		if len(visible) == 0 {
@@ -674,6 +698,13 @@ func textinputForm(prompt string) textinput.Model {
 	ti.Prompt = prompt + ": "
 	ti.Focus()
 	return ti
+}
+
+func marketplaceFirstN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 func (v *marketplaceView) resize(w, h int) { v.w, v.h = w, h }
