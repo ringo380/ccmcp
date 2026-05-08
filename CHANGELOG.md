@@ -53,7 +53,35 @@ All notable changes to this project are documented here. Format based on
   Profiles 7→8, Summary 8→9, Commands 6→7, Agents 5→6, Skills 4→5. Tab
   order in the header bar (and `tab` / `shift+tab` cycling) follows the
   same shift, with the new Discover tab inserted directly after
-  Marketplaces.
+  Marketplaces. The `?` help overlay and README key tables were updated to
+  match.
+
+### Fixed
+
+- Discovery `PreviewClone` now keys the cache directory by the upstream-
+  resolved sha (via `git ls-remote`) rather than a literal `HEAD`, so a
+  branch tip moving upstream produces a fresh clone instead of a silently
+  stale conflict report. Sha-pinned plugin sources check out the exact
+  commit after clone instead of whatever HEAD pointed at.
+- Discovery `shallowClone` no longer passes a 40-char commit SHA to
+  `git clone --branch <ref>` (which `git` rejects with "Remote branch
+  <sha> not found"); SHA refs are resolved via post-clone
+  `fetch + checkout`.
+- Discovery cache directory segments (`<owner>`, `<repo>`) derived from
+  untrusted registry input are now sanitized — `..` runs / `/` /
+  separator chars collapse to `_`, blocking a malicious
+  `repo: "../evil"` entry from writing outside the preview cache.
+- Discovery `Discover()` no longer overwrites a previously-good cache
+  with an empty result when every source transiently fails and no
+  in-grace cache exists; the previous-good cache survives the outage.
+- Manifest fetches in `cmd/discover.go` and the TUI Discover tab now go
+  through the same UA-injecting HTTP client as the orchestrator
+  (`discovery.NewHTTPClient`), avoiding 403s from mirrors that reject
+  empty User-Agent headers.
+- TUI `discoveryView.fetchCmd` now snapshots the user-supplied registry
+  URL list on the bubbletea goroutine before dispatching the background
+  fetch, eliminating a data race against concurrent settings mutations
+  on other tabs.
 
 ## [0.5.1] — 2026-05-03
 

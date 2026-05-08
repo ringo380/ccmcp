@@ -9,22 +9,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/discovery"
 )
 
-// stripANSI removes ANSI CSI sequences so tests can assert on plain text.
-func stripANSI(s string) string {
-	var out strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[' {
-			j := i + 2
-			for j < len(s) && (s[j] < 0x40 || s[j] > 0x7e) {
-				j++
-			}
-			i = j
-			continue
-		}
-		out.WriteByte(s[i])
-	}
-	return out.String()
-}
+// stripANSI is defined in doctor_test.go (same package).
 
 func TestDiscoveryViewFromCacheRendersList(t *testing.T) {
 	st, _ := buildState(t)

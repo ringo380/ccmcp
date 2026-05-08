@@ -30,8 +30,9 @@ func Run(p paths.Paths, projectPath string) error {
 // "profiles" | "summary" | "doctor" | "help".
 //
 // Note: lazy-loaded update probes (plugins/marketplaces/MCPs "↑ update available"
-// indicators) fire from update(), not render(), so Dump() will not show them — by
-// design, since Dump is a one-shot diagnostic and shouldn't fire network calls.
+// indicators) and Discover-tab registry fetches fire from update(), not render(),
+// so Dump() will not show them — by design, since Dump is a one-shot diagnostic
+// and shouldn't fire network calls.
 func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 	st, err := loadState(p, projectPath)
 	if err != nil {

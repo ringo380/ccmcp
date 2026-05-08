@@ -126,7 +126,7 @@ Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project.
 | Key | Action |
 |---|---|
 | `tab` / `shift+tab` | cycle tabs |
-| `1`–`8` | jump to MCPs / Plugins / Skills / Agents / Commands / Profiles / Summary / Doctor |
+| `1`–`9`, `0` | jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands / Profiles / Summary / Doctor |
 | `w` | save all staged changes |
 | `q` | quit (warns if unsaved) |
 | `Q` | force quit, discard changes |
@@ -178,7 +178,7 @@ ccmcp report audit    [--format json|md|csv]                # stale overrides, c
 ccmcp doctor md [--user] [--memory-dir DIR]                # lint CLAUDE.md + MEMORY.md
 ccmcp doctor md --llm-review [--provider anthropic|openai] # + LLM quality review
 
-ccmcp tui --dump [--tab mcps|plugins|skills|agents|commands|profiles|summary|doctor]   # print initial render, no TTY
+ccmcp tui --dump [--tab mcps|plugins|marketplaces|discover|skills|agents|commands|profiles|summary|doctor]   # print initial render, no TTY
 ```
 
 **Global flags:** `--path <dir>` (override cwd), `--dry-run`, `--json`, `--no-color`.

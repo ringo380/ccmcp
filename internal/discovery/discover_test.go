@@ -131,6 +131,47 @@ func TestDiscoverFreshCacheShortCircuits(t *testing.T) {
 	}
 }
 
+// TestDiscoverDoesNotClobberCacheOnFullFailure verifies that when every
+// source errors and there is no cache to fall back on, the empty result is
+// NOT persisted. A previously good cache must survive a transient outage.
+func TestDiscoverDoesNotClobberCacheOnFullFailure(t *testing.T) {
+	tmp := t.TempDir()
+	cache := filepath.Join(tmp, "cache.json")
+
+	// Seed cache with one entry, but date it before the offline grace window
+	// so the offline-fallback path doesn't return it (we want to exercise the
+	// "no cache to fall back on" branch).
+	seed := &discovery.DiscoveryResult{
+		Marketplaces: []discovery.RemoteMarketplace{{Name: "good-prior", Source: "github", Repo: "o/x"}},
+		FetchedAt:    time.Now().Add(-discovery.CacheGrace - time.Hour),
+	}
+	if err := discovery.SaveCache(cache, seed); err != nil {
+		t.Fatal(err)
+	}
+
+	bad := fakeSource{id: "bad", err: errors.New("offline")}
+	res, err := discovery.Discover(context.Background(), discovery.Options{
+		Sources:   []discovery.Source{bad},
+		CachePath: cache,
+		Refresh:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Marketplaces) != 0 {
+		t.Fatalf("expected empty result, got %+v", res.Marketplaces)
+	}
+
+	// Re-load cache and assert the prior entry survived.
+	persisted, _, err := discovery.LoadCache(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted == nil || len(persisted.Marketplaces) != 1 || persisted.Marketplaces[0].Name != "good-prior" {
+		t.Fatalf("cache was clobbered: %+v", persisted)
+	}
+}
+
 type fakeSourceCounting struct {
 	count *int
 	rows  []discovery.RemoteMarketplace

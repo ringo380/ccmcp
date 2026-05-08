@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -109,13 +108,17 @@ func (v *discoveryView) initialCheckCmd() tea.Cmd {
 }
 
 func (v *discoveryView) fetchCmd(refresh bool) tea.Cmd {
-	settings := v.st.settings
+	// Capture immutable values on the bubbletea goroutine. Reading
+	// v.st.settings.DiscoverySources() inside the closure would race with
+	// concurrent settings mutations on other tabs. Same defensive pattern
+	// landed for plugin bulk-update in PR #17.
+	sources := buildDiscoverySources(v.st.settings.DiscoverySources())
 	cachePath := discovery.CachePath(v.st.paths.ClaudeConfigDir)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
 		opts := discovery.Options{
-			Sources:   buildDiscoverySources(settings),
+			Sources:   sources,
 			CachePath: cachePath,
 			Refresh:   refresh,
 		}
@@ -124,12 +127,12 @@ func (v *discoveryView) fetchCmd(refresh bool) tea.Cmd {
 	}
 }
 
-// buildDiscoverySources mirrors cmd/discover.go's helper.
-func buildDiscoverySources(settings interface {
-	DiscoverySources() []string
-}) []discovery.Source {
+// buildDiscoverySources merges DefaultSources with a snapshot of user-
+// configured registry URLs. Takes a slice (not a *Settings) so callers must
+// snapshot on their own goroutine.
+func buildDiscoverySources(userURLs []string) []discovery.Source {
 	out := discovery.DefaultSources()
-	for _, u := range settings.DiscoverySources() {
+	for _, u := range userURLs {
 		out = append(out, discovery.UserURLSource(u))
 	}
 	return out
@@ -221,7 +224,7 @@ func (v *discoveryView) updateList(key tea.KeyMsg) tea.Cmd {
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			pls, err := discovery.FetchManifestPlugins(ctx, &http.Client{Timeout: 15 * time.Second}, mp)
+			pls, err := discovery.FetchManifestPlugins(ctx, discovery.NewHTTPClient(15*time.Second), mp)
 			return discoveryManifestMsg{mp: mp, plugins: pls, err: err}
 		}
 	}

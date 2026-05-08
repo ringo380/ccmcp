@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -116,7 +115,7 @@ var discoverShowCmd = &cobra.Command{
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		man, err := discovery.FetchManifest(ctx, &http.Client{Timeout: 15 * time.Second}, mp)
+		man, err := discovery.FetchManifest(ctx, discovery.NewHTTPClient(15*time.Second), mp)
 		if err != nil {
 			return fmt.Errorf("fetch manifest: %w", err)
 		}
@@ -142,7 +141,7 @@ var discoverPluginCmd = &cobra.Command{
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		man, err := discovery.FetchManifest(ctx, &http.Client{Timeout: 15 * time.Second}, mp)
+		man, err := discovery.FetchManifest(ctx, discovery.NewHTTPClient(15*time.Second), mp)
 		if err != nil {
 			return fmt.Errorf("fetch manifest: %w", err)
 		}

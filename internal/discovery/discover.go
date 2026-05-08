@@ -162,7 +162,11 @@ func Discover(ctx context.Context, opts Options) (*DiscoveryResult, error) {
 		}
 	}
 
-	if opts.CachePath != "" {
+	// Persist only when we got at least one row OR no source produced an
+	// error. Saving an empty result over a previously good cache when every
+	// source transiently failed (e.g. the user lost network mid-flight) would
+	// poison the next 6h until the next forced refresh.
+	if opts.CachePath != "" && (len(out) > 0 || len(errs) == 0) {
 		_ = SaveCache(opts.CachePath, result)
 	}
 	return result, nil
@@ -193,6 +197,17 @@ func mergeOrigins(a, b string) string {
 		return a
 	}
 	return a + "," + b
+}
+
+// NewHTTPClient returns an http.Client wrapped with the discovery UA-injecting
+// transport, suitable for one-off manifest fetches outside the Discover()
+// orchestrator. timeout==0 leaves the underlying client unbounded; the caller
+// is expected to supply a context.
+func NewHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Transport: uaTransport{base: http.DefaultTransport, ua: "ccmcp-discovery"},
+		Timeout:   timeout,
+	}
 }
 
 // uaTransport injects a User-Agent header on every outbound request. Avoids
