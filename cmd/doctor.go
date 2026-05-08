@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,8 +45,11 @@ Checks performed:
   MEM005 memory file missing required frontmatter field
   MEM006 memory file has invalid type value
 
-Use --llm-review to additionally send the file to an LLM for quality feedback
-(requires ANTHROPIC_API_KEY or OPENAI_API_KEY in the environment, or --api-key).`,
+Use --llm-review to additionally send the file to an LLM for quality feedback.
+The default provider auto-falls-back to the local 'claude' CLI when no API key
+is configured, so a working 'claude' install is enough for offline review.
+With --provider anthropic|openai, ANTHROPIC_API_KEY / OPENAI_API_KEY (or
+--api-key) is required.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p, err := resolvePaths()
 		if err != nil {
@@ -121,7 +125,7 @@ Use --llm-review to additionally send the file to an LLM for quality feedback
 					}
 					feedback, err := doctor.Review(t.path, opts)
 					if err != nil {
-						fmt.Printf("  LLM review failed: %v\n", err)
+						fmt.Printf("  LLM review failed: %s\n", formatReviewError(err))
 					} else {
 						fmt.Println()
 						for _, line := range strings.Split(feedback, "\n") {
@@ -144,7 +148,7 @@ Use --llm-review to additionally send the file to an LLM for quality feedback
 				}
 				feedback, err := doctor.Review(memIndex, opts)
 				if err != nil {
-					fmt.Printf("  LLM review failed: %v\n", err)
+					fmt.Printf("  LLM review failed: %s\n", formatReviewError(err))
 				} else {
 					fmt.Println()
 					for _, line := range strings.Split(feedback, "\n") {
@@ -168,6 +172,26 @@ type lintTarget struct {
 	isMemory bool
 }
 
+// formatReviewError renders the user-facing single-line message for an error
+// returned by doctor.Review. APIError responses surface the parsed message
+// without the (often noisy) raw JSON body.
+func formatReviewError(err error) string {
+	if err == nil {
+		return ""
+	}
+	var apiErr *doctor.APIError
+	if errors.As(err, &apiErr) {
+		if apiErr.Message != "" {
+			return fmt.Sprintf("%s API %d: %s", apiErr.Provider, apiErr.Status, apiErr.Message)
+		}
+		return fmt.Sprintf("%s API %d", apiErr.Provider, apiErr.Status)
+	}
+	if errors.Is(err, doctor.ErrClaudeCLINotFound) {
+		return "claude CLI not found in PATH — install it or set ANTHROPIC_API_KEY"
+	}
+	return err.Error()
+}
+
 // projectMemoryPath derives the memory directory from the Claude config dir and project path.
 // The slug replaces every '/' with '-' (leading slash becomes leading '-').
 func projectMemoryPath(claudeConfigDir, projectPath string) string {
@@ -180,7 +204,7 @@ func init() {
 	doctorCmd.AddCommand(doctorMDCmd)
 
 	doctorMDCmd.Flags().BoolVar(&doctorLLMReview, "llm-review", false, "send each file to an LLM for quality feedback")
-	doctorMDCmd.Flags().StringVar(&doctorProvider, "provider", "anthropic", "LLM provider: anthropic|openai")
+	doctorMDCmd.Flags().StringVar(&doctorProvider, "provider", "", "LLM provider: anthropic|openai|claude-cli (default: auto — claude-cli when no API key is set)")
 	doctorMDCmd.Flags().StringVar(&doctorModel, "model", "", "override model (default: claude-sonnet-4-6 / gpt-4o)")
 	doctorMDCmd.Flags().StringVar(&doctorAPIKey, "api-key", "", "API key (defaults to ANTHROPIC_API_KEY or OPENAI_API_KEY env var)")
 	doctorMDCmd.Flags().StringVar(&doctorMemoryDir, "memory-dir", "", "explicit path to memory directory (auto-detected by default)")

@@ -6,6 +6,27 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Doctor: `claude-cli` LLM-review provider** — `doctor md --llm-review`
+  and the TUI `l` key now auto-fall-back to running the local `claude` CLI
+  (via `--print` over stdin) when no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`
+  is set, so offline review works out of the box. Explicit selection via
+  `--provider claude-cli`. The default `--provider` value is now empty
+  (auto); existing `anthropic` / `openai` selections behave identically.
+- **Doctor: typed `APIError` with parsed messages** — non-2xx responses
+  from Anthropic/OpenAI now return a `*doctor.APIError` carrying the
+  parsed `error.message` plus the raw body. CLI prints a single-line
+  message instead of the noisy raw JSON; the TUI surfaces a 401-specific
+  hint pointing at `/login` or `--provider claude-cli`.
+- **Doctor TUI: `claude` CLI presence banner** — when `claude` is not on
+  PATH, a warning banner is rendered at the top of the Doctor tab and the
+  `l` / `f` keys surface a friendly hint instead of a cryptic failure.
+- **Doctor TUI: enriched fix-failure messages** — bare `"exit status N"`
+  errors from `tea.ExecProcess` (which loses subprocess stderr) are
+  rewritten to `"claude CLI exit N — see output above"`. Long error
+  strings from LLM review wrap cleanly to fit the viewport.
+
 ## [0.5.1] — 2026-05-03
 
 ### Added
