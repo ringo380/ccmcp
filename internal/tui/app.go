@@ -25,8 +25,9 @@ func Run(p paths.Paths, projectPath string) error {
 }
 
 // Dump returns the TUI's first render for diagnostic purposes (no TTY, no interaction).
-// tab can be "mcps" | "plugins" | "marketplaces" (alias: "markets"|"mkt") | "skills" |
-// "agents" | "commands" | "profiles" | "summary" | "doctor" | "help".
+// tab can be "mcps" | "plugins" | "marketplaces" (alias: "markets"|"mkt") |
+// "discover" (alias: "discovery") | "skills" | "agents" | "commands" |
+// "profiles" | "summary" | "doctor" | "help".
 //
 // Note: lazy-loaded update probes (plugins/marketplaces/MCPs "↑ update available"
 // indicators) fire from update(), not render(), so Dump() will not show them — by
@@ -42,6 +43,8 @@ func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 		m.tab = tabPlugins
 	case "marketplaces", "markets", "mkt":
 		m.tab = tabMarketplaces
+	case "discover", "discovery":
+		m.tab = tabDiscover
 	case "skills":
 		m.tab = tabSkills
 	case "agents":

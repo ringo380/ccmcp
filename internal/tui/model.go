@@ -14,6 +14,7 @@ const (
 	tabMCPs tabID = iota
 	tabPlugins
 	tabMarketplaces
+	tabDiscover
 	tabSkills
 	tabAgents
 	tabCommands
@@ -29,6 +30,7 @@ var tabs = []struct {
 	{tabMCPs, "MCPs"},
 	{tabPlugins, "Plugins"},
 	{tabMarketplaces, "Marketplaces"},
+	{tabDiscover, "Discover"},
 	{tabSkills, "Skills"},
 	{tabAgents, "Agents"},
 	{tabCommands, "Commands"},
@@ -48,6 +50,7 @@ type model struct {
 	mcps         *mcpView
 	plugins      *pluginView
 	marketplaces *marketplaceView
+	discover     *discoveryView
 	skills       *skillView
 	agents       *agentView
 	commands     *commandView
@@ -62,6 +65,7 @@ func newModel(st *state) *model {
 		mcps:         newMCPView(st),
 		plugins:      newPluginView(st),
 		marketplaces: newMarketplaceView(st),
+		discover:     newDiscoveryView(st),
 		skills:       newSkillView(st),
 		agents:       newAgentView(st),
 		commands:     newCommandView(st),
@@ -81,6 +85,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mcps.resize(msg.Width, msg.Height-reservedHeight)
 		m.plugins.resize(msg.Width, msg.Height-reservedHeight)
 		m.marketplaces.resize(msg.Width, msg.Height-reservedHeight)
+		m.discover.resize(msg.Width, msg.Height-reservedHeight)
 		m.skills.resize(msg.Width, msg.Height-reservedHeight)
 		m.agents.resize(msg.Width, msg.Height-reservedHeight)
 		m.commands.resize(msg.Width, msg.Height-reservedHeight)
@@ -148,21 +153,24 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tab = tabMarketplaces
 			return m, m.marketplaces.initialCheckCmd()
 		case "4":
+			m.tab = tabDiscover
+			return m, m.discover.initialCheckCmd()
+		case "5":
 			m.tab = tabSkills
 			return m, nil
-		case "5":
+		case "6":
 			m.tab = tabAgents
 			return m, nil
-		case "6":
+		case "7":
 			m.tab = tabCommands
 			return m, nil
-		case "7":
+		case "8":
 			m.tab = tabProfiles
 			return m, nil
-		case "8":
+		case "9":
 			m.tab = tabSummary
 			return m, nil
-		case "9":
+		case "0":
 			m.tab = tabDoctor
 			return m, nil
 		}
@@ -191,6 +199,13 @@ func (m *model) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.marketplaces.flash != "" {
 			m.message = m.marketplaces.flash
 			m.marketplaces.flash = ""
+		}
+		return m, cmd
+	case tabDiscover:
+		cmd := m.discover.update(msg)
+		if m.discover.flash != "" {
+			m.message = m.discover.flash
+			m.discover.flash = ""
 		}
 		return m, cmd
 	case tabSkills:
@@ -247,6 +262,8 @@ func (m *model) activeView() view {
 		return m.plugins
 	case tabMarketplaces:
 		return m.marketplaces
+	case tabDiscover:
+		return m.discover
 	case tabSkills:
 		return m.skills
 	case tabAgents:
@@ -316,6 +333,8 @@ func (m *model) tabEnterCmd() tea.Cmd {
 	switch m.tab {
 	case tabMarketplaces:
 		return m.marketplaces.initialCheckCmd()
+	case tabDiscover:
+		return m.discover.initialCheckCmd()
 	case tabPlugins:
 		return m.plugins.initialCheckCmd()
 	case tabMCPs:

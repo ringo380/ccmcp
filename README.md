@@ -231,26 +231,30 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-196 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+214 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 
 ```
 cmd/              cobra subcommands (status, mcp, profile, plugin, marketplace,
-                  skill, agent, command, report, doctor, compat aliases)
+                  skill, agent, command, discover, report, doctor, compat
+                  aliases)
 internal/
   agents/         agent CRUD + file-backed store
   classify/       override-key classifier (7 buckets)
   commands/       command discovery, conflict detection, ignore list
   config/         readers + writers for every Claude Code config file
+  discovery/      remote marketplace discovery (4 sources merged, preview-clone
+                  + conflict detection)
   doctor/         CLAUDE.md + MEMORY.md structural linter
   install/        plugin marketplace installer (4 source formats)
   paths/          config path resolution ($CLAUDE_CONFIG_DIR aware)
   report/         snapshot / sweep / drift / audit report generators
   skills/         skill CRUD + file-backed store
   stringslice/    shared slice helpers
-  tui/            bubbletea app: 9 tabs (MCPs, Plugins, Marketplaces, Skills,
-                  Agents, Commands, Profiles, Summary, Doctor)
+  tui/            bubbletea app: 10 tabs (MCPs, Plugins, Marketplaces,
+                  Discover, Skills, Agents, Commands, Profiles, Summary,
+                  Doctor)
   updates/        upstream version probes for marketplaces, plugins, MCPs
 main.go
 ```
