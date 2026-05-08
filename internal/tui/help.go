@@ -83,6 +83,13 @@ func renderHelp(width int) string {
 	kbd("/", "filter by substring; c clears")
 	kbd("j/k or ↑/↓", "navigate; g/G top/bottom")
 
+	section("Discover tab")
+	kbd("enter", "drill in: marketplace → plugin list → preview-clone + conflict report")
+	kbd("b / esc", "go back one level")
+	kbd("r", "force-refresh discovery cache")
+	kbd("/", "filter by substring; c clears")
+	kbd("j/k or ↑/↓", "navigate; g/G top/bottom")
+
 	section("Skills tab")
 	kbd("space", "toggle skill enabled/disabled (writes skillOverrides)")
 	kbd("A / N", "bulk enable / disable every visible skill")
@@ -116,7 +123,7 @@ func renderHelp(width int) string {
 
 	section("Global")
 	kbd("tab / shift+tab", "cycle tabs")
-	kbd("1–9", "jump to MCPs / Plugins / Marketplaces / Skills / Agents / Commands / Profiles / Summary / Doctor")
+	kbd("1–9, 0", "jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands / Profiles / Summary / Doctor")
 	kbd("w", "save staged changes (atomic + backup)")
 	kbd("q", "quit (warns if unsaved)")
 	kbd("Q", "force quit, discard pending changes")

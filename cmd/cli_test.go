@@ -72,6 +72,8 @@ func runCLI(t *testing.T, home string, args ...string) (string, error) {
 	pluginUpdateAll = false
 	mktPurge = false
 	mktNoClone = false
+	discoverJSON = false
+	discoverRefresh = false
 
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))

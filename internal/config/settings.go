@@ -154,6 +154,36 @@ func (s *Settings) RemoveMarketplace(name string) bool {
 	return true
 }
 
+// --- discovery sources ------------------------------------------------------
+
+// DiscoverySources returns the user-configured list of registry URLs ccmcp
+// should fetch when populating the Discover tab. Stored under
+// `discoverySources` in settings.json as a string array.
+func (s *Settings) DiscoverySources() []string {
+	arr, _ := s.Raw["discoverySources"].([]any)
+	out := make([]string, 0, len(arr))
+	for _, v := range arr {
+		if str, ok := v.(string); ok && str != "" {
+			out = append(out, str)
+		}
+	}
+	return out
+}
+
+// SetDiscoverySources replaces the user-configured discovery source list.
+// Passing an empty slice clears the field entirely so the JSON stays clean.
+func (s *Settings) SetDiscoverySources(urls []string) {
+	if len(urls) == 0 {
+		delete(s.Raw, "discoverySources")
+		return
+	}
+	arr := make([]any, 0, len(urls))
+	for _, u := range urls {
+		arr = append(arr, u)
+	}
+	s.Raw["discoverySources"] = arr
+}
+
 // --- skill overrides --------------------------------------------------------
 
 func (s *Settings) SkillOverride(skill string) (string, bool) {

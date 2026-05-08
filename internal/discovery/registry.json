@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "marketplaces": [
+    {
+      "name": "claude-code-templates",
+      "description": "1500+ ready-to-use components: agents, commands, skills, settings, hooks, MCPs.",
+      "source": "github",
+      "repo": "davila7/claude-code-templates",
+      "tags": ["agents", "commands", "skills", "hooks", "mcp"],
+      "manifestUrl": "https://raw.githubusercontent.com/davila7/claude-code-templates/HEAD/.claude-plugin/marketplace.json"
+    },
+    {
+      "name": "wshobson-agents",
+      "description": "Curated subagent library covering popular development workflows.",
+      "source": "github",
+      "repo": "wshobson/agents",
+      "tags": ["agents"],
+      "manifestUrl": "https://raw.githubusercontent.com/wshobson/agents/HEAD/.claude-plugin/marketplace.json"
+    },
+    {
+      "name": "claude-code-hooks-mastery",
+      "description": "Hook examples and reference implementations from the community.",
+      "source": "github",
+      "repo": "disler/claude-code-hooks-mastery",
+      "tags": ["hooks"],
+      "manifestUrl": "https://raw.githubusercontent.com/disler/claude-code-hooks-mastery/HEAD/.claude-plugin/marketplace.json"
+    },
+    {
+      "name": "awesome-claude-code",
+      "description": "Community-curated index of marketplaces, agents, and skills (registry of registries).",
+      "source": "github",
+      "repo": "hesreallyhim/awesome-claude-code",
+      "tags": ["index", "awesome-list"],
+      "manifestUrl": ""
+    }
+  ]
+}

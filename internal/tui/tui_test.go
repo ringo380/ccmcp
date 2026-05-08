@@ -539,32 +539,36 @@ func TestTUITabSwitching(t *testing.T) {
 		t.Errorf("tab 2: want marketplaces, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
+	if m.tab != tabDiscover {
+		t.Errorf("tab 3: want discover, got %d", m.tab)
+	}
+	_ = drive(m, "tab")
 	if m.tab != tabSkills {
-		t.Errorf("tab 3: want skills, got %d", m.tab)
+		t.Errorf("tab 4: want skills, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
 	if m.tab != tabAgents {
-		t.Errorf("tab 4: want agents, got %d", m.tab)
+		t.Errorf("tab 5: want agents, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
 	if m.tab != tabCommands {
-		t.Errorf("tab 5: want commands, got %d", m.tab)
+		t.Errorf("tab 6: want commands, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
 	if m.tab != tabProfiles {
-		t.Errorf("tab 6: want profiles, got %d", m.tab)
+		t.Errorf("tab 7: want profiles, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
 	if m.tab != tabSummary {
-		t.Errorf("tab 7: want summary, got %d", m.tab)
+		t.Errorf("tab 8: want summary, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
 	if m.tab != tabDoctor {
-		t.Errorf("tab 8: want doctor, got %d", m.tab)
+		t.Errorf("tab 9: want doctor, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
 	if m.tab != tabMCPs {
-		t.Errorf("tab 9: want mcps (wrapped), got %d", m.tab)
+		t.Errorf("tab 10: want mcps (wrapped), got %d", m.tab)
 	}
 	// Numeric shortcuts
 	_ = drive(m, "3")
@@ -572,28 +576,32 @@ func TestTUITabSwitching(t *testing.T) {
 		t.Errorf("numeric 3: want marketplaces, got %d", m.tab)
 	}
 	_ = drive(m, "4")
-	if m.tab != tabSkills {
-		t.Errorf("numeric 4: want skills, got %d", m.tab)
+	if m.tab != tabDiscover {
+		t.Errorf("numeric 4: want discover, got %d", m.tab)
 	}
 	_ = drive(m, "5")
-	if m.tab != tabAgents {
-		t.Errorf("numeric 5: want agents, got %d", m.tab)
+	if m.tab != tabSkills {
+		t.Errorf("numeric 5: want skills, got %d", m.tab)
 	}
 	_ = drive(m, "6")
-	if m.tab != tabCommands {
-		t.Errorf("numeric 6: want commands, got %d", m.tab)
+	if m.tab != tabAgents {
+		t.Errorf("numeric 6: want agents, got %d", m.tab)
 	}
 	_ = drive(m, "7")
-	if m.tab != tabProfiles {
-		t.Errorf("numeric 7: want profiles, got %d", m.tab)
+	if m.tab != tabCommands {
+		t.Errorf("numeric 7: want commands, got %d", m.tab)
 	}
 	_ = drive(m, "8")
-	if m.tab != tabSummary {
-		t.Errorf("numeric 8: want summary, got %d", m.tab)
+	if m.tab != tabProfiles {
+		t.Errorf("numeric 8: want profiles, got %d", m.tab)
 	}
 	_ = drive(m, "9")
+	if m.tab != tabSummary {
+		t.Errorf("numeric 9: want summary, got %d", m.tab)
+	}
+	_ = drive(m, "0")
 	if m.tab != tabDoctor {
-		t.Errorf("numeric 9: want doctor, got %d", m.tab)
+		t.Errorf("numeric 0: want doctor, got %d", m.tab)
 	}
 }
 
@@ -811,8 +819,8 @@ func TestTUIProfileApply(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	// Profiles tab (now key "7"), cursor at first profile ("dev"), enter applies it
-	_ = drive(m, "7", "enter")
+	// Profiles tab (now key "8" after Discover insertion), cursor at first profile ("dev"), enter applies it
+	_ = drive(m, "8", "enter")
 
 	if !st.dirtyClaude {
 		t.Fatal("dirtyClaude should be set after applying profile")
@@ -897,7 +905,7 @@ func TestTUISummaryDetectsRedundancy(t *testing.T) {
 	st.cj.SetProjectMCP(st.project, "shared", cfg)
 
 	m := newModel(st)
-	view := drive(m, "8") // switch to Summary tab
+	view := drive(m, "9") // switch to Summary tab
 
 	if !strings.Contains(view, "BOTH user and project scope") {
 		t.Errorf("summary should flag user+project duplication; got:\n%s", view)
@@ -911,7 +919,7 @@ func TestTUISkillsTabRenders(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	view := drive(m, "4") // Skills tab
+	view := drive(m, "5") // Skills tab
 	if !strings.Contains(view, "Skills") {
 		t.Errorf("skills tab should show Skills header; got:\n%s", view)
 	}
@@ -923,7 +931,7 @@ func TestTUISkillsTabToggleNoop(t *testing.T) {
 	m := newModel(st)
 
 	// Switch to skills, attempt toggle — with empty rows should be a no-op
-	_ = drive(m, "4", " ")
+	_ = drive(m, "5", " ")
 	if st.dirtySettings {
 		t.Error("toggling in empty skills view should not dirty settings")
 	}
@@ -933,7 +941,7 @@ func TestTUIAgentsTabRenders(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	view := drive(m, "5") // Agents tab
+	view := drive(m, "6") // Agents tab
 	if !strings.Contains(view, "Agents") {
 		t.Errorf("agents tab should show Agents header; got:\n%s", view)
 	}
@@ -943,7 +951,7 @@ func TestTUICommandsTabRenders(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	view := drive(m, "6") // Commands tab
+	view := drive(m, "7") // Commands tab
 	if !strings.Contains(view, "Commands") {
 		t.Errorf("commands tab should show Commands header; got:\n%s", view)
 	}
@@ -954,7 +962,7 @@ func TestTUICommandsConflictToggle(t *testing.T) {
 	m := newModel(st)
 
 	// Switch to commands tab, press ! to toggle conflicts-only
-	_ = drive(m, "6")
+	_ = drive(m, "7")
 	if m.commands.conflictsOnly {
 		t.Fatal("should start with conflictsOnly=false")
 	}
@@ -972,7 +980,7 @@ func TestTUIDoctorTabRenders(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	view := drive(m, "9") // Doctor tab
+	view := drive(m, "0") // Doctor tab
 	if !strings.Contains(view, "Doctor") {
 		t.Errorf("doctor tab should contain 'Doctor'; got:\n%s", view)
 	}
@@ -983,7 +991,7 @@ func TestTUIDoctorTabRerun(t *testing.T) {
 	m := newModel(st)
 
 	// drive() calls View() at the end, which calls render(), which runs lint.
-	_ = drive(m, "9")
+	_ = drive(m, "0")
 	if !m.doctor.loaded {
 		t.Fatal("doctor.loaded should be true after first render")
 	}

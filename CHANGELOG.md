@@ -26,6 +26,62 @@ All notable changes to this project are documented here. Format based on
   errors from `tea.ExecProcess` (which loses subprocess stderr) are
   rewritten to `"claude CLI exit N — see output above"`. Long error
   strings from LLM review wrap cleanly to fit the viewport.
+- **Discover tab + `ccmcp discover` CLI** — browse Claude Code marketplaces
+  surfaced from a merged set of authoritative sources without ever touching
+  the user's installed state. Sources: an embedded ccmcp-curated registry,
+  an Anthropic-published registry probe (no-op until the canonical URL
+  exists), `awesome-claude-code`-style README scrapers, and any user-
+  supplied registry URLs configured under
+  `settings.json#discoverySources`. Two-stage drill-down — list view shows
+  every discovered marketplace, Enter fetches the marketplace's manifest
+  (no clone) to list its plugins, second Enter shallow-clones the plugin
+  to a sha-keyed preview cache (`~/.claude/plugins/cache/_discovery/`) and
+  runs every existing scanner (skills, agents, commands, MCP servers,
+  hooks) against it to produce a conflict report against the user's
+  currently-installed state. Results are cached for 6h with a 72h offline
+  grace window so reopening the tab is instant. New CLI surface:
+  `ccmcp discover list [--json] [--refresh]`,
+  `ccmcp discover show <marketplace>`, and
+  `ccmcp discover plugin <marketplace> <plugin>`.
+- **`CCMCP_DISCOVERY_OFFLINE`** — when set, restricts default discovery
+  sources to the embedded curated registry only. Useful for hermetic test
+  runs and air-gapped environments.
+
+### Changed
+
+- TUI gained a 10th tab; Doctor moved from the `9` numeric shortcut to `0`,
+  Profiles 7→8, Summary 8→9, Commands 6→7, Agents 5→6, Skills 4→5. Tab
+  order in the header bar (and `tab` / `shift+tab` cycling) follows the
+  same shift, with the new Discover tab inserted directly after
+  Marketplaces. The `?` help overlay and README key tables were updated to
+  match.
+
+### Fixed
+
+- Discovery `PreviewClone` now keys the cache directory by the upstream-
+  resolved sha (via `git ls-remote`) rather than a literal `HEAD`, so a
+  branch tip moving upstream produces a fresh clone instead of a silently
+  stale conflict report. Sha-pinned plugin sources check out the exact
+  commit after clone instead of whatever HEAD pointed at.
+- Discovery `shallowClone` no longer passes a 40-char commit SHA to
+  `git clone --branch <ref>` (which `git` rejects with "Remote branch
+  <sha> not found"); SHA refs are resolved via post-clone
+  `fetch + checkout`.
+- Discovery cache directory segments (`<owner>`, `<repo>`) derived from
+  untrusted registry input are now sanitized — `..` runs / `/` /
+  separator chars collapse to `_`, blocking a malicious
+  `repo: "../evil"` entry from writing outside the preview cache.
+- Discovery `Discover()` no longer overwrites a previously-good cache
+  with an empty result when every source transiently fails and no
+  in-grace cache exists; the previous-good cache survives the outage.
+- Manifest fetches in `cmd/discover.go` and the TUI Discover tab now go
+  through the same UA-injecting HTTP client as the orchestrator
+  (`discovery.NewHTTPClient`), avoiding 403s from mirrors that reject
+  empty User-Agent headers.
+- TUI `discoveryView.fetchCmd` now snapshots the user-supplied registry
+  URL list on the bubbletea goroutine before dispatching the background
+  fetch, eliminating a data race against concurrent settings mutations
+  on other tabs.
 
 ## [0.5.1] — 2026-05-03
 
