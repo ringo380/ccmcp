@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ringo380/ccmcp/internal/doctor"
@@ -42,11 +44,17 @@ type doctorView struct {
 	allIssues  []doctor.Issue // flattened after runLint, for cursor indexing
 	cursor     int
 	pendingFix *fixProposal
+	lastFix    *fixProposal // last attempted fix, for retry hint
+	lastFixErr error        // result of last fix run
 
 	// LLM review state
 	llmRunning bool
 	llmResults []llmReviewResult
 	showLLM    bool
+
+	// claudeOnPath is cached at view init: when false, LLM review and fix-via-CLI
+	// are unavailable and the keys 'l' / 'f' surface a friendly hint instead.
+	claudeOnPath bool
 
 	flash string
 }
@@ -67,7 +75,11 @@ type doctorLLMResultMsg struct {
 }
 
 func newDoctorView(st *state) *doctorView {
-	return &doctorView{st: st}
+	v := &doctorView{st: st}
+	if _, err := exec.LookPath("claude"); err == nil {
+		v.claudeOnPath = true
+	}
+	return v
 }
 
 func (v *doctorView) runLint() {
@@ -114,10 +126,12 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	if done, ok := msg.(doctorFixDoneMsg); ok {
+		v.lastFixErr = done.err
 		if done.err != nil {
-			v.flash = styleErr.Render("fix failed: " + done.err.Error())
+			v.flash = styleErr.Render("fix failed: " + enrichExitStatus(done.err.Error()))
 		} else {
 			v.flash = styleOK.Render("fix applied")
+			v.lastFix = nil
 		}
 		v.loaded = false // trigger re-lint on next render
 		return nil
@@ -151,6 +165,10 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		if v.llmRunning {
 			return nil
 		}
+		if !v.canRunLLM() {
+			v.flash = styleWarn.Render("LLM review unavailable — install the claude CLI or set ANTHROPIC_API_KEY/OPENAI_API_KEY")
+			return nil
+		}
 		v.llmRunning = true
 		v.showLLM = false
 		v.flash = styleDim.Render("running LLM review…")
@@ -158,7 +176,9 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		memDir := tuiMemoryPath(v.st.paths.ClaudeConfigDir, v.st.project)
 		memPath := filepath.Join(memDir, "MEMORY.md")
 		return func() tea.Msg {
-			opts := doctor.ReviewOptions{Provider: doctor.ProviderAnthropic}
+			// Zero-value Provider: doctor.Review auto-selects the best available
+			// backend (claude-cli when no API keys are set, anthropic/openai otherwise).
+			opts := doctor.ReviewOptions{}
 			var results []llmReviewResult
 			if content, err := doctor.Review(claudePath, opts); err != nil {
 				results = append(results, llmReviewResult{path: claudePath, err: err})
@@ -177,6 +197,8 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			proposal, ok := buildFixProposal(v.allIssues[v.cursor], v.st.project)
 			if !ok {
 				v.flash = styleDim.Render("no automatic fix for " + v.allIssues[v.cursor].Code)
+			} else if proposal.kind == fixClaudeCLI && !v.claudeOnPath {
+				v.flash = styleWarn.Render("auto-fix unavailable — claude CLI not found in PATH")
 			} else {
 				v.pendingFix = proposal
 			}
@@ -248,13 +270,17 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 func (v *doctorView) executeFix() tea.Cmd {
 	p := v.pendingFix
 	v.pendingFix = nil
+	v.lastFix = p
+	v.lastFixErr = nil
 
 	if p.kind == fixInTUI {
 		if err := p.inTUI(); err != nil {
+			v.lastFixErr = err
 			v.flash = styleErr.Render("fix failed: " + err.Error())
 		} else {
 			v.flash = styleOK.Render("fixed: " + p.summary)
 			v.loaded = false
+			v.lastFix = nil
 		}
 		return nil
 	}
@@ -262,13 +288,77 @@ func (v *doctorView) executeFix() tea.Cmd {
 	// Claude CLI fix.
 	cliPath, err := exec.LookPath("claude")
 	if err != nil {
-		v.flash = styleErr.Render("claude not found in PATH")
+		v.lastFixErr = doctor.ErrClaudeCLINotFound
+		v.flash = styleErr.Render("claude CLI not found in PATH — install it or run the fix manually")
 		return nil
 	}
 	cmd := exec.Command(cliPath, p.cliArgs...)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return doctorFixDoneMsg{err: err}
 	})
+}
+
+// canRunLLM reports whether at least one provider backend is currently available:
+// the claude CLI on PATH, or an Anthropic/OpenAI API key in the environment.
+func (v *doctorView) canRunLLM() bool {
+	if v.claudeOnPath {
+		return true
+	}
+	if os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("OPENAI_API_KEY") != "" {
+		return true
+	}
+	return false
+}
+
+// enrichExitStatus rewrites bare "exit status N" messages from tea.ExecProcess
+// (which hands the TTY to the subprocess and so loses stderr capture) into a
+// hint that points the user to the output that scrolled by above.
+func enrichExitStatus(msg string) string {
+	re := regexp.MustCompile(`^exit status (\d+)$`)
+	if m := re.FindStringSubmatch(strings.TrimSpace(msg)); m != nil {
+		return fmt.Sprintf("claude CLI exit %s — see output above", m[1])
+	}
+	return msg
+}
+
+// wrapStyled hard-wraps s on whitespace to fit width-2 columns, returning one
+// styled line per wrapped row. Embedded newlines are preserved as separators.
+func wrapStyled(s string, width int, style lipgloss.Style) []string {
+	if width < 8 {
+		width = 80
+	}
+	max := width - 2
+	var out []string
+	for _, segment := range strings.Split(s, "\n") {
+		if segment == "" {
+			out = append(out, "")
+			continue
+		}
+		words := strings.Fields(segment)
+		if len(words) == 0 {
+			out = append(out, "")
+			continue
+		}
+		var line strings.Builder
+		for _, w := range words {
+			if line.Len() == 0 {
+				line.WriteString(w)
+				continue
+			}
+			if line.Len()+1+len(w) > max {
+				out = append(out, style.Render(line.String()))
+				line.Reset()
+				line.WriteString(w)
+				continue
+			}
+			line.WriteByte(' ')
+			line.WriteString(w)
+		}
+		if line.Len() > 0 {
+			out = append(out, style.Render(line.String()))
+		}
+	}
+	return out
 }
 
 func (v *doctorView) render() string {
@@ -290,6 +380,10 @@ func (v *doctorView) render() string {
 	}
 
 	var b strings.Builder
+	if !v.claudeOnPath {
+		b.WriteString(styleWarn.Render("claude CLI not found in PATH — LLM review and auto-fix unavailable"))
+		b.WriteString("\n")
+	}
 	if total == 0 {
 		fmt.Fprintf(&b, "Doctor — ")
 		b.WriteString(styleOK.Render("all clear"))
@@ -394,7 +488,16 @@ func (v *doctorView) renderLLM() string {
 	for _, r := range v.llmResults {
 		lines = append(lines, styleDim.Render("── "+r.path+" ──"))
 		if r.err != nil {
-			lines = append(lines, styleErr.Render("  error: "+r.err.Error()))
+			for _, wrapped := range wrapStyled("error: "+r.err.Error(), v.w-2, styleErr) {
+				lines = append(lines, "  "+wrapped)
+			}
+			if errors.Is(r.err, doctor.ErrClaudeCLINotFound) {
+				lines = append(lines, "  "+styleDim.Render("hint: install the claude CLI or set ANTHROPIC_API_KEY/OPENAI_API_KEY"))
+			}
+			var apiErr *doctor.APIError
+			if errors.As(r.err, &apiErr) && apiErr.Status == 401 {
+				lines = append(lines, "  "+styleDim.Render("hint: run `claude /login` or rerun with --provider claude-cli"))
+			}
 		} else {
 			for _, l := range strings.Split(r.content, "\n") {
 				lines = append(lines, "  "+l)
@@ -424,10 +527,14 @@ func (v *doctorView) helpText() string {
 	if v.llmRunning {
 		return "LLM review in progress…"
 	}
-	if v.showLLM {
-		return "r: re-run lint  l: LLM review  j/k: scroll  g/G: top/bottom"
+	suffix := ""
+	if !v.claudeOnPath {
+		suffix = "  " + styleDim.Render("(claude CLI missing)")
 	}
-	return "r: re-run lint  l: LLM review  j/k: navigate  f: fix issue  g/G: top/bottom"
+	if v.showLLM {
+		return "r: re-run lint  l: LLM review  j/k: scroll  g/G: top/bottom" + suffix
+	}
+	return "r: re-run lint  l: LLM review  j/k: navigate  f: fix issue  g/G: top/bottom" + suffix
 }
 
 func (v *doctorView) capturingInput() bool { return false }

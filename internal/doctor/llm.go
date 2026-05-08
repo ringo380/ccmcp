@@ -2,11 +2,14 @@ package doctor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -17,7 +20,46 @@ type Provider string
 const (
 	ProviderAnthropic Provider = "anthropic"
 	ProviderOpenAI    Provider = "openai"
+	ProviderClaudeCLI Provider = "claude-cli"
 )
+
+// ErrClaudeCLINotFound is returned when the local `claude` binary cannot be
+// resolved on $PATH. Callers can use errors.Is to drive a friendly UI hint.
+var ErrClaudeCLINotFound = errors.New("claude CLI not found in PATH")
+
+// APIError is returned for non-2xx HTTP responses from Anthropic/OpenAI. It
+// carries a parsed message (when the body matched the standard
+// {"error":{"message":"..."}} shape) plus the raw body for diagnostics.
+type APIError struct {
+	Provider string
+	Status   int
+	Message  string
+	Raw      string
+}
+
+func (e *APIError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("%s API %d: %s", e.Provider, e.Status, e.Message)
+	}
+	if e.Raw != "" {
+		return fmt.Sprintf("%s API %d: %s", e.Provider, e.Status, e.Raw)
+	}
+	return fmt.Sprintf("%s API %d", e.Provider, e.Status)
+}
+
+// parseAPIError attempts to extract an `error.message` string from a JSON
+// response body shared by Anthropic and OpenAI. Returns "" on any parse miss.
+func parseAPIError(raw []byte) string {
+	var env struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return ""
+	}
+	return env.Error.Message
+}
 
 // ReviewOptions configures the LLM review call.
 type ReviewOptions struct {
@@ -31,6 +73,8 @@ func (o *ReviewOptions) apiKey() string {
 		return o.APIKey
 	}
 	switch o.Provider {
+	case ProviderClaudeCLI:
+		return ""
 	case ProviderOpenAI:
 		return os.Getenv("OPENAI_API_KEY")
 	default:
@@ -43,11 +87,36 @@ func (o *ReviewOptions) model() string {
 		return o.Model
 	}
 	switch o.Provider {
+	case ProviderClaudeCLI:
+		return ""
 	case ProviderOpenAI:
 		return "gpt-4o"
 	default:
 		return "claude-sonnet-4-6"
 	}
+}
+
+// resolveProvider applies the auto-fallback rule: when the caller passes a
+// zero-value Provider AND no API key is configured (env or explicit), fall
+// back to claude-cli iff the binary is on $PATH. Otherwise default to
+// anthropic to preserve existing behavior.
+func (o *ReviewOptions) resolveProvider() Provider {
+	if o.Provider != "" {
+		return o.Provider
+	}
+	if o.APIKey != "" {
+		return ProviderAnthropic
+	}
+	if os.Getenv("ANTHROPIC_API_KEY") != "" {
+		return ProviderAnthropic
+	}
+	if os.Getenv("OPENAI_API_KEY") != "" {
+		return ProviderOpenAI
+	}
+	if _, err := exec.LookPath("claude"); err == nil {
+		return ProviderClaudeCLI
+	}
+	return ProviderAnthropic
 }
 
 // Review sends the content of path to the configured LLM and returns its feedback.
@@ -57,17 +126,25 @@ func Review(path string, opts ReviewOptions) (string, error) {
 		return "", fmt.Errorf("read %s: %w", path, err)
 	}
 
-	apiKey := opts.apiKey()
-	if apiKey == "" {
-		return "", fmt.Errorf("no API key: set %s or pass --api-key", envName(opts.Provider))
-	}
+	provider := opts.resolveProvider()
+	opts.Provider = provider
 
 	prompt := buildPrompt(path, string(content))
 
-	switch opts.Provider {
+	switch provider {
+	case ProviderClaudeCLI:
+		return callClaudeCLI(prompt, opts.model())
 	case ProviderOpenAI:
+		apiKey := opts.apiKey()
+		if apiKey == "" {
+			return "", fmt.Errorf("no API key: set OPENAI_API_KEY or pass --api-key")
+		}
 		return callOpenAI(prompt, opts.model(), apiKey)
 	default:
+		apiKey := opts.apiKey()
+		if apiKey == "" {
+			return "", fmt.Errorf("no API key: set ANTHROPIC_API_KEY or pass --api-key (or install the claude CLI for offline review)")
+		}
 		return callAnthropic(prompt, opts.model(), apiKey)
 	}
 }
@@ -126,7 +203,7 @@ func callAnthropic(prompt, model, apiKey string) (string, error) {
 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("anthropic API %d: %s", resp.StatusCode, string(raw))
+		return "", buildAPIError("anthropic", resp.StatusCode, raw)
 	}
 
 	var res struct {
@@ -169,7 +246,7 @@ func callOpenAI(prompt, model, apiKey string) (string, error) {
 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("openai API %d: %s", resp.StatusCode, string(raw))
+		return "", buildAPIError("openai", resp.StatusCode, raw)
 	}
 
 	var res struct {
@@ -186,6 +263,73 @@ func callOpenAI(prompt, model, apiKey string) (string, error) {
 		return "", fmt.Errorf("empty response from OpenAI")
 	}
 	return res.Choices[0].Message.Content, nil
+}
+
+// buildAPIError parses the response body, applies the 401 hint, and returns a
+// typed *APIError suitable for callers to errors.As against.
+func buildAPIError(provider string, status int, raw []byte) *APIError {
+	msg := parseAPIError(raw)
+	if status == 401 {
+		hint := "key rejected — run /login or use --provider claude-cli"
+		if msg == "" {
+			msg = hint
+		} else {
+			msg = msg + " (" + hint + ")"
+		}
+	}
+	return &APIError{
+		Provider: provider,
+		Status:   status,
+		Message:  msg,
+		Raw:      strings.TrimSpace(string(raw)),
+	}
+}
+
+// callClaudeCLI shells out to the local `claude` binary using --print, piping
+// the prompt over stdin and capturing stdout. stderr is captured separately
+// and surfaced only on non-zero exit. No API key required.
+func callClaudeCLI(prompt, model string) (string, error) {
+	bin, err := exec.LookPath("claude")
+	if err != nil {
+		return "", ErrClaudeCLINotFound
+	}
+
+	args := []string{"--print"}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Stdin = strings.NewReader(prompt)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("claude CLI timed out after 120s")
+		}
+		stderrTrimmed := strings.TrimSpace(stderr.String())
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if stderrTrimmed != "" {
+				return "", fmt.Errorf("claude CLI exit %d: %s", exitErr.ExitCode(), stderrTrimmed)
+			}
+			return "", fmt.Errorf("claude CLI exit %d", exitErr.ExitCode())
+		}
+		if stderrTrimmed != "" {
+			return "", fmt.Errorf("claude CLI: %s: %w", stderrTrimmed, err)
+		}
+		return "", fmt.Errorf("claude CLI: %w", err)
+	}
+
+	out := strings.TrimSpace(stdout.String())
+	if out == "" {
+		return "", fmt.Errorf("empty response from claude CLI")
+	}
+	return out, nil
 }
 
 func envName(p Provider) string {
