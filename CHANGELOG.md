@@ -6,6 +6,37 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Changed
+
+- **TUI: high-contrast in-progress indicators with live spinner.** Every
+  long-running operation (plugin install/update, bulk update, marketplace
+  git pull, discovery fetch, doctor LLM review) now renders with an
+  animated braille-dot spinner in bold cyan instead of dim grey, so it's
+  obvious when work is happening vs. idle. The spinner is driven by a
+  bubbles `spinner.Model` at the model level and the current frame is
+  published via `state.spinnerFrame` for views to consume. Headless
+  `Dump()` is unaffected (no TickMsg is processed).
+- **TUI: per-item bulk-update progress.** `B`-key bulk updates on both
+  the Plugins and Marketplaces tabs now process targets one at a time
+  and stream `(N/M)` progress to the in-progress line plus a
+  `updating <id>… (N/M)` flash for each item. The `↑ update available`
+  annotation for each plugin/marketplace clears the moment its own item
+  lands rather than waiting for the entire batch to finish — so a 20-item
+  sweep doesn't look frozen. Final bulk-summary flash
+  (`N updated, M already up to date, K failed`) is unchanged.
+
+### Tests
+
+- New TUI tests: `TestTUIPluginUpdateClearsIndicator`,
+  `TestTUIPluginUpdateErrorPreservesIndicator`,
+  `TestTUIPluginBulkUpdateClearsIndicators`,
+  `TestTUIPluginUpdateInProgressVisible`, `TestTUISpinnerLoopsContinuously`,
+  `TestTUIPluginBulkPerItemProgress` — assert the `↑ update available`
+  annotation clears on success, preserves on error, that the spinner
+  tick loop self-perpetuates, and that per-item bulk progress increments
+  the (N/M) counter and clears each plugin's indicator live as it lands.
+  Total: 232.
+
 ## [0.6.0] — 2026-05-08
 
 ### Added

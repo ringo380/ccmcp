@@ -171,7 +171,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		}
 		v.llmRunning = true
 		v.showLLM = false
-		v.flash = styleDim.Render("running LLM review…")
+		v.flash = styleProgress.Render("running LLM review…")
 		claudePath := filepath.Join(v.st.project, "CLAUDE.md")
 		memDir := tuiMemoryPath(v.st.paths.ClaudeConfigDir, v.st.project)
 		memPath := filepath.Join(memDir, "MEMORY.md")
@@ -367,7 +367,7 @@ func (v *doctorView) render() string {
 	}
 
 	if v.llmRunning {
-		return "Doctor — " + styleDim.Render("LLM review in progress…") + "\n" + v.flash
+		return "Doctor — " + v.st.spinnerFrame + styleProgress.Render("LLM review in progress…") + "\n" + v.flash
 	}
 
 	if v.showLLM {

@@ -62,6 +62,20 @@ type bulkUpdateApplied struct {
 	oldInstPath string
 }
 
+// bulkUpdateTarget is one queued item in a bulk update sweep. The bulk worker
+// processes targets serially, emitting a pluginBulkItemDoneMsg per item so the
+// view can show live (N/M) progress and clear the "↑ update available" annotation
+// for each plugin as soon as it lands instead of waiting for the entire batch.
+type bulkUpdateTarget struct {
+	id, name, mkt, oldSha, oldInstPath string
+}
+
+type pluginBulkItemDoneMsg struct {
+	target bulkUpdateTarget
+	result *install.Result
+	err    error
+}
+
 type pluginInstallResultMsg struct {
 	result *install.Result
 	err    error
@@ -108,6 +122,14 @@ type pluginView struct {
 	updating     bool
 	bulkUpdating bool
 	installing   bool
+
+	// per-item bulk-update progress. Active only while bulkUpdating=true.
+	// bulkIndex is the count of items already processed (also = next index to run).
+	bulkTargets []bulkUpdateTarget
+	bulkIndex   int
+	bulkApplied []bulkUpdateApplied
+	bulkSkipped []string
+	bulkFailed  []string
 
 	// two-step remove confirmation
 	pendingRemove string
@@ -221,10 +243,46 @@ func firstRemoteIdx(rows []pluginRowView) int {
 func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 	// Handle async result messages regardless of mode.
 	switch m := msg.(type) {
+	case pluginBulkItemDoneMsg:
+		t := m.target
+		switch {
+		case m.err != nil:
+			v.bulkFailed = append(v.bulkFailed, t.id)
+		case m.result.GitCommitSha != "" && t.oldSha != "" && m.result.GitCommitSha == t.oldSha:
+			// Real sha match: nothing changed. An empty oldSha plus empty result sha
+			// (non-git source) would spuriously match, so the guard above gates on both.
+			v.bulkSkipped = append(v.bulkSkipped, t.id)
+		default:
+			// Apply incrementally so the "↑ update available" indicator clears live for
+			// each plugin instead of all at once at the end of the batch.
+			install.UpdateInstall(v.st.installed, m.result, t.oldInstPath)
+			v.st.updates.InvalidatePlugin(t.id)
+			v.bulkApplied = append(v.bulkApplied, bulkUpdateApplied{
+				id: t.id, result: m.result, oldInstPath: t.oldInstPath,
+			})
+		}
+		v.bulkIndex++
+		v.rebuild()
+		if v.bulkIndex < len(v.bulkTargets) {
+			next := v.bulkTargets[v.bulkIndex]
+			v.flash = styleProgress.Render(fmt.Sprintf(
+				"updating %s… (%d/%d)", next.id, v.bulkIndex+1, len(v.bulkTargets),
+			))
+		}
+		return v.bulkRunNextItem()
+
 	case pluginBulkUpdateResultMsg:
 		v.bulkUpdating = false
+		// Drop bulk-progress scratch state so next B-press starts clean.
+		v.bulkTargets = nil
+		v.bulkIndex = 0
+		v.bulkApplied = nil
+		v.bulkSkipped = nil
+		v.bulkFailed = nil
 		// Apply UpdateInstall on the main goroutine to avoid racing with rebuild()'s
-		// reads of v.st.installed.
+		// reads of v.st.installed. Idempotent — the per-item path may have already
+		// applied these in the streaming flow; direct senders (tests, future callers)
+		// rely on this loop to land state.
 		for _, a := range m.applied {
 			install.UpdateInstall(v.st.installed, a.result, a.oldInstPath)
 			v.st.updates.InvalidatePlugin(a.id)
@@ -415,7 +473,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			}
 		}
 		v.updating = true
-		v.flash = styleDim.Render("updating " + r.ID + "…")
+		v.flash = styleProgress.Render("updating " + r.ID + "…")
 		id, p := r.ID, v.st.paths
 		return func() tea.Msg {
 			result, err := install.Install(p, mkt, name)
@@ -455,7 +513,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		v.availLoading = true
 		v.availIndex = 0
 		v.availTop = 0
-		v.flash = styleDim.Render("loading marketplace catalogs…")
+		v.flash = styleProgress.Render("loading marketplace catalogs…")
 		p := v.st.paths
 		installedSet := map[string]bool{}
 		for _, ip := range v.st.installed.List() {
@@ -526,21 +584,13 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		if v.bulkUpdating || v.updating {
 			return nil
 		}
-		// Collect all installed plugins with a qualified ID.
-		type updateTarget struct {
-			id          string
-			name        string
-			mkt         string
-			oldSha      string
-			oldInstPath string
-		}
-		var targets []updateTarget
+		var targets []bulkUpdateTarget
 		for _, ip := range v.st.installed.List() {
 			name, mkt := config.ParsePluginID(ip.ID)
 			if mkt == "" {
 				continue
 			}
-			targets = append(targets, updateTarget{
+			targets = append(targets, bulkUpdateTarget{
 				id:          ip.ID,
 				name:        name,
 				mkt:         mkt,
@@ -553,30 +603,33 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		v.bulkUpdating = true
-		v.flash = styleDim.Render(fmt.Sprintf("updating %d plugin(s)…", len(targets)))
-		p := v.st.paths
+		v.bulkTargets = targets
+		v.bulkIndex = 0
+		v.bulkApplied = nil
+		v.bulkSkipped = nil
+		v.bulkFailed = nil
+		v.flash = styleProgress.Render(fmt.Sprintf("updating %d plugin(s)… (0/%d)", len(targets), len(targets)))
+		return v.bulkRunNextItem()
+	}
+	return nil
+}
+
+// bulkRunNextItem returns a cmd that re-fetches v.bulkTargets[v.bulkIndex] and
+// emits a pluginBulkItemDoneMsg. When all targets have been processed it emits
+// the final pluginBulkUpdateResultMsg from the accumulated state.
+func (v *pluginView) bulkRunNextItem() tea.Cmd {
+	if v.bulkIndex >= len(v.bulkTargets) {
+		applied, skipped, failed := v.bulkApplied, v.bulkSkipped, v.bulkFailed
 		return func() tea.Msg {
-			var applied []bulkUpdateApplied
-			var skipped, failed []string
-			for _, t := range targets {
-				result, err := install.Install(p, t.mkt, t.name)
-				if err != nil {
-					failed = append(failed, t.id)
-					continue
-				}
-				// "skipped" only if we got a real sha back AND it matches: an empty
-				// sha (non-git source) plus an empty oldSha would otherwise spuriously
-				// match every iteration.
-				if result.GitCommitSha != "" && t.oldSha != "" && result.GitCommitSha == t.oldSha {
-					skipped = append(skipped, t.id)
-					continue
-				}
-				applied = append(applied, bulkUpdateApplied{id: t.id, result: result, oldInstPath: t.oldInstPath})
-			}
 			return pluginBulkUpdateResultMsg{applied: applied, skipped: skipped, failed: failed}
 		}
 	}
-	return nil
+	t := v.bulkTargets[v.bulkIndex]
+	p := v.st.paths
+	return func() tea.Msg {
+		result, err := install.Install(p, t.mkt, t.name)
+		return pluginBulkItemDoneMsg{target: t, result: result, err: err}
+	}
 }
 
 // initialCheckCmd is fired by the model when the user first switches to this tab. It
@@ -670,7 +723,7 @@ func (v *pluginView) updateAvailable(key tea.KeyMsg) tea.Cmd {
 		}
 		r := v.availRows[v.availIndex]
 		v.installing = true
-		v.flash = styleDim.Render("installing " + r.QualifiedID + "…")
+		v.flash = styleProgress.Render("installing " + r.QualifiedID + "…")
 		p, mkt, name := v.st.paths, r.Marketplace, r.Name
 		return func() tea.Msg {
 			result, err := install.Install(p, mkt, name)
@@ -726,10 +779,14 @@ func (v *pluginView) render() string {
 		b.WriteString(v.filter.View() + "\n")
 	}
 	if v.updating {
-		b.WriteString(styleDim.Render("  (update in progress…)") + "\n")
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("update in progress…") + "\n")
 	}
 	if v.bulkUpdating {
-		b.WriteString(styleDim.Render("  (bulk update in progress…)") + "\n")
+		label := "bulk update in progress…"
+		if total := len(v.bulkTargets); total > 0 {
+			label = fmt.Sprintf("bulk update in progress… (%d/%d)", v.bulkIndex, total)
+		}
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render(label) + "\n")
 	}
 
 	if len(visible) == 0 {
@@ -815,7 +872,7 @@ func (v *pluginView) renderAvailable() string {
 	var b strings.Builder
 	if v.availLoading {
 		b.WriteString("Plugins — available  (loading…)\n")
-		b.WriteString(styleDim.Render("  fetching marketplace catalogs…"))
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("fetching marketplace catalogs…"))
 		return b.String()
 	}
 	if v.availErr != "" {
@@ -833,7 +890,7 @@ func (v *pluginView) renderAvailable() string {
 
 	b.WriteString(fmt.Sprintf("Plugins — available  (%d not installed)\n", len(v.availRows)))
 	if v.installing {
-		b.WriteString(styleDim.Render("  (install in progress…)") + "\n")
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("install in progress…") + "\n")
 	}
 
 	listHeight := v.h - 4

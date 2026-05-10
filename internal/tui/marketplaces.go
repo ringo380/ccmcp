@@ -53,6 +53,16 @@ type marketplaceOpResultMsg struct {
 	failed  []string
 }
 
+// marketplaceBulkItemDoneMsg fires once per marketplace processed during a bulk
+// `B` sweep, so the view can show live (N/M) progress and refresh per-row state
+// instead of waiting for the entire batch.
+type marketplaceBulkItemDoneMsg struct {
+	name   string
+	oldSha string
+	newSha string
+	err    error
+}
+
 // ---------------------------------------------------------------------------
 // Add-form state
 // ---------------------------------------------------------------------------
@@ -88,6 +98,13 @@ type marketplaceView struct {
 	pendingRemove  string
 	addMode        bool
 	addForm        marketplaceAddForm
+
+	// per-item bulk-update progress. Active only while bulkUpdating=true.
+	bulkTargets []string
+	bulkIndex   int
+	bulkUpdated []string
+	bulkSkipped []string
+	bulkFailed  []string
 
 	flash string
 }
@@ -204,9 +221,37 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 		v.checking = false
 		v.flash = styleDim.Render("update check complete")
 		return nil
+	case marketplaceBulkItemDoneMsg:
+		switch {
+		case m.err != nil:
+			v.bulkFailed = append(v.bulkFailed, m.name)
+		case m.oldSha != "" && m.newSha != "" && m.oldSha == m.newSha:
+			v.bulkSkipped = append(v.bulkSkipped, m.name)
+		default:
+			v.bulkUpdated = append(v.bulkUpdated, m.name)
+			// Clear the cached "↑ update available" entry now so the row updates
+			// live, instead of waiting for the entire batch.
+			v.st.updates.InvalidateMarketplace(m.name)
+		}
+		v.bulkIndex++
+		v.rebuild()
+		if v.bulkIndex < len(v.bulkTargets) {
+			next := v.bulkTargets[v.bulkIndex]
+			v.flash = styleProgress.Render(fmt.Sprintf(
+				"updating %s… (%d/%d)", next, v.bulkIndex+1, len(v.bulkTargets),
+			))
+		}
+		return v.bulkRunNextItem()
 	case marketplaceOpResultMsg:
 		v.updating = false
 		v.bulkUpdating = false
+		// Drop bulk-progress scratch so next B-press starts clean. Safe for non-bulk
+		// ops too — these fields are only ever populated during a B-sweep.
+		v.bulkTargets = nil
+		v.bulkIndex = 0
+		v.bulkUpdated = nil
+		v.bulkSkipped = nil
+		v.bulkFailed = nil
 		switch m.op {
 		case "add":
 			if m.err != nil {
@@ -354,7 +399,7 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 			name := r.Name
 			v.pendingRemove = ""
 			v.updating = true
-			v.flash = styleDim.Render("removing " + name + "…")
+			v.flash = styleProgress.Render("removing " + name + "…")
 			p := v.st.paths
 			settings := v.st.settings
 			installed := v.st.installed
@@ -375,7 +420,7 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		v.updating = true
-		v.flash = styleDim.Render("git pull " + r.Name + "…")
+		v.flash = styleProgress.Render("git pull " + r.Name + "…")
 		p := v.st.paths
 		name := r.Name
 		return func() tea.Msg {
@@ -399,25 +444,13 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		v.bulkUpdating = true
-		v.flash = styleDim.Render(fmt.Sprintf("updating %d marketplace(s)…", len(targets)))
-		p := v.st.paths
-		return func() tea.Msg {
-			var updated, skipped, failed []string
-			for _, n := range targets {
-				oldSha := install.LocalMarketplaceHead(p, n)
-				if err := install.UpdateMarketplace(p, n); err != nil {
-					failed = append(failed, n)
-					continue
-				}
-				newSha := install.LocalMarketplaceHead(p, n)
-				if oldSha != "" && newSha != "" && oldSha == newSha {
-					skipped = append(skipped, n)
-				} else {
-					updated = append(updated, n)
-				}
-			}
-			return marketplaceOpResultMsg{op: "bulkUpdate", updated: updated, skipped: skipped, failed: failed}
-		}
+		v.bulkTargets = targets
+		v.bulkIndex = 0
+		v.bulkUpdated = nil
+		v.bulkSkipped = nil
+		v.bulkFailed = nil
+		v.flash = styleProgress.Render(fmt.Sprintf("updating %d marketplace(s)… (0/%d)", len(targets), len(targets)))
+		return v.bulkRunNextItem()
 	case "I":
 		if len(visible) == 0 {
 			return nil
@@ -433,6 +466,28 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 		v.flash = styleDim.Render(fmt.Sprintf("%d plugins in %s — switch to Plugins tab and press I to browse", r.NumPlugins, r.Name))
 	}
 	return nil
+}
+
+// bulkRunNextItem returns a cmd that git-pulls v.bulkTargets[v.bulkIndex] and
+// emits a marketplaceBulkItemDoneMsg. Once all targets have been processed it
+// emits the final marketplaceOpResultMsg from the accumulated state.
+func (v *marketplaceView) bulkRunNextItem() tea.Cmd {
+	if v.bulkIndex >= len(v.bulkTargets) {
+		updated, skipped, failed := v.bulkUpdated, v.bulkSkipped, v.bulkFailed
+		return func() tea.Msg {
+			return marketplaceOpResultMsg{op: "bulkUpdate", updated: updated, skipped: skipped, failed: failed}
+		}
+	}
+	name := v.bulkTargets[v.bulkIndex]
+	p := v.st.paths
+	return func() tea.Msg {
+		oldSha := install.LocalMarketplaceHead(p, name)
+		if err := install.UpdateMarketplace(p, name); err != nil {
+			return marketplaceBulkItemDoneMsg{name: name, oldSha: oldSha, err: err}
+		}
+		newSha := install.LocalMarketplaceHead(p, name)
+		return marketplaceBulkItemDoneMsg{name: name, oldSha: oldSha, newSha: newSha}
+	}
 }
 
 // updateAddForm drives the multi-step add wizard. The sequence is:
@@ -491,7 +546,7 @@ func (v *marketplaceView) updateAddForm(msg tea.Msg) tea.Cmd {
 				}
 				v.addMode = false
 				v.updating = true
-				v.flash = styleDim.Render("cloning " + name + "…")
+				v.flash = styleProgress.Render("cloning " + name + "…")
 				p := v.st.paths
 				settings := v.st.settings
 				return func() tea.Msg {
@@ -596,13 +651,17 @@ func (v *marketplaceView) render() string {
 		b.WriteString(v.filter.View() + "\n")
 	}
 	if v.checking {
-		b.WriteString(styleDim.Render("  (checking for updates…)") + "\n")
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("checking for updates…") + "\n")
 	}
 	if v.updating {
-		b.WriteString(styleDim.Render("  (operation in progress…)") + "\n")
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("operation in progress…") + "\n")
 	}
 	if v.bulkUpdating {
-		b.WriteString(styleDim.Render("  (bulk update in progress…)") + "\n")
+		label := "bulk update in progress…"
+		if total := len(v.bulkTargets); total > 0 {
+			label = fmt.Sprintf("bulk update in progress… (%d/%d)", v.bulkIndex, total)
+		}
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render(label) + "\n")
 	}
 
 	if len(visible) == 0 {

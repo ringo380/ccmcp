@@ -79,6 +79,7 @@ var (
 	styleOK        = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	styleWarn      = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	styleErr       = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	styleProgress  = lipgloss.NewStyle().Foreground(lipgloss.Color("51")).Bold(true)
 	styleFooter    = lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("244"))
 	styleSelected  = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("238"))
 	styleBadge     = lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("63"))
@@ -107,6 +108,11 @@ type state struct {
 
 	// updates caches probe results (per session) for marketplaces, plugins, and MCPs.
 	updates *updates.Cache
+
+	// spinnerFrame is the current animation frame published by the model's spinner.
+	// Views read this to render live in-progress indicators alongside their busy flags.
+	// Empty during one-shot Dump() since no TickMsg is processed.
+	spinnerFrame string
 
 	// change tracking
 	dirtyClaude   bool

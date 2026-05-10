@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/paths"
@@ -1104,3 +1105,284 @@ func TestTUIMarketplacesUpdateIndicator(t *testing.T) {
 		t.Errorf("expected outdated count; got:\n%s", view)
 	}
 }
+
+// TestTUIPluginUpdateClearsIndicator verifies the full cycle: a plugin marked
+// outdated in the update cache renders with "↑ update available", and after a
+// successful pluginUpdateResultMsg lands the indicator disappears, the title-bar
+// outdated count drops, and a success flash is shown.
+func TestTUIPluginUpdateClearsIndicator(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Mark plug-one outdated in the cache.
+	st.updates.PutPlugin("plug-one@mkt", updates.Status{
+		Local: "oldsha00", Remote: "newsha00", Outdated: true,
+	})
+	m.plugins.rebuild()
+
+	view := drive(m, "2") // plugins tab
+	if !strings.Contains(view, "↑ update available") {
+		t.Fatalf("expected '↑ update available' before update; got:\n%s", view)
+	}
+	if !strings.Contains(view, "(1 update available)") {
+		t.Fatalf("expected '(1 update available)' header before update; got:\n%s", view)
+	}
+
+	// Simulate worker returning a successful re-fetch. Route through m.Update so
+	// the model drains plugins.flash → m.message (rendered in the footer).
+	var im tea.Model = m
+	im, _ = im.Update(pluginUpdateResultMsg{
+		id:          "plug-one@mkt",
+		oldSha:      "oldsha00",
+		oldInstPath: "/x/1",
+		result: &install.Result{
+			QualifiedID:  "plug-one@mkt",
+			InstallPath:  "/x/1-new",
+			Version:      "2.0",
+			GitCommitSha: "newsha00",
+		},
+	})
+
+	view = im.View()
+	if strings.Contains(view, "↑ update available") {
+		t.Errorf("'↑ update available' should be gone after successful update; got:\n%s", view)
+	}
+	if strings.Contains(view, "update available)") {
+		t.Errorf("title-bar outdated count should not show after update; got:\n%s", view)
+	}
+	if !strings.Contains(view, "updated plug-one@mkt") {
+		t.Errorf("expected success flash; got:\n%s", view)
+	}
+	if !st.dirtyPlugins {
+		t.Error("successful update must mark dirtyPlugins")
+	}
+	if _, ok := st.updates.Plugin("plug-one@mkt"); ok {
+		t.Error("update cache entry should be invalidated after successful update")
+	}
+}
+
+// TestTUIPluginUpdateErrorPreservesIndicator verifies that a failed update does
+// NOT clear the outdated indicator (the user still needs to retry) and surfaces
+// an error flash.
+func TestTUIPluginUpdateErrorPreservesIndicator(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	st.updates.PutPlugin("plug-one@mkt", updates.Status{
+		Local: "oldsha00", Remote: "newsha00", Outdated: true,
+	})
+	m.plugins.rebuild()
+	_ = drive(m, "2")
+
+	var im tea.Model = m
+	im, _ = im.Update(pluginUpdateResultMsg{
+		id:     "plug-one@mkt",
+		oldSha: "oldsha00",
+		err:    errFake("boom"),
+	})
+
+	view := im.View()
+	if !strings.Contains(view, "↑ update available") {
+		t.Errorf("indicator should remain after failed update; got:\n%s", view)
+	}
+	if !strings.Contains(view, "update error: boom") {
+		t.Errorf("expected error flash; got:\n%s", view)
+	}
+	if st.dirtyPlugins {
+		t.Error("failed update must NOT mark dirtyPlugins")
+	}
+	if s, ok := st.updates.Plugin("plug-one@mkt"); !ok || !s.Outdated {
+		t.Error("cache entry should be preserved after failed update")
+	}
+}
+
+// TestTUIPluginBulkUpdateClearsIndicators verifies the bulk-update message
+// handler clears the outdated indicator and decrements the title-bar count for
+// each plugin in the applied set.
+func TestTUIPluginBulkUpdateClearsIndicators(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	st.updates.PutPlugin("plug-one@mkt", updates.Status{Local: "a", Remote: "b", Outdated: true})
+	st.updates.PutPlugin("plug-three@mkt", updates.Status{Local: "c", Remote: "d", Outdated: true})
+	m.plugins.rebuild()
+
+	view := drive(m, "2")
+	if !strings.Contains(view, "(2 update available)") {
+		t.Fatalf("expected '(2 update available)' before bulk update; got:\n%s", view)
+	}
+
+	var im tea.Model = m
+	im, _ = im.Update(pluginBulkUpdateResultMsg{
+		applied: []bulkUpdateApplied{
+			{id: "plug-one@mkt", result: &install.Result{QualifiedID: "plug-one@mkt", InstallPath: "/x/1-new", Version: "2.0", GitCommitSha: "newone"}, oldInstPath: "/x/1"},
+			{id: "plug-three@mkt", result: &install.Result{QualifiedID: "plug-three@mkt", InstallPath: "/x/3-new", Version: "2.0", GitCommitSha: "newthree"}, oldInstPath: "/x/3"},
+		},
+	})
+
+	view = im.View()
+	if strings.Contains(view, "↑ update available") {
+		t.Errorf("'↑ update available' should be gone after bulk update; got:\n%s", view)
+	}
+	if strings.Contains(view, "update available)") {
+		t.Errorf("title-bar outdated count should be cleared after bulk update; got:\n%s", view)
+	}
+	if !strings.Contains(view, "2 updated") {
+		t.Errorf("expected bulk-update success summary; got:\n%s", view)
+	}
+}
+
+// TestTUIPluginUpdateInProgressVisible verifies the in-flight indicator renders
+// while v.updating is true and disappears once the result message lands.
+func TestTUIPluginUpdateInProgressVisible(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	_ = drive(m, "2") // plugins tab
+
+	// Simulate an update in flight: set the busy flag and tick the spinner so
+	// state.spinnerFrame is populated, then render.
+	m.plugins.updating = true
+	var im tea.Model = m
+	im, _ = im.Update(m.spinner.Tick())
+
+	view := im.View()
+	if !strings.Contains(view, "update in progress…") {
+		t.Errorf("expected in-progress indicator while v.updating; got:\n%s", view)
+	}
+	if st.spinnerFrame == "" {
+		t.Error("spinnerFrame should be populated after a TickMsg")
+	}
+
+	// After the result lands, the indicator should be gone.
+	im, _ = im.Update(pluginUpdateResultMsg{
+		id:          "plug-one@mkt",
+		oldSha:      "old",
+		oldInstPath: "/x/1",
+		result: &install.Result{
+			QualifiedID: "plug-one@mkt", InstallPath: "/x/1-new", Version: "2.0", GitCommitSha: "new",
+		},
+	})
+	view = im.View()
+	if strings.Contains(view, "update in progress…") {
+		t.Errorf("in-progress indicator should be gone after result; got:\n%s", view)
+	}
+}
+
+// TestTUISpinnerLoopsContinuously verifies each TickMsg returns a follow-up tick
+// command (the always-ticking loop) so the spinner animation continues.
+func TestTUISpinnerLoopsContinuously(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	var im tea.Model = m
+	im, cmd := im.Update(m.spinner.Tick())
+	if cmd == nil {
+		t.Fatal("TickMsg handler must return a follow-up cmd to keep the spinner ticking")
+	}
+	// Executing the cmd should yield another spinner.TickMsg.
+	if _, ok := cmd().(spinner.TickMsg); !ok {
+		t.Errorf("follow-up cmd should produce a spinner.TickMsg; got %T", cmd())
+	}
+	_ = im
+}
+
+// TestTUIPluginBulkPerItemProgress verifies the per-item bulk-update flow:
+// each pluginBulkItemDoneMsg advances the (N/M) counter, applies the SHA delta
+// to the installed manifest live (so each "↑ update available" annotation clears
+// as its plugin lands rather than all at once), and the final result message
+// produces the bulk-summary flash and clears bulk-progress scratch state.
+func TestTUIPluginBulkPerItemProgress(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Mark all three plugins outdated so we can watch indicators clear one at a time.
+	st.updates.PutPlugin("plug-one@mkt", updates.Status{Local: "old1", Remote: "new1", Outdated: true})
+	st.updates.PutPlugin("plug-two@mkt", updates.Status{Local: "old2", Remote: "new2", Outdated: true})
+	st.updates.PutPlugin("plug-three@mkt", updates.Status{Local: "old3", Remote: "new3", Outdated: true})
+	m.plugins.rebuild()
+	_ = drive(m, "2") // plugins tab
+
+	// Seed the bulk-update state directly (tests can't run install.Install for real).
+	m.plugins.bulkUpdating = true
+	m.plugins.bulkTargets = []bulkUpdateTarget{
+		{id: "plug-one@mkt", name: "plug-one", mkt: "mkt", oldSha: "old1", oldInstPath: "/x/1"},
+		{id: "plug-two@mkt", name: "plug-two", mkt: "mkt", oldSha: "old2", oldInstPath: "/x/2"},
+		{id: "plug-three@mkt", name: "plug-three", mkt: "mkt", oldSha: "old3", oldInstPath: "/x/3"},
+	}
+	m.plugins.bulkIndex = 0
+	m.plugins.flash = styleProgress.Render("updating 3 plugin(s)… (0/3)")
+
+	// Tick spinner once so spinnerFrame is populated for the in-progress line.
+	var im tea.Model = m
+	im, _ = im.Update(m.spinner.Tick())
+
+	view := im.View()
+	if !strings.Contains(view, "bulk update in progress… (0/3)") {
+		t.Errorf("expected '(0/3)' before any items land; got:\n%s", view)
+	}
+
+	// First item lands successfully.
+	im, _ = im.Update(pluginBulkItemDoneMsg{
+		target: m.plugins.bulkTargets[0],
+		result: &install.Result{QualifiedID: "plug-one@mkt", InstallPath: "/x/1-new", Version: "2.0", GitCommitSha: "new1"},
+	})
+	view = im.View()
+	if !strings.Contains(view, "bulk update in progress… (1/3)") {
+		t.Errorf("expected '(1/3)' after item 1; got:\n%s", view)
+	}
+	// plug-one's indicator should already be cleared (live invalidation), the others remain.
+	if _, ok := st.updates.Plugin("plug-one@mkt"); ok {
+		t.Error("plug-one update cache should be invalidated immediately after item 1 lands")
+	}
+	if s, ok := st.updates.Plugin("plug-two@mkt"); !ok || !s.Outdated {
+		t.Error("plug-two should still be outdated mid-batch")
+	}
+	if len(m.plugins.bulkApplied) != 1 {
+		t.Errorf("bulkApplied len = %d; want 1", len(m.plugins.bulkApplied))
+	}
+
+	// Second item: skipped (SHA unchanged).
+	im, _ = im.Update(pluginBulkItemDoneMsg{
+		target: m.plugins.bulkTargets[1],
+		result: &install.Result{QualifiedID: "plug-two@mkt", InstallPath: "/x/2", Version: "1.0", GitCommitSha: "old2"},
+	})
+	if len(m.plugins.bulkSkipped) != 1 || m.plugins.bulkSkipped[0] != "plug-two@mkt" {
+		t.Errorf("bulkSkipped = %v; want [plug-two@mkt]", m.plugins.bulkSkipped)
+	}
+
+	// Third item: failed.
+	im, _ = im.Update(pluginBulkItemDoneMsg{
+		target: m.plugins.bulkTargets[2],
+		err:    errFake("network down"),
+	})
+	if len(m.plugins.bulkFailed) != 1 || m.plugins.bulkFailed[0] != "plug-three@mkt" {
+		t.Errorf("bulkFailed = %v; want [plug-three@mkt]", m.plugins.bulkFailed)
+	}
+
+	// After the third item, the next cmd should emit pluginBulkUpdateResultMsg.
+	// Drive the runtime past it: by this point bulkIndex == 3 == len(bulkTargets),
+	// so bulkRunNextItem returned a cmd that produces the summary message. Run it.
+	finalCmd := m.plugins.bulkRunNextItem()
+	if finalCmd == nil {
+		t.Fatal("expected final summary cmd")
+	}
+	finalMsg := finalCmd()
+	im, _ = im.Update(finalMsg)
+
+	view = im.View()
+	if strings.Contains(view, "bulk update in progress…") {
+		t.Errorf("in-progress line should be gone after final result; got:\n%s", view)
+	}
+	if !strings.Contains(view, "1 updated") || !strings.Contains(view, "1 already up to date") || !strings.Contains(view, "1 failed") {
+		t.Errorf("expected summary '1 updated, 1 already up to date, 1 failed'; got:\n%s", view)
+	}
+	if m.plugins.bulkUpdating {
+		t.Error("bulkUpdating should be false after final result")
+	}
+	if len(m.plugins.bulkTargets) != 0 || m.plugins.bulkIndex != 0 {
+		t.Error("bulk-progress scratch should be cleared after final result")
+	}
+}
+
+type errFake string
+
+func (e errFake) Error() string { return string(e) }
