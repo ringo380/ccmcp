@@ -54,6 +54,11 @@ type pluginBulkUpdateResultMsg struct {
 	applied []bulkUpdateApplied
 	skipped []string
 	failed  []string
+	// streamed=true means the per-item handler already applied each entry; the
+	// result handler should skip its UpdateInstall+InvalidatePlugin loop to avoid
+	// redundant work. Direct senders (existing tests, future CLI integrations)
+	// leave it false so the result handler stays responsible for landing state.
+	streamed bool
 }
 
 type bulkUpdateApplied struct {
@@ -246,7 +251,10 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 	case pluginBulkItemDoneMsg:
 		t := m.target
 		switch {
-		case m.err != nil:
+		case m.err != nil || m.result == nil:
+			// Treat a nil result as a failure even when err is nil — should never
+			// happen given install.Install's contract, but a defensive guard keeps
+			// the switch from dereferencing nil in the SHA comparison below.
 			v.bulkFailed = append(v.bulkFailed, t.id)
 		case m.result.GitCommitSha != "" && t.oldSha != "" && m.result.GitCommitSha == t.oldSha:
 			// Real sha match: nothing changed. An empty oldSha plus empty result sha
@@ -254,9 +262,12 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			v.bulkSkipped = append(v.bulkSkipped, t.id)
 		default:
 			// Apply incrementally so the "↑ update available" indicator clears live for
-			// each plugin instead of all at once at the end of the batch.
+			// each plugin instead of all at once at the end of the batch. Set
+			// dirtyPlugins now so an in-flight Q quit-confirmation still prompts to
+			// save even if the result handler never runs (e.g. session torn down).
 			install.UpdateInstall(v.st.installed, m.result, t.oldInstPath)
 			v.st.updates.InvalidatePlugin(t.id)
+			v.st.dirtyPlugins = true
 			v.bulkApplied = append(v.bulkApplied, bulkUpdateApplied{
 				id: t.id, result: m.result, oldInstPath: t.oldInstPath,
 			})
@@ -280,12 +291,15 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		v.bulkSkipped = nil
 		v.bulkFailed = nil
 		// Apply UpdateInstall on the main goroutine to avoid racing with rebuild()'s
-		// reads of v.st.installed. Idempotent — the per-item path may have already
-		// applied these in the streaming flow; direct senders (tests, future callers)
-		// rely on this loop to land state.
-		for _, a := range m.applied {
-			install.UpdateInstall(v.st.installed, a.result, a.oldInstPath)
-			v.st.updates.InvalidatePlugin(a.id)
+		// reads of v.st.installed. Skipped when streamed=true — the per-item handler
+		// already landed each entry, and re-applying would just churn timestamps and
+		// trigger redundant RemoveAll calls on already-deleted paths. Direct senders
+		// (tests, future callers) leave streamed=false so this loop runs.
+		if !m.streamed {
+			for _, a := range m.applied {
+				install.UpdateInstall(v.st.installed, a.result, a.oldInstPath)
+				v.st.updates.InvalidatePlugin(a.id)
+			}
 		}
 		if len(m.applied) > 0 {
 			v.st.dirtyPlugins = true
@@ -621,7 +635,7 @@ func (v *pluginView) bulkRunNextItem() tea.Cmd {
 	if v.bulkIndex >= len(v.bulkTargets) {
 		applied, skipped, failed := v.bulkApplied, v.bulkSkipped, v.bulkFailed
 		return func() tea.Msg {
-			return pluginBulkUpdateResultMsg{applied: applied, skipped: skipped, failed: failed}
+			return pluginBulkUpdateResultMsg{applied: applied, skipped: skipped, failed: failed, streamed: true}
 		}
 	}
 	t := v.bulkTargets[v.bulkIndex]
@@ -784,7 +798,15 @@ func (v *pluginView) render() string {
 	if v.bulkUpdating {
 		label := "bulk update in progress…"
 		if total := len(v.bulkTargets); total > 0 {
-			label = fmt.Sprintf("bulk update in progress… (%d/%d)", v.bulkIndex, total)
+			// Show "currently on item N of M", matching the flash counter semantics
+			// instead of the prior "N completed of M" which was off-by-one from the
+			// flash. Cap at total for the brief window between the last item landing
+			// and the final result message arriving (when bulkIndex == total).
+			current := v.bulkIndex + 1
+			if current > total {
+				current = total
+			}
+			label = fmt.Sprintf("bulk update in progress… (%d/%d)", current, total)
 		}
 		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render(label) + "\n")
 	}

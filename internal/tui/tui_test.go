@@ -1316,8 +1316,10 @@ func TestTUIPluginBulkPerItemProgress(t *testing.T) {
 	im, _ = im.Update(m.spinner.Tick())
 
 	view := im.View()
-	if !strings.Contains(view, "bulk update in progress… (0/3)") {
-		t.Errorf("expected '(0/3)' before any items land; got:\n%s", view)
+	// (N/M) shows "currently on item N of M", so 1/3 before any items land
+	// (we are about to process item 1).
+	if !strings.Contains(view, "bulk update in progress… (1/3)") {
+		t.Errorf("expected '(1/3)' before any items land; got:\n%s", view)
 	}
 
 	// First item lands successfully.
@@ -1326,8 +1328,8 @@ func TestTUIPluginBulkPerItemProgress(t *testing.T) {
 		result: &install.Result{QualifiedID: "plug-one@mkt", InstallPath: "/x/1-new", Version: "2.0", GitCommitSha: "new1"},
 	})
 	view = im.View()
-	if !strings.Contains(view, "bulk update in progress… (1/3)") {
-		t.Errorf("expected '(1/3)' after item 1; got:\n%s", view)
+	if !strings.Contains(view, "bulk update in progress… (2/3)") {
+		t.Errorf("expected '(2/3)' after item 1 (now working on item 2); got:\n%s", view)
 	}
 	// plug-one's indicator should already be cleared (live invalidation), the others remain.
 	if _, ok := st.updates.Plugin("plug-one@mkt"); ok {
@@ -1380,6 +1382,73 @@ func TestTUIPluginBulkPerItemProgress(t *testing.T) {
 	}
 	if len(m.plugins.bulkTargets) != 0 || m.plugins.bulkIndex != 0 {
 		t.Error("bulk-progress scratch should be cleared after final result")
+	}
+	// Per-item handler must have set dirtyPlugins as soon as the first item landed,
+	// so an in-flight Q quit-confirmation still prompts to save even if the result
+	// handler never runs.
+	if !st.dirtyPlugins {
+		t.Error("dirtyPlugins should be true after streaming applied at least one item")
+	}
+	// Streaming-flow result message carries streamed=true so the result handler
+	// can skip the redundant UpdateInstall/InvalidatePlugin loop. Verify the flag
+	// was set on the final message.
+	bulkResult, ok := finalMsg.(pluginBulkUpdateResultMsg)
+	if !ok {
+		t.Fatalf("final message should be pluginBulkUpdateResultMsg; got %T", finalMsg)
+	}
+	if !bulkResult.streamed {
+		t.Error("streaming path should set streamed=true so the result handler skips redundant apply")
+	}
+}
+
+// TestTUIPluginBulkResultHandlerStillAppliesForDirectSender verifies the
+// non-streaming code path (direct test sender, future CLI integrations) still
+// runs the UpdateInstall+InvalidatePlugin loop in the result handler when
+// streamed=false. Regression guard for the streamed-flag optimization.
+func TestTUIPluginBulkResultHandlerStillAppliesForDirectSender(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	st.updates.PutPlugin("plug-one@mkt", updates.Status{Local: "old", Remote: "new", Outdated: true})
+	m.plugins.rebuild()
+	_ = drive(m, "2")
+
+	var im tea.Model = m
+	im, _ = im.Update(pluginBulkUpdateResultMsg{
+		applied: []bulkUpdateApplied{
+			{id: "plug-one@mkt", result: &install.Result{
+				QualifiedID: "plug-one@mkt", InstallPath: "/x/1-new", Version: "2.0", GitCommitSha: "new",
+			}, oldInstPath: "/x/1"},
+		},
+		// streamed: false (zero value) — handler runs full apply loop
+	})
+	_ = im
+	if !st.dirtyPlugins {
+		t.Error("dirtyPlugins should be set even for direct (non-streamed) result senders")
+	}
+	if _, ok := st.updates.Plugin("plug-one@mkt"); ok {
+		t.Error("InvalidatePlugin should run for direct (non-streamed) result senders")
+	}
+}
+
+// TestTUIPluginBulkNilResultIsTreatedAsFailure verifies the defensive guard
+// in the pluginBulkItemDoneMsg switch: a {result: nil, err: nil} payload (which
+// should never happen given install.Install's contract, but could from a buggy
+// future caller) must not panic; it's classified as a failure instead.
+func TestTUIPluginBulkNilResultIsTreatedAsFailure(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	_ = drive(m, "2") // plugins tab — routes pluginBulkItemDoneMsg to m.plugins.update
+	m.plugins.bulkUpdating = true
+	m.plugins.bulkTargets = []bulkUpdateTarget{
+		{id: "plug-x@mkt", name: "plug-x", mkt: "mkt"},
+	}
+
+	var im tea.Model = m
+	// No panic, no err, no result. Must classify as failed.
+	im, _ = im.Update(pluginBulkItemDoneMsg{target: m.plugins.bulkTargets[0]})
+	_ = im
+	if len(m.plugins.bulkFailed) != 1 || m.plugins.bulkFailed[0] != "plug-x@mkt" {
+		t.Errorf("nil-result payload should classify as failure; bulkFailed = %v", m.plugins.bulkFailed)
 	}
 }
 

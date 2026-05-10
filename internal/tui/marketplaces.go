@@ -659,7 +659,13 @@ func (v *marketplaceView) render() string {
 	if v.bulkUpdating {
 		label := "bulk update in progress…"
 		if total := len(v.bulkTargets); total > 0 {
-			label = fmt.Sprintf("bulk update in progress… (%d/%d)", v.bulkIndex, total)
+			// Same semantics as plugins: "currently on item N of M", matching the
+			// flash counter and capped during the result-message window.
+			current := v.bulkIndex + 1
+			if current > total {
+				current = total
+			}
+			label = fmt.Sprintf("bulk update in progress… (%d/%d)", current, total)
 		}
 		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render(label) + "\n")
 	}
