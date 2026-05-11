@@ -6,6 +6,60 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Changed
+
+- **TUI: high-contrast in-progress indicators with live spinner.** Every
+  long-running operation (plugin install/update, bulk update, marketplace
+  git pull, discovery fetch, doctor LLM review) now renders with an
+  animated braille-dot spinner in bold cyan instead of dim grey, so it's
+  obvious when work is happening vs. idle. The spinner is driven by a
+  bubbles `spinner.Model` at the model level and the current frame is
+  published via `state.spinnerFrame` for views to consume. Headless
+  `Dump()` is unaffected (no TickMsg is processed).
+- **TUI: per-item bulk-update progress.** `B`-key bulk updates on both
+  the Plugins and Marketplaces tabs now process targets one at a time
+  and stream `(N/M)` progress to the in-progress line plus a
+  `updating <id>… (N/M)` flash for each item. The `↑ update available`
+  annotation for each plugin/marketplace clears the moment its own item
+  lands rather than waiting for the entire batch to finish — so a 20-item
+  sweep doesn't look frozen. Final bulk-summary flash
+  (`N updated, M already up to date, K failed`) is unchanged.
+
+### Fixed
+
+- **Bulk-update `(N/M)` counter alignment.** The in-line "bulk update in
+  progress…" label and the per-item flash now both use the "currently on
+  item N of M" semantic instead of differing by one (label was previously
+  "N completed of M"). Capped at total during the brief window between
+  the last item landing and the result message arriving.
+- **Defensive nil-result guard in `pluginBulkItemDoneMsg` switch.** A
+  `{result: nil, err: nil}` payload (should never happen given
+  `install.Install`'s contract, but defensive) is now classified as a
+  failure instead of panicking on the SHA comparison.
+- **`dirtyPlugins` set per-item in the streaming bulk path** so an
+  in-flight `Q` quit-confirmation still prompts to save even if the
+  result handler never runs (e.g. session torn down mid-batch).
+- **Skip redundant `UpdateInstall`/`InvalidatePlugin` loop in the result
+  handler when items were already applied via streaming.** Adds a
+  `streamed bool` field to `pluginBulkUpdateResultMsg`; direct senders
+  (existing tests, future CLI integrations) leave it false so the result
+  handler still lands state.
+
+### Tests
+
+- New TUI tests: `TestTUIPluginUpdateClearsIndicator`,
+  `TestTUIPluginUpdateErrorPreservesIndicator`,
+  `TestTUIPluginBulkUpdateClearsIndicators`,
+  `TestTUIPluginUpdateInProgressVisible`, `TestTUISpinnerLoopsContinuously`,
+  `TestTUIPluginBulkPerItemProgress`,
+  `TestTUIPluginBulkResultHandlerStillAppliesForDirectSender`,
+  `TestTUIPluginBulkNilResultIsTreatedAsFailure` — assert the
+  `↑ update available` annotation clears on success, preserves on error,
+  that the spinner tick loop self-perpetuates, per-item bulk progress
+  increments the (N/M) counter and clears each plugin's indicator live,
+  that the `streamed` flag correctly gates the redundant apply loop, and
+  that nil-result payloads classify as failure. Total: 234.
+
 ## [0.6.0] — 2026-05-08
 
 ### Added

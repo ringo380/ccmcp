@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -57,9 +58,16 @@ type model struct {
 	profiles     *profileView
 	summary      *summaryView
 	doctor       *doctorView
+
+	// spinner drives the live in-progress indicator. Always-ticking; ~10 fps.
+	// Frame is republished to state.spinnerFrame on each tick so views can render it.
+	spinner spinner.Model
 }
 
 func newModel(st *state) *model {
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = styleProgress
 	return &model{
 		st:           st,
 		mcps:         newMCPView(st),
@@ -72,12 +80,19 @@ func newModel(st *state) *model {
 		profiles:     newProfileView(st),
 		summary:      newSummaryView(st),
 		doctor:       newDoctorView(st),
+		spinner:      sp,
 	}
 }
 
-func (m *model) Init() tea.Cmd { return nil }
+func (m *model) Init() tea.Cmd { return m.spinner.Tick }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if t, ok := msg.(spinner.TickMsg); ok {
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(t)
+		m.st.spinnerFrame = m.spinner.View()
+		return m, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width

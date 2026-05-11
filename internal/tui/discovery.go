@@ -208,7 +208,7 @@ func (v *discoveryView) updateList(key tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		v.fetchBusy = true
-		v.flash = styleDim.Render("refreshing discovery sources…")
+		v.flash = styleProgress.Render("refreshing discovery sources…")
 		return v.fetchCmd(true)
 	case "enter":
 		if len(v.rows) == 0 {
@@ -331,7 +331,7 @@ func (v *discoveryView) renderList() string {
 	}
 	b.WriteString("\n")
 	if v.fetchBusy {
-		b.WriteString(styleDim.Render("  fetching…") + "\n")
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("fetching…") + "\n")
 	}
 	if len(v.rows) == 0 && !v.fetchBusy {
 		b.WriteString(styleDim.Render("  (no marketplaces — press r to retry)") + "\n")
@@ -394,7 +394,7 @@ func (v *discoveryView) renderPlugins() string {
 	b.WriteString(fmt.Sprintf("Discover › %s — %d plugin(s)", v.curMP.Name, len(v.plugins)))
 	b.WriteString("\n")
 	if v.pLoading {
-		b.WriteString(styleDim.Render("  fetching manifest…") + "\n")
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("fetching manifest…") + "\n")
 	}
 	if v.pErr != nil {
 		b.WriteString(styleErr.Render("  error: "+v.pErr.Error()) + "\n")
@@ -432,7 +432,7 @@ func (v *discoveryView) renderDetail() string {
 	b.WriteString(fmt.Sprintf("Discover › %s › %s", v.curMP.Name, v.curPlugin.Name))
 	b.WriteString("\n")
 	if v.detailBusy {
-		b.WriteString(styleDim.Render("  cloning + scanning…") + "\n")
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("cloning + scanning…") + "\n")
 		return b.String()
 	}
 	if v.detailErr != nil {
