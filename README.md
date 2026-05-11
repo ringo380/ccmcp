@@ -181,7 +181,15 @@ ccmcp doctor md --llm-review [--provider anthropic|openai] # + LLM quality revie
 ccmcp tui --dump [--tab mcps|plugins|marketplaces|discover|skills|agents|commands|profiles|summary|doctor]   # print initial render, no TTY
 ```
 
-**Global flags:** `--path <dir>` (override cwd), `--dry-run`, `--json`, `--no-color`.
+**Global flags:** `--path <dir>` (override cwd), `--dry-run`, `--json`, `--no-color`, `--no-update-check` (also `$CCMCP_NO_UPDATE_CHECK`).
+
+**Self-update check:** the first interactive launch each day queries
+`api.github.com/repos/ringo380/ccmcp/releases/latest` (2-second timeout, silent on failure),
+and if a newer release is out it prints a release-notes excerpt and prompts
+`Update now? [Y/n]`. On Y it auto-detects Homebrew vs `go install` vs a manual
+binary and runs the matching upgrade command. On n the prompt is suppressed for
+24 hours or until a newer release ships. Cached at
+`~/.claude/plugins/cache/ccmcp-update-check.json`.
 
 ## Per-project overrides
 
@@ -231,7 +239,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-234 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+249 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 
@@ -250,6 +258,8 @@ internal/
   install/        plugin marketplace installer (4 source formats)
   paths/          config path resolution ($CLAUDE_CONFIG_DIR aware)
   report/         snapshot / sweep / drift / audit report generators
+  selfupdate/     launch-time check vs GitHub releases + Y/n prompt + brew/go
+                  dispatch (oh-my-zsh style)
   skills/         skill CRUD + file-backed store
   stringslice/    shared slice helpers
   tui/            bubbletea app: 10 tabs (MCPs, Plugins, Marketplaces,
