@@ -6,6 +6,23 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Launch-time self-update check (oh-my-zsh style).** The first
+  interactive `ccmcp` launch each day queries
+  `api.github.com/repos/ringo380/ccmcp/releases/latest` with a 2-second
+  timeout. If a newer release is published, a release-notes excerpt is
+  printed and the user is prompted `Update now? [Y/n]`. On Y, the
+  install method is detected (Homebrew prefix vs `~/go/bin` vs raw
+  binary) and the corresponding upgrade command runs
+  (`brew upgrade ccmcp` / `go install github.com/ringo380/ccmcp@latest`).
+  On n, the prompt is suppressed for 24h or until a newer release ships
+  (whichever is sooner). Disable per-invocation with `--no-update-check`
+  or persistently with `CCMCP_NO_UPDATE_CHECK=1`. Cached at
+  `~/.claude/plugins/cache/ccmcp-update-check.json`. Subcommands skip
+  the check entirely so scripted flows stay quiet; the prompt is also
+  suppressed when stdin/stdout aren't TTYs.
+
 ## [0.7.0] — 2026-05-11
 
 ### Changed
