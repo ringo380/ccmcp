@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/ringo380/ccmcp/discussions
+    about: General usage questions, ideas, and conversations.
+  - name: Release notes
+    url: https://github.com/ringo380/ccmcp/blob/main/CHANGELOG.md
+    about: Check the changelog for recent fixes before filing.
