@@ -1,0 +1,27 @@
+name: Engineering task
+description: Internal chore, refactor, or roadmap item (maintainers)
+title: "[task] "
+labels: ["type:chore", "status:needs-triage"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One paragraph; why this work exists.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Bulleted, testable.
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Implementation notes
+      description: Files, functions, prior art, gotchas.

@@ -1,0 +1,16 @@
+name: Auto-add to ccmcp Roadmap project
+
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request:
+    types: [opened, reopened]
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/add-to-project@v1.0.2
+        with:
+          project-url: https://github.com/users/ringo380/projects/28
+          github-token: ${{ secrets.PROJECT_TOKEN }}

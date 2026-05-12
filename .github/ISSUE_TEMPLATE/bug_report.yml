@@ -1,0 +1,76 @@
+name: Bug report
+description: Something in ccmcp isn't working
+title: "[bug] "
+labels: ["type:bug", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing! Please include enough context to reproduce.
+  - type: input
+    id: version
+    attributes:
+      label: ccmcp version
+      description: Output of `ccmcp --version`
+      placeholder: "ccmcp 0.9.0 (commit abc1234, built 2026-05-12)"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options:
+        - Homebrew (robworks-code/tap)
+        - go install
+        - Built from source
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / arch
+      placeholder: "macOS 26.1 arm64 / Ubuntu 24.04 amd64"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal command/keystroke sequence
+      placeholder: |
+        1. Run `ccmcp tui`
+        2. Press `2` to switch to Plugins tab
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error output, screenshots, or relevant log lines
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config excerpt
+      description: |
+        Sanitized snippet from `~/.claude.json` or `~/.claude/settings.json`
+        if the bug touches scope/override resolution. Redact secrets.
+      render: json
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues
+          required: true
+        - label: I'm on the latest release (`brew upgrade ccmcp` or `go install ...@latest`)
+          required: true
