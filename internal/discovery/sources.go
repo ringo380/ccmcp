@@ -122,13 +122,20 @@ func (s anthropicSource) Fetch(ctx context.Context, c *http.Client) ([]RemoteMar
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("anthropic registry: HTTP %d", resp.StatusCode)
 	}
+	// docs.claude.com serves an HTML SPA at every path (including unknown
+	// .well-known URLs that have no JSON behind them) — treat non-JSON 200
+	// responses as "no registry yet" rather than surfacing a parse error.
+	ct := resp.Header.Get("Content-Type")
+	if ct != "" && !strings.Contains(strings.ToLower(ct), "json") {
+		return nil, nil
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 	var rf registryFile
 	if err := json.Unmarshal(body, &rf); err != nil {
-		return nil, fmt.Errorf("parse anthropic registry: %w", err)
+		return nil, nil
 	}
 	out := make([]RemoteMarketplace, 0, len(rf.Marketplaces))
 	for _, mp := range rf.Marketplaces {

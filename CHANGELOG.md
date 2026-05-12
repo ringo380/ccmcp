@@ -6,6 +6,47 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-12
+
+### Changed
+
+- **Doctor tab autofix: explicit preview and approval before any file write.**
+  Pressing `f` on a doctor issue now opens a content-level preview panel
+  before the fix is applied. In-TUI fixes (`MEM002` line-removal,
+  `MEM005` frontmatter-field insertion) compute the post-state in memory
+  and render a colorized unified diff (3 lines of context) which the
+  user approves with `y` or rejects with `n`. Claude-CLI-driven fixes
+  get a two-gate flow: the first panel shows the full prompt that
+  will be sent (no more 100-char truncation), then after Claude
+  finishes, a second panel renders the actual on-disk diff and the
+  user keeps the change with `y` or reverts with `u`/`n`. `j`/`k`
+  scroll inside long previews.
+- **Doctor fix snapshots on disk.** Before any autofix writes (in-TUI or
+  CLI), the target file is copied to
+  `~/.claude-mcp-backups/doctor/<basename>-<unix-ts>-<N>.<ext>` so
+  changes survive a TUI crash and can be restored manually. The
+  snapshot path is shown in the post-fix flash message. Revert from
+  the post-apply review reads from the on-disk snapshot, falling back
+  to an in-memory copy only if the snapshot is unreadable.
+- **Doctor snapshot GC.** On every lint run, snapshots are pruned in the
+  background under two rules: per source file, keep the 20 newest;
+  delete anything older than 30 days regardless of count. Errors are
+  silent — they only affect cleanup, never the fix itself.
+
+### Fixed
+
+- **Discovery: `docs.claude.com` HTML SPA no longer surfaces JSON parse errors.**
+  The Anthropic registry source now checks `Content-Type` and treats
+  non-JSON 200 responses (the docs SPA serves HTML at every path,
+  including unknown `.well-known/*` URLs) as "no registry yet" instead
+  of bubbling `invalid character '<'` up into the Discover tab.
+- **Discovery: clearer error when a curated awesome-list link is not a
+  Claude Code marketplace.** `FetchManifest` now distinguishes "all
+  candidate URLs returned HTTP 404" from "other transport errors" and,
+  for GitHub-sourced repos that 404 across HEAD/main/master, reports
+  `repo may not be a Claude Code marketplace` rather than echoing the
+  last URL it tried.
+
 ## [0.8.0] — 2026-05-11
 
 ### Added
@@ -467,7 +508,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.9.0
 [0.8.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.7.0
 [0.6.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.6.0

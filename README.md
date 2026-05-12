@@ -116,10 +116,14 @@ Read-only overview of every scope's counts, per-project overrides, and redundanc
 | Key | Action |
 |---|---|
 | `r` | re-run lint checks |
+| `l` | run LLM review (requires `claude` CLI or `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) |
 | `j` / `k` / arrows | scroll |
 | `g` / `G` | top / bottom |
+| `f` | preview a fix for the selected issue |
+| `y` / `n` | approve / reject the previewed fix (in confirm panel) |
+| `u` | revert a CLI fix from its on-disk snapshot (in post-review panel) |
 
-Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project.
+Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pressing `f` opens a preview panel: in-TUI fixes show a unified diff of the exact change before you approve; Claude-CLI fixes show the full prompt first, then after the CLI runs, show the resulting diff and let you keep (`y`) or revert (`u`). Every fix snapshots the original file to `~/.claude-mcp-backups/doctor/` (kept: 20 newest per file, max age 30 days).
 
 **Global**
 
@@ -239,7 +243,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-249 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+264 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

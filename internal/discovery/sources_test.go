@@ -85,6 +85,25 @@ func TestAnthropicSource404IsEmpty(t *testing.T) {
 	}
 }
 
+func TestAnthropicSourceHTMLResponseIsEmpty(t *testing.T) {
+	// docs.claude.com serves an HTML SPA at unknown .well-known paths instead
+	// of a 404; the source should treat that as "no registry yet" silently.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<!DOCTYPE html><html><body>not a registry</body></html>"))
+	}))
+	defer srv.Close()
+
+	src := discovery.AnthropicSource(srv.URL)
+	rows, err := src.Fetch(context.Background(), srv.Client())
+	if err != nil {
+		t.Fatalf("HTML response should not be an error, got %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("HTML response should yield empty, got %+v", rows)
+	}
+}
+
 func TestAnthropicSourceEmptyEndpointIsNoop(t *testing.T) {
 	rows, err := discovery.AnthropicSource("").Fetch(context.Background(), http.DefaultClient)
 	if err != nil {

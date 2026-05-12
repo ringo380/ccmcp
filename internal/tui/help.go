@@ -119,7 +119,11 @@ func renderHelp(width int) string {
 
 	section("Doctor tab")
 	kbd("r", "re-run lint checks")
+	kbd("l", "run LLM review (claude CLI or API key required)")
 	kbd("j/k or ↑/↓", "scroll; g/G top/bottom")
+	kbd("f", "preview a fix for the selected issue")
+	kbd("y / n", "approve / reject the previewed fix (in confirm panel)")
+	kbd("u", "revert a CLI fix from its on-disk snapshot (in post-review panel)")
 
 	section("Global")
 	kbd("tab / shift+tab", "cycle tabs")

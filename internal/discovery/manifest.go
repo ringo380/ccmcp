@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/ringo380/ccmcp/internal/install"
 )
@@ -23,18 +24,26 @@ func FetchManifest(ctx context.Context, c *http.Client, mp RemoteMarketplace) (*
 	}
 
 	var lastErr error
+	all404 := true
 	for _, u := range urls {
 		body, err := getJSON(ctx, c, u)
 		if err != nil {
 			lastErr = err
+			if !strings.Contains(err.Error(), "HTTP 404") {
+				all404 = false
+			}
 			continue
 		}
 		var m install.MarketplaceManifest
 		if err := json.Unmarshal(body, &m); err != nil {
 			lastErr = fmt.Errorf("parse %s: %w", u, err)
+			all404 = false
 			continue
 		}
 		return &m, nil
+	}
+	if all404 && mp.Source == "github" && mp.Repo != "" {
+		return nil, fmt.Errorf("no .claude-plugin/marketplace.json in %s (tried HEAD, main, master) — repo may not be a Claude Code marketplace", mp.Repo)
 	}
 	return nil, lastErr
 }

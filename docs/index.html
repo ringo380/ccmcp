@@ -243,7 +243,7 @@
   <div class="wrap">
     <div class="title-row">
       <h1><span class="prompt">&gt;_</span> ccmcp</h1>
-      <span class="tag" id="version">v0.8.0</span>
+      <span class="tag" id="version">v0.9.0</span>
     </div>
     <p class="lede">A dynamic CLI and TUI for managing Claude Code's MCP servers, plugins, and per-project overrides across every scope Claude Code honors.</p>
     <div class="cta">
@@ -265,7 +265,7 @@
         <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
         <span class="title">ccmcp — MCPs tab</span>
       </div>
-      <div class="term-body"><span class="acc">ccmcp</span> <span class="dim">v0.8.0</span>    <span class="dim">project:</span> ~/git/ccmcp    <span class="warn">UNSAVED</span>
+      <div class="term-body"><span class="acc">ccmcp</span> <span class="dim">v0.9.0</span>    <span class="dim">project:</span> ~/git/ccmcp    <span class="warn">UNSAVED</span>
 <span class="dim">──────────────────────────────────────────────────────────────────</span>
 <span class="acc">[MCPs]</span>  Plugins  Marketplaces  Discover  Skills  Agents  Commands  Profiles  Summary  Doctor   <span class="dim">scope: effective</span>
 
@@ -384,7 +384,7 @@ go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
       </div>
       <div class="card">
         <h3>Doctor</h3>
-        <p>Lint <code>CLAUDE.md</code> and <code>MEMORY.md</code> for structural issues — stale entries, missing sections, broken pointers. Add <code>--llm-review</code> for an LLM quality pass via Anthropic or OpenAI.</p>
+        <p>Lint <code>CLAUDE.md</code> and <code>MEMORY.md</code> for structural issues — stale entries, missing sections, broken pointers. Add <code>--llm-review</code> for an LLM quality pass via Anthropic or OpenAI. Press <code>f</code> in the TUI to preview an autofix as a unified diff; every fix snapshots the original file to <code>~/.claude-mcp-backups/doctor/</code> and Claude-CLI fixes can be reverted with <code>u</code> after they land.</p>
       </div>
       <div class="card">
         <h3>Reports</h3>
