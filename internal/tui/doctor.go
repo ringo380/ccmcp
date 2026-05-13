@@ -418,11 +418,17 @@ func (v *doctorView) executeFix() tea.Cmd {
 	if b, err := os.ReadFile(p.target); err == nil {
 		p.beforeBytes = b
 	}
+	// Trust the cached init state: if claudeOnPath was true at startup, hand the
+	// command off even when LookPath now fails — exec.Command resolves PATH
+	// lazily at Start() time and tests stub execFixCmd before any real spawn.
 	cliPath, err := exec.LookPath("claude")
 	if err != nil {
-		v.lastFixErr = doctor.ErrClaudeCLINotFound
-		v.flash = styleErr.Render("claude CLI not found in PATH — install it or run the fix manually")
-		return nil
+		if !v.claudeOnPath {
+			v.lastFixErr = doctor.ErrClaudeCLINotFound
+			v.flash = styleErr.Render("claude CLI not found in PATH — install it or run the fix manually")
+			return nil
+		}
+		cliPath = "claude"
 	}
 	cmd := exec.Command(cliPath, p.cliArgs...)
 	return execFixCmd(cmd, p)
