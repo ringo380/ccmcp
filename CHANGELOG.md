@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-05-13
+
 ### Fixed
 
 - **Doctor tab: `a` (apply review) no longer marks the review applied until
@@ -536,7 +538,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.9.1
 [0.9.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.9.0
 [0.8.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.7.0
