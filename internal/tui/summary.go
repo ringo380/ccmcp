@@ -131,14 +131,18 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			v.previewBody = diff
 			v.previewScroll = 0
 			v.flash = ""
-			// Claude may have edited a skill/agent/command file. Drop the
-			// asset-lint cache so the next render re-scans and removes any
-			// rows whose issue was fixed.
-			v.invalidateAssets()
+			// Drop asset cache only when this fix could have touched
+			// skills/agents/commands or enabledPlugins/skillOverrides.
+			// Edits to ~/.claude.json mcpServers etc. don't affect Discover.
+			if categoryAffectsAssets(done.proposal.cat) {
+				v.invalidateAssets()
+			}
 			return nil
 		}
 		v.flash = styleOK.Render("fix applied")
-		v.invalidateAssets()
+		if done.proposal != nil && categoryAffectsAssets(done.proposal.cat) {
+			v.invalidateAssets()
+		}
 		return nil
 	}
 
@@ -174,7 +178,9 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			} else {
 				deleteSnapshot(v.postReview.snapshotPath)
 				v.flash = styleOK.Render("reverted: " + v.postReview.summary)
-				v.invalidateAssets()
+				if categoryAffectsAssets(v.postReview.cat) {
+					v.invalidateAssets()
+				}
 			}
 			v.postReview = nil
 			v.previewBody = ""
@@ -376,10 +382,13 @@ func (v *summaryView) executeFix() tea.Cmd {
 		v.cursor = 0
 		v.top = 0
 		v.flash = styleOK.Render(flash)
-		// applyFn may have toggled enabledPlugins / skillOverrides, which
-		// changes Discover's enablement view. Drop the cache so next render
-		// reflects the new state.
-		v.invalidateAssets()
+		// Selectively invalidate the asset cache: orphan/stash prunes don't
+		// touch skills/agents/commands or enabledPlugins, so they keep the
+		// cache. Plugin-registration edits do, and so will any future
+		// in-memory category that flips skill state.
+		if categoryAffectsAssets(p.cat) {
+			v.invalidateAssets()
+		}
 		return nil
 
 	case fixClaudeCLI:

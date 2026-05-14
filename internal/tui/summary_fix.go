@@ -48,8 +48,18 @@ type summaryRow struct {
 func (r summaryRow) fixable() bool { return r.cat != catNone }
 
 // buildSummaryFixProposal returns a fix proposal for the selected summary row,
-// or (nil, false) if the row's category has no automated fix yet.
+// or (nil, false) if the row's category has no automated fix yet. Stamps the
+// row's category onto the proposal so the post-fix asset-cache invalidation
+// can decide whether the change could have affected skill/agent/command state.
 func buildSummaryFixProposal(r summaryRow, st *state) (*fixProposal, bool) {
+	p, ok := buildSummaryFixProposalImpl(r, st)
+	if ok && p != nil {
+		p.cat = r.cat
+	}
+	return p, ok
+}
+
+func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 	switch r.cat {
 	case catOrphanPlugin, catOrphanStdio, catStashGhost:
 		key := r.key
@@ -505,7 +515,28 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 		cliPrompt:    prompt,
 		cliArgs:      claudeAssetFixArgs(prompt, permForCategory(cursor.cat)),
 		previewLines: preview,
+		cat:          cursor.cat,
 	}, files, true
+}
+
+// categoryAffectsAssets reports whether a fix in this category could change
+// the output of skills/agents/commands Discover or the asset-lint passes —
+// i.e. whether the cached asset state on summaryView must be dropped after the
+// fix lands. False for fixes that only touch ~/.claude.json mcpServers, the
+// stash, or per-project disabledMcpServers — those have no asset-side effect.
+func categoryAffectsAssets(c summaryCat) bool {
+	switch c {
+	case catPluginEnabledNotInstalled,    // flips enabledPlugins → Discover plugin scope changes
+		catPluginInstalledNotEnabled,    // same
+		catSlashConflict,                // writes skillOverrides → skill enablement view changes
+		catSkillNameInvalid,             // renames skill dir → Discover output changes
+		catSkillNameTooLong,             // same
+		catSkillDescTooLong,             // rewrites SKILL.md frontmatter → lint result changes
+		catAgentDescTooLong,             // same for agents
+		catCommandDescTooLong:           // same for commands
+		return true
+	}
+	return false
 }
 
 func permLabel(p permKind) string {

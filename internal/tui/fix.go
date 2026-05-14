@@ -34,6 +34,14 @@ type fixProposal struct {
 	cliArgs   []string // args for exec.Command("claude", cliArgs...)
 	cliPrompt string   // full prompt text (CLI only) — shown verbatim in confirm panel
 
+	// cat is the Summary-tab issue category this proposal addresses, used by
+	// the post-fix asset-cache invalidation logic to decide whether the fix
+	// could have affected skill/agent/command discovery or lint output. Zero
+	// (catNone) for Doctor proposals and Summary categories whose fix has no
+	// asset-side effects (orphan prunes, stash drops, .claude.json mcpServer
+	// edits) — those skip invalidation.
+	cat summaryCat
+
 	// applyFn is the in-memory mutator for fixInMemory proposals. Returns the
 	// flash message on success (e.g. "pruned 'foo'") and any error. Receives the
 	// shared state so it can flip dirty flags and read other config surfaces.

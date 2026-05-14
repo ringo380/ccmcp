@@ -458,3 +458,49 @@ func TestSummaryAssetCachePopulatedFromBuildRows(t *testing.T) {
 		t.Fatal("buildRows should have populated assets cache via ensureAssets")
 	}
 }
+
+// TestSummaryAssetCachePreservedAcrossOrphanFix: pruning an orphan override
+// (an in-memory fix that doesn't touch skills/agents/commands) must NOT drop
+// the asset cache — re-scanning all skill files on every unrelated fix would
+// negate the lazy-load optimization.
+func TestSummaryAssetCachePreservedAcrossOrphanFix(t *testing.T) {
+	st, _ := buildState(t)
+	seedOrphanOverride(t, st, "ghost-cache-test")
+	m := newModel(st)
+
+	// Force first render so the cache populates, then snapshot loaded state.
+	_ = drive(m, "9")
+	if !m.summary.assetsLoaded {
+		t.Fatal("expected assetsLoaded=true after first render of summary tab")
+	}
+
+	// Apply the orphan-prune fix (catOrphanPlugin/Stdio — does NOT affect assets).
+	drive(m, "f", "y")
+	if !m.summary.assetsLoaded {
+		t.Errorf("orphan-prune fix should preserve asset cache (categoryAffectsAssets=false), but cache was invalidated")
+	}
+}
+
+// TestCategoryAffectsAssetsTable locks down the per-category invalidation policy.
+func TestCategoryAffectsAssetsTable(t *testing.T) {
+	affecting := []summaryCat{
+		catPluginEnabledNotInstalled, catPluginInstalledNotEnabled, catSlashConflict,
+		catSkillNameInvalid, catSkillNameTooLong, catSkillDescTooLong,
+		catAgentDescTooLong, catCommandDescTooLong,
+	}
+	for _, c := range affecting {
+		if !categoryAffectsAssets(c) {
+			t.Errorf("expected categoryAffectsAssets(%v)=true", c)
+		}
+	}
+	notAffecting := []summaryCat{
+		catNone, catOrphanPlugin, catOrphanStdio, catStashGhost,
+		catStashRedundantWithUser, catStashGhostedByPlugin,
+		catUserDupPlugin, catDuplicateLoad, catStaleMcpjson,
+	}
+	for _, c := range notAffecting {
+		if categoryAffectsAssets(c) {
+			t.Errorf("expected categoryAffectsAssets(%v)=false", c)
+		}
+	}
+}

@@ -10,9 +10,12 @@ All notable changes to this project are documented here. Format based on
 
 - **Summary tab: skill/agent/command Discover + asset-lint now lazy-loaded
   once per session** instead of running on every keystroke. Cache lives on
-  `summaryView`; `invalidateAssets()` fires after any fix lands so the next
-  render rescans. Per CLAUDE.md "TUI lazy-load point: trigger expensive lazy
-  work in render(), not update()".
+  `summaryView`; `invalidateAssets()` fires only after fixes whose category
+  could have affected the result (skill/agent/command frontmatter rewrites,
+  slug renames, `enabledPlugins`/`skillOverrides` flips) — orphan-override
+  prunes, stash drops, and `~/.claude.json` mcpServer edits keep the cache
+  warm. Per CLAUDE.md "TUI lazy-load point: trigger expensive lazy work in
+  render(), not update()".
 - **Plugins tab: successful retry of a failed plugin removes it from the
   failures panel.** Previously the comment in `updateFailures` claimed this
   but the implementation was a no-op; the entry persisted until `X` cleared
