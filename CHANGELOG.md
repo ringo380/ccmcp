@@ -6,6 +6,28 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Summary tab: select-and-fix issues with LLM (parity with Doctor).** The
+  Summary tab is no longer scroll-only — each actionable finding (orphan
+  override, stash redundancy, duplicate-load, slash-command conflict, plugin
+  registration drift) is cursor-selectable and fixable in place. `f` opens a
+  confirm panel; `l` runs a non-applying LLM review of the selected issue;
+  `y` / `n` / `esc` approve or cancel. Orphan and stash drops apply directly
+  to in-memory state (save with `w`); config edits hand off to `claude --print`
+  with snapshot + post-review keep/revert gate, mirroring the Doctor flow.
+  See `#48`.
+
+### Changed
+
+- **Doctor / Summary: LLM fix runs inside the TUI with a live spinner.**
+  Replaced `tea.ExecProcess` (which suspended the bubbletea loop and dumped
+  users to raw terminal output until `claude --print` finished) with a
+  goroutine-based `tea.Cmd`. The view now renders a spinner + elapsed-time
+  panel during the fix (e.g. `Applying LLM fix to MEMORY.md… (12s)`), and
+  surfaces captured stderr inline if the CLI exits non-zero — no more "see
+  output above" hint that lost context after the screen redrew.
+
 ## [0.9.1] — 2026-05-13
 
 ### Fixed

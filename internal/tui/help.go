@@ -113,9 +113,13 @@ func renderHelp(width int) string {
 	kbd("j/k or ↑/↓", "navigate")
 
 	section("Summary tab")
-	kbd("j/k or ↑/↓", "scroll")
+	kbd("j/k or ↑/↓", "navigate fixable issues; ↑/↓ past the ends scrolls")
 	kbd("pgup / pgdn", "page")
 	kbd("g / home", "jump to top")
+	kbd("f", "preview a fix for the selected issue (in-place or via claude CLI)")
+	kbd("l", "run LLM review on the selected issue (claude CLI required)")
+	kbd("y / n / esc", "approve / cancel in confirm panel; u also reverts a CLI fix")
+	kbd("p", "bulk-prune orphan overrides (legacy; press twice to confirm)")
 
 	section("Doctor tab")
 	kbd("r", "re-run lint checks")

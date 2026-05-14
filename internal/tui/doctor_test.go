@@ -83,7 +83,7 @@ func TestDoctorFixDoneEnrichesExitStatus(t *testing.T) {
 	// Simulate the bubbletea-emitted exit-status error from a failed claude
 	// CLI run. The handler should rewrite the bare "exit status N" text into
 	// a hint that points at the output above.
-	v.update(doctorFixDoneMsg{err: errors.New("exit status 1")})
+	v.update(fixDoneMsg{err: errors.New("exit status 1"), origin: tabDoctor})
 	if !strings.Contains(stripANSI(v.flash), "claude CLI exit 1") {
 		t.Fatalf("expected enriched message, got %q", v.flash)
 	}

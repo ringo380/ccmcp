@@ -2,8 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -18,35 +22,193 @@ import (
 // summaryView is the "Summary" tab: bird's-eye overview of every scope, plus
 // a redundancies section that flags duplicated MCPs, installed-but-disabled
 // plugins, and other inconsistencies worth knowing about.
+//
+// As of v0.10, fixable issues are cursor-selectable. Keys mirror Doctor:
+//
+//	j/k    cursor over fixable rows (display rows are skipped)
+//	l      run an LLM review on the selected issue
+//	f      open a fix-confirmation panel for the selected issue
+//	y/n    approve / cancel
+//	p      legacy bulk orphan-prune (kept for muscle-memory; superseded by f)
 type summaryView struct {
 	st   *state
 	w, h int
 	top  int
 
+	rows   []summaryRow // rebuilt each render; cursor indexes the fixable subset
+	cursor int          // index into the *fixable* subset, NOT raw rows
+
 	pendingPrune bool
 	flash        string
+
+	// Pre-apply / post-apply fix gates — same semantics as doctorView.
+	pendingFix    *fixProposal
+	postReview    *fixProposal
+	previewBody   string // styled multi-line body shown in the confirm panel
+	previewScroll int
+
+	// LLM review state (per-row review; only the selected row is sent).
+	llmRunning bool
+	llmResult  string // last review body
+	llmFor     summaryRow
+
+	// In-flight CLI fix state.
+	fixRunning   bool
+	fixStartedAt time.Time
+	fixTarget    string
+	fixOutput    []byte
+
+	claudeOnPath bool
+}
+
+// summaryReviewMsg is delivered when an `l` review finishes.
+type summaryReviewMsg struct {
+	row     summaryRow
+	content string
+	err     error
 }
 
 func newSummaryView(st *state) *summaryView {
-	return &summaryView{st: st}
+	v := &summaryView{st: st}
+	if _, err := exec.LookPath("claude"); err == nil {
+		v.claudeOnPath = true
+	}
+	return v
 }
 
 func (v *summaryView) update(msg tea.Msg) tea.Cmd {
+	if done, ok := msg.(fixDoneMsg); ok && done.origin == tabSummary {
+		v.fixRunning = false
+		v.fixOutput = done.output
+		if done.err != nil {
+			v.flash = styleErr.Render("fix failed: " + enrichExitStatus(done.err.Error()))
+			if tail := tailOutput(done.output, 12); tail != "" {
+				v.flash += "\n" + styleDim.Render(tail)
+			}
+			return nil
+		}
+		if done.proposal != nil && done.proposal.kind == fixClaudeCLI {
+			after, err := os.ReadFile(done.proposal.target)
+			if err != nil {
+				v.flash = styleErr.Render(fmt.Sprintf(
+					"read post-fix %s: %s — snapshot kept at %s",
+					filepath.Base(done.proposal.target), err.Error(), done.proposal.snapshotPath,
+				))
+				return nil
+			}
+			diff := unifiedDiff(string(done.proposal.beforeBytes), string(after), 3)
+			if diff == "" {
+				deleteSnapshot(done.proposal.snapshotPath)
+				v.flash = styleWarn.Render("claude CLI made no changes")
+				return nil
+			}
+			v.postReview = done.proposal
+			v.previewBody = diff
+			v.previewScroll = 0
+			v.flash = ""
+			return nil
+		}
+		v.flash = styleOK.Render("fix applied")
+		return nil
+	}
+
+	if review, ok := msg.(summaryReviewMsg); ok {
+		v.llmRunning = false
+		if review.err != nil {
+			v.flash = styleErr.Render("LLM review failed: " + review.err.Error())
+			return nil
+		}
+		v.llmResult = review.content
+		v.llmFor = review.row
+		v.flash = ""
+		return nil
+	}
+
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return nil
 	}
+
+	// Post-apply review intercepts all keys.
+	if v.postReview != nil {
+		switch key.String() {
+		case "y":
+			deleteSnapshot(v.postReview.snapshotPath)
+			v.flash = styleOK.Render("kept: " + v.postReview.summary)
+			v.postReview = nil
+			v.previewBody = ""
+			v.previewScroll = 0
+		case "u", "n", "esc":
+			if err := v.revertFromSnapshot(v.postReview); err != nil {
+				v.flash = styleErr.Render("revert failed: " + err.Error())
+			} else {
+				deleteSnapshot(v.postReview.snapshotPath)
+				v.flash = styleOK.Render("reverted: " + v.postReview.summary)
+			}
+			v.postReview = nil
+			v.previewBody = ""
+			v.previewScroll = 0
+		case "j", "down":
+			v.previewScroll++
+		case "k", "up":
+			if v.previewScroll > 0 {
+				v.previewScroll--
+			}
+		}
+		return nil
+	}
+
+	// Pre-apply confirm intercepts all keys.
+	if v.pendingFix != nil {
+		switch key.String() {
+		case "y":
+			return v.executeFix()
+		case "n", "esc":
+			v.pendingFix = nil
+			v.previewBody = ""
+			v.previewScroll = 0
+		case "j", "down":
+			v.previewScroll++
+		case "k", "up":
+			if v.previewScroll > 0 {
+				v.previewScroll--
+			}
+		}
+		return nil
+	}
+
+	// Clear the LLM result on any key other than 'l' (so it auto-dismisses).
+	if v.llmResult != "" && key.String() != "l" && key.String() != "j" && key.String() != "k" &&
+		key.String() != "down" && key.String() != "up" && key.String() != "pgdn" && key.String() != "pgup" {
+		v.llmResult = ""
+		v.llmFor = summaryRow{}
+	}
+
 	// Clear pending prune on any key other than 'p'.
 	if v.pendingPrune && key.String() != "p" {
 		v.pendingPrune = false
 	}
+
+	// Rebuild rows up-front so cursor navigation + fixable lookups work even
+	// before the first render() call (e.g. when tests press f immediately after
+	// switching tabs). buildRows is cheap — same work render does — and keeps
+	// the cursor in sync with state mutations that just landed.
+	v.rows = v.buildRows()
+	fixable := v.fixableRows()
+
 	switch key.String() {
 	case "up", "k":
-		if v.top > 0 {
+		if v.cursor > 0 {
+			v.cursor--
+		} else if v.top > 0 {
 			v.top--
 		}
 	case "down", "j":
-		v.top++
+		if len(fixable) > 0 && v.cursor < len(fixable)-1 {
+			v.cursor++
+		} else {
+			v.top++
+		}
 	case "pgup":
 		v.top -= 10
 		if v.top < 0 {
@@ -56,6 +218,49 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		v.top += 10
 	case "g", "home":
 		v.top = 0
+		v.cursor = 0
+	case "l":
+		if v.llmRunning {
+			return nil
+		}
+		if len(fixable) == 0 {
+			v.flash = styleDim.Render("no fixable issues to review")
+			return nil
+		}
+		if !v.claudeOnPath {
+			v.flash = styleWarn.Render("LLM review unavailable — claude CLI not found in PATH")
+			return nil
+		}
+		row := fixable[v.cursor]
+		prompt, ok := buildSummaryReviewPrompt(row, v.st)
+		if !ok {
+			v.flash = styleDim.Render("no review available for this row")
+			return nil
+		}
+		v.llmRunning = true
+		v.flash = styleProgress.Render("running LLM review for " + summarizeRow(row) + "…")
+		return func() tea.Msg {
+			out, err := claudeReviewCmd(v.st.project, prompt)
+			return summaryReviewMsg{row: row, content: out, err: err}
+		}
+	case "f":
+		if len(fixable) == 0 {
+			v.flash = styleDim.Render("no fixable issues — Summary is clean")
+			return nil
+		}
+		row := fixable[v.cursor]
+		proposal, ok := buildSummaryFixProposal(row, v.st)
+		if !ok {
+			v.flash = styleDim.Render("no automatic fix for " + summarizeRow(row))
+			return nil
+		}
+		if proposal.kind == fixClaudeCLI && !v.claudeOnPath {
+			v.flash = styleWarn.Render("auto-fix unavailable — claude CLI not found in PATH")
+			return nil
+		}
+		v.previewBody = v.buildFixPreview(proposal)
+		v.previewScroll = 0
+		v.pendingFix = proposal
 	case "p":
 		if v.pendingPrune {
 			v.doPrune()
@@ -65,6 +270,88 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// buildFixPreview formats the body shown in the confirm panel. For fixInMemory
+// proposals it joins previewLines verbatim; for fixClaudeCLI it shows the prompt
+// alongside the target file. fixInTUI is not used by Summary today.
+func (v *summaryView) buildFixPreview(p *fixProposal) string {
+	if len(p.previewLines) > 0 {
+		return strings.Join(p.previewLines, "\n")
+	}
+	if p.kind == fixClaudeCLI {
+		return buildCLIPromptPreview(p)
+	}
+	return p.summary
+}
+
+func (v *summaryView) executeFix() tea.Cmd {
+	p := v.pendingFix
+	v.pendingFix = nil
+	v.previewBody = ""
+	v.previewScroll = 0
+
+	switch p.kind {
+	case fixInMemory:
+		if p.applyFn == nil {
+			v.flash = styleErr.Render("internal error: in-memory fix has no applyFn")
+			return nil
+		}
+		flash, err := p.applyFn(v.st)
+		if err != nil {
+			v.flash = styleErr.Render("fix failed: " + err.Error())
+			return nil
+		}
+		v.flash = styleOK.Render(flash)
+		return nil
+
+	case fixClaudeCLI:
+		snapDir := doctorSnapshotDir(v.st.paths.BackupsDir)
+		if p.target != "" {
+			if path, err := snapshotForFix(p.target, snapDir); err != nil {
+				v.flash = styleErr.Render("snapshot: " + err.Error())
+				return nil
+			} else {
+				p.snapshotPath = path
+			}
+		}
+		if b, err := os.ReadFile(p.target); err == nil {
+			p.beforeBytes = b
+		}
+		cliPath, err := exec.LookPath("claude")
+		if err != nil {
+			if !v.claudeOnPath {
+				v.flash = styleErr.Render("claude CLI not found in PATH — install it or run the fix manually")
+				return nil
+			}
+			cliPath = "claude"
+		}
+		cmd := exec.Command(cliPath, p.cliArgs...)
+		cmd.Dir = v.st.project
+		v.fixRunning = true
+		v.fixStartedAt = time.Now()
+		v.fixTarget = p.target
+		v.fixOutput = nil
+		return execFixCmd(cmd, p, tabSummary)
+	}
+	return nil
+}
+
+// revertFromSnapshot restores p.target to its pre-fix bytes. Mirrors the
+// Doctor implementation.
+func (v *summaryView) revertFromSnapshot(p *fixProposal) error {
+	if p == nil || p.target == "" {
+		return fmt.Errorf("nothing to revert")
+	}
+	if p.snapshotPath != "" {
+		if data, err := os.ReadFile(p.snapshotPath); err == nil {
+			return os.WriteFile(p.target, data, 0o644)
+		}
+	}
+	if p.beforeBytes != nil {
+		return os.WriteFile(p.target, p.beforeBytes, 0o644)
+	}
+	return fmt.Errorf("no snapshot available")
 }
 
 func (v *summaryView) doPrune() {
@@ -103,14 +390,187 @@ func (v *summaryView) doPrune() {
 	v.flash = styleOK.Render(fmt.Sprintf("pruned %d orphaned entr%s", len(toRemove), classify.PluralY(len(toRemove))))
 }
 
-func (v *summaryView) render() string {
-	var b strings.Builder
+func (v *summaryView) fixableRows() []summaryRow {
+	out := make([]summaryRow, 0, len(v.rows))
+	for _, r := range v.rows {
+		if r.fixable() {
+			out = append(out, r)
+		}
+	}
+	return out
+}
 
-	// --- Updates available (top-of-page so it's hard to miss) ----------
+func (v *summaryView) render() string {
+	if v.fixRunning {
+		target := filepath.Base(v.fixTarget)
+		if target == "" || target == "." {
+			target = "config"
+		}
+		return "Summary — " + v.st.spinnerFrame +
+			styleProgress.Render(fmt.Sprintf("Applying LLM fix to %s… (%s)", target, fixElapsed(v.fixStartedAt))) +
+			"\n" + styleDim.Render("running claude --print non-interactively") +
+			"\n" + v.flash
+	}
+
+	if v.llmRunning {
+		return "Summary — " + v.st.spinnerFrame + styleProgress.Render("LLM review in progress…") + "\n" + v.flash
+	}
+
+	v.rows = v.buildRows()
+	fixable := v.fixableRows()
+	if v.cursor >= len(fixable) {
+		v.cursor = max0(len(fixable) - 1)
+	}
+
+	// Resolve the cursor's row in the full v.rows slice for highlighting.
+	var cursorRowIdx int = -1
+	if len(fixable) > 0 {
+		want := fixable[v.cursor]
+		fixSeen := 0
+		for i, r := range v.rows {
+			if !r.fixable() {
+				continue
+			}
+			if fixSeen == v.cursor {
+				_ = want // silence unused (we just need the index)
+				cursorRowIdx = i
+				break
+			}
+			fixSeen++
+		}
+	}
+
+	// Assemble display lines.
+	var b strings.Builder
+	if len(fixable) > 0 {
+		fmt.Fprintf(&b, "%s  %s\n",
+			styleTitle.Render("Summary"),
+			styleDim.Render(fmt.Sprintf("%d fixable issue(s) — f: fix  l: LLM review  j/k: navigate", len(fixable))))
+	} else {
+		fmt.Fprintf(&b, "%s  %s\n", styleTitle.Render("Summary"), styleOK.Render("no actionable issues"))
+	}
+
+	for i, r := range v.rows {
+		text := r.text
+		if i == cursorRowIdx {
+			text = styleOK.Render("▶ ") + text
+		} else if r.fixable() {
+			text = "  " + text
+		}
+		b.WriteString(text)
+		b.WriteString("\n")
+	}
+
+	// scroll
+	lines := strings.Split(b.String(), "\n")
+	maxH := v.h - 2
+	if maxH < 5 {
+		maxH = 5
+	}
+	// Auto-scroll to keep cursor visible.
+	if cursorRowIdx >= 0 {
+		// Find which output-line the cursor row lands on (each row is one line in this builder).
+		// The header is line 0; rows start at line 1.
+		cursorLine := cursorRowIdx + 1
+		if cursorLine < v.top {
+			v.top = cursorLine
+		} else if cursorLine >= v.top+maxH {
+			v.top = cursorLine - maxH + 1
+		}
+	}
+	if v.top > len(lines)-maxH {
+		v.top = len(lines) - maxH
+	}
+	if v.top < 0 {
+		v.top = 0
+	}
+	end := v.top + maxH
+	if end > len(lines) {
+		end = len(lines)
+	}
+	body := strings.Join(lines[v.top:end], "\n")
+
+	if v.pendingFix != nil {
+		body += "\n" + v.renderPreviewPanel("Fix: "+v.pendingFix.summary, v.previewBody,
+			"Apply? y   Cancel? n / esc   j/k: scroll")
+	} else if v.postReview != nil {
+		body += "\n" + v.renderPreviewPanel("Applied: "+v.postReview.summary, v.previewBody,
+			"Keep? y   Revert? u / n / esc   j/k: scroll")
+	} else if v.llmResult != "" {
+		// LLM review output renders sticky-below so it isn't lost off-screen
+		// when the body is taller than the viewport.
+		var rb strings.Builder
+		rb.WriteString(styleDim.Render(strings.Repeat("─", maxInt(44, v.w-2))))
+		rb.WriteString("\n")
+		rb.WriteString(styleTitle.Render("LLM review — "+summarizeRow(v.llmFor)) + "\n")
+		for _, ln := range strings.Split(strings.TrimRight(v.llmResult, "\n"), "\n") {
+			rb.WriteString("  " + ln + "\n")
+		}
+		rb.WriteString(styleDim.Render("(press any other key to dismiss)"))
+		body += "\n" + rb.String()
+	}
+	return body
+}
+
+// renderPreviewPanel mirrors doctorView.renderPreviewPanel but lives on the
+// summary view so it can size against summary's own w/h.
+func (v *summaryView) renderPreviewPanel(title, body, footer string) string {
+	var sb strings.Builder
+	sb.WriteString(styleDim.Render(strings.Repeat("─", maxInt(44, v.w-2))))
+	sb.WriteString("\n")
+	sb.WriteString(title + "\n")
+
+	maxPanel := v.h / 2
+	if maxPanel < 6 {
+		maxPanel = 6
+	}
+	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	if v.previewScroll > len(lines)-1 {
+		v.previewScroll = maxInt(0, len(lines)-1)
+	}
+	view := lines[v.previewScroll:]
+	if len(view) > maxPanel {
+		view = view[:maxPanel]
+	}
+	for _, l := range view {
+		styled := l
+		switch {
+		case strings.HasPrefix(l, "+"):
+			styled = styleOK.Render(l)
+		case strings.HasPrefix(l, "-"):
+			styled = styleErr.Render(l)
+		case strings.HasPrefix(l, "@@"):
+			styled = styleDim.Render(l)
+		}
+		sb.WriteString(styled)
+		sb.WriteString("\n")
+	}
+	if v.previewScroll+maxPanel < len(lines) {
+		sb.WriteString(styleDim.Render(fmt.Sprintf("…%d more lines", len(lines)-(v.previewScroll+maxPanel))))
+		sb.WriteString("\n")
+	}
+	sb.WriteString(styleWarn.Render(footer))
+	return sb.String()
+}
+
+// buildRows assembles the full row list. Display rows (titles, plain stats,
+// blank separators) carry cat=catNone; fixable rows carry their category +
+// the key/project needed to construct a fix proposal.
+func (v *summaryView) buildRows() []summaryRow {
+	var rows []summaryRow
+
+	add := func(text string) {
+		rows = append(rows, summaryRow{text: text})
+	}
+	addFix := func(text string, cat summaryCat, key, project string) {
+		rows = append(rows, summaryRow{text: text, cat: cat, key: key, project: project})
+	}
+
+	// --- Updates available ----------------------------------------------
 	if v.st.updates != nil {
 		mkt, plg, mcp := v.st.updates.CountOutdated()
 		if mkt+plg+mcp > 0 {
-			b.WriteString(styleTitle.Render("Updates available") + "\n")
+			add(styleTitle.Render("Updates available"))
 			parts := []string{}
 			if plg > 0 {
 				parts = append(parts, fmt.Sprintf("%d plugin(s)", plg))
@@ -121,11 +581,12 @@ func (v *summaryView) render() string {
 			if mcp > 0 {
 				parts = append(parts, fmt.Sprintf("%d MCP launcher(s)", mcp))
 			}
-			b.WriteString("  " + styleWarn.Render("↑ "+strings.Join(parts, ", ")) + "\n\n")
+			add("  " + styleWarn.Render("↑ "+strings.Join(parts, ", ")))
+			add("")
 		}
 	}
 
-	// --- MCPs -----------------------------------------------------------
+	// --- MCPs counts ----------------------------------------------------
 	userMCPs := v.st.cj.UserMCPNames()
 	projMCPs := v.st.cj.ProjectMCPNames(v.st.project)
 	stashed := v.st.stash.Names()
@@ -134,12 +595,10 @@ func (v *summaryView) render() string {
 		mcpjsonNames = m.Names()
 	}
 
-	b.WriteString(styleTitle.Render("MCP servers") + "\n")
-	row(&b, "  user scope     ", len(userMCPs), truncateList(userMCPs, 6))
-	row(&b, "  local scope    ", len(projMCPs), truncateList(projMCPs, 6))
-	row(&b, "  .mcp.json      ", len(mcpjsonNames), truncateList(mcpjsonNames, 6))
-	// Plugin-registered MCPs: only count those whose plugin is currently ENABLED
-	// (v.st.pluginMCPs includes disabled-but-installed plugins too — they don't load).
+	add(styleTitle.Render("MCP servers"))
+	add(formatRow("  user scope     ", len(userMCPs), truncateList(userMCPs, 6)))
+	add(formatRow("  local scope    ", len(projMCPs), truncateList(projMCPs, 6)))
+	add(formatRow("  .mcp.json      ", len(mcpjsonNames), truncateList(mcpjsonNames, 6)))
 	pluginSources := make([]string, 0, len(v.st.pluginMCPs))
 	for name, srcs := range v.st.pluginMCPs {
 		for _, s := range srcs {
@@ -150,51 +609,55 @@ func (v *summaryView) render() string {
 		}
 	}
 	sort.Strings(pluginSources)
-	row(&b, "  via plugins    ", len(pluginSources), truncateList(pluginSources, 6))
+	add(formatRow("  via plugins    ", len(pluginSources), truncateList(pluginSources, 6)))
 	claudeAi := v.st.cj.ClaudeAiEverConnected()
 	sort.Strings(claudeAi)
-	row(&b, "  claude.ai      ", len(claudeAi), truncateList(claudeAi, 6))
-	row(&b, "  stash (parked) ", len(stashed), truncateList(stashed, 6))
-	b.WriteString("\n")
+	add(formatRow("  claude.ai      ", len(claudeAi), truncateList(claudeAi, 6)))
+	add(formatRow("  stash (parked) ", len(stashed), truncateList(stashed, 6)))
+	add("")
 
-	// Per-project overrides
+	// --- Per-project overrides -----------------------------------------
 	overrides := v.st.cj.ProjectDisabledMcpServers(v.st.project)
 	classified := classify.Classify(overrides, userMCPs, projMCPs, claudeAi, stashed, v.st.pluginMCPs)
-	b.WriteString(styleTitle.Render("Per-project overrides (disabledMcpServers)") + "\n")
+	add(styleTitle.Render("Per-project overrides (disabledMcpServers)"))
 	if len(overrides) == 0 {
-		b.WriteString(styleDim.Render("  (none for " + v.st.project + ")") + "\n\n")
+		add(styleDim.Render("  (none for " + v.st.project + ")"))
+		add("")
 	} else {
-		row(&b, "  plugin (active)    ", len(classified.PluginActive), truncateList(classified.PluginActive, 4))
-		row(&b, "  plugin (disabled)  ", len(classified.PluginDisabled), truncateList(classified.PluginDisabled, 4))
-		row(&b, "  claude.ai          ", len(classified.ClaudeAi), truncateList(classified.ClaudeAi, 4))
-		row(&b, "  stdio (live)       ", len(classified.StdioLive), truncateList(classified.StdioLive, 4))
-		row(&b, "  stash ghost        ", len(classified.StashGhost), truncateList(classified.StashGhost, 4))
-		row(&b, "  orphan (plugin)    ", len(classified.OrphanPlugin), truncateList(classified.OrphanPlugin, 4))
-		row(&b, "  orphan (stdio)     ", len(classified.OrphanStdio), truncateList(classified.OrphanStdio, 4))
-		b.WriteString("\n")
+		add(formatRow("  plugin (active)    ", len(classified.PluginActive), truncateList(classified.PluginActive, 4)))
+		add(formatRow("  plugin (disabled)  ", len(classified.PluginDisabled), truncateList(classified.PluginDisabled, 4)))
+		add(formatRow("  claude.ai          ", len(classified.ClaudeAi), truncateList(classified.ClaudeAi, 4)))
+		add(formatRow("  stdio (live)       ", len(classified.StdioLive), truncateList(classified.StdioLive, 4)))
+		// Fixable buckets get one row per entry so each is selectable.
+		for _, k := range classified.OrphanPlugin {
+			addFix(fmt.Sprintf("  %s  orphan (plugin)  %s",
+				styleErr.Render("✗"), k), catOrphanPlugin, k, v.st.project)
+		}
+		for _, k := range classified.OrphanStdio {
+			addFix(fmt.Sprintf("  %s  orphan (stdio)   %s",
+				styleErr.Render("✗"), k), catOrphanStdio, k, v.st.project)
+		}
+		for _, k := range classified.StashGhost {
+			addFix(fmt.Sprintf("  %s  stash ghost      %s",
+				styleWarn.Render("⚠"), k), catStashGhost, k, v.st.project)
+		}
+		add("")
 
-		// Cleanup suggestions. Bucket 2 (plugin-disabled) is deliberately NOT pruneable
-		// because re-enabling the plugin would re-activate the MCP and the user probably
-		// wanted it off per-project. Stash ghosts are optional (safe but not always wanted).
-		recoverable := len(classified.OrphanPlugin) + len(classified.OrphanStdio)
-		withStash := recoverable + len(classified.StashGhost)
+		// Cleanup hint, preserving the legacy `p` workflow.
+		recoverable := pruneOrphanCount(&classified)
 		if recoverable > 0 || len(classified.StashGhost) > 0 {
-			b.WriteString(styleTitle.Render("Cleanup suggestions") + "\n")
+			add(styleTitle.Render("Cleanup suggestions"))
 			if recoverable > 0 {
-				fmt.Fprintf(&b, "  %s  run  %s  to remove %d orphaned entr%s\n",
-					styleOK.Render("•"),
-					styleBadge.Render("ccmcp mcp prune"),
-					recoverable,
-					classify.PluralY(recoverable))
+				add(fmt.Sprintf("  %s  bulk-prune with %s, or f on a row above to fix one at a time",
+					styleOK.Render("•"), styleBadge.Render("p")))
 			}
 			if len(classified.StashGhost) > 0 {
-				fmt.Fprintf(&b, "  %s  add --include-stash-ghosts to also remove %d stash-ghost entr%s (total %d)\n",
+				add(fmt.Sprintf("  %s  %d stash-ghost entr%s — f to drop one at a time",
 					styleDim.Render("•"),
 					len(classified.StashGhost),
-					classify.PluralY(len(classified.StashGhost)),
-					withStash)
+					classify.PluralY(len(classified.StashGhost))))
 			}
-			b.WriteString("\n")
+			add("")
 		}
 	}
 
@@ -205,6 +668,7 @@ func (v *summaryView) render() string {
 		installedIdx[ip.ID] = ip
 	}
 	knownIDs := map[string]bool{}
+	var unknownIDs, installedOnlyIDs []string
 	for _, e := range v.st.settings.PluginEntries() {
 		knownIDs[e.ID] = true
 		if e.Enabled {
@@ -214,19 +678,31 @@ func (v *summaryView) render() string {
 		}
 		if _, ok := installedIdx[e.ID]; !ok {
 			unknown++
+			unknownIDs = append(unknownIDs, e.ID)
 		}
 	}
 	for id := range installedIdx {
 		if !knownIDs[id] {
 			installedOnly++
+			installedOnlyIDs = append(installedOnlyIDs, id)
 		}
 	}
-	b.WriteString(styleTitle.Render("Plugins") + "\n")
-	fmt.Fprintf(&b, "  enabled               %d\n", enabled)
-	fmt.Fprintf(&b, "  disabled (installed)  %d\n", disabled)
-	fmt.Fprintf(&b, "  enabled but not installed   %s\n", warnNum(unknown))
-	fmt.Fprintf(&b, "  installed but not in settings %s\n", warnNum(installedOnly))
-	b.WriteString("\n")
+	sort.Strings(unknownIDs)
+	sort.Strings(installedOnlyIDs)
+	add(styleTitle.Render("Plugins"))
+	add(fmt.Sprintf("  enabled               %d", enabled))
+	add(fmt.Sprintf("  disabled (installed)  %d", disabled))
+	add(fmt.Sprintf("  enabled but not installed   %s", warnNum(unknown)))
+	for _, id := range unknownIDs {
+		addFix(fmt.Sprintf("    %s  %s", styleWarn.Render("⚠"), id),
+			catPluginEnabledNotInstalled, id, "")
+	}
+	add(fmt.Sprintf("  installed but not in settings %s", warnNum(installedOnly)))
+	for _, id := range installedOnlyIDs {
+		addFix(fmt.Sprintf("    %s  %s", styleWarn.Render("⚠"), id),
+			catPluginInstalledNotEnabled, id, "")
+	}
+	add("")
 
 	// --- Marketplaces ---------------------------------------------------
 	extras := v.st.settings.ExtraMarketplaces()
@@ -235,18 +711,18 @@ func (v *summaryView) render() string {
 	if known != nil {
 		knownNames = known.Names()
 	}
-	b.WriteString(styleTitle.Render("Marketplaces") + "\n")
-	fmt.Fprintf(&b, "  system-known   %d  (%s)\n", len(knownNames), styleDim.Render(strings.Join(knownNames, ", ")))
-	fmt.Fprintf(&b, "  extras         %d\n", len(extras))
-	b.WriteString("\n")
+	add(styleTitle.Render("Marketplaces"))
+	add(fmt.Sprintf("  system-known   %d  (%s)", len(knownNames), styleDim.Render(strings.Join(knownNames, ", "))))
+	add(fmt.Sprintf("  extras         %d", len(extras)))
+	add("")
 
 	// --- Profiles -------------------------------------------------------
 	names := v.st.profiles.Names()
-	b.WriteString(styleTitle.Render("Profiles") + "\n")
-	fmt.Fprintf(&b, "  saved          %d  (%s)\n", len(names), styleDim.Render(strings.Join(names, ", ")))
-	b.WriteString("\n")
+	add(styleTitle.Render("Profiles"))
+	add(fmt.Sprintf("  saved          %d  (%s)", len(names), styleDim.Render(strings.Join(names, ", "))))
+	add("")
 
-	// --- Skills / Agents / Commands -------------------------------------
+	// --- Skills / Agents / Commands ------------------------------------
 	discoveredSkills := skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
 	discoveredAgents := agents.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
 	discoveredCmds := commands.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
@@ -281,25 +757,22 @@ func (v *summaryView) render() string {
 			cmdUser++
 		}
 	}
-	b.WriteString(styleTitle.Render("Skills / Agents / Commands") + "\n")
-	fmt.Fprintf(&b, "  skills     %d enabled / %d total  (user %d, plugin %d)\n", skillEnabled, len(discoveredSkills), skillUser, skillPlugin)
-	fmt.Fprintf(&b, "  agents     %d total  (user %d, plugin %d)\n", len(discoveredAgents), agentUser, agentPlugin)
-	fmt.Fprintf(&b, "  commands   %d total  (user %d, plugin %d)\n", len(discoveredCmds), cmdUser, cmdPlugin)
+	add(styleTitle.Render("Skills / Agents / Commands"))
+	add(fmt.Sprintf("  skills     %d enabled / %d total  (user %d, plugin %d)", skillEnabled, len(discoveredSkills), skillUser, skillPlugin))
+	add(fmt.Sprintf("  agents     %d total  (user %d, plugin %d)", len(discoveredAgents), agentUser, agentPlugin))
+	add(fmt.Sprintf("  commands   %d total  (user %d, plugin %d)", len(discoveredCmds), cmdUser, cmdPlugin))
 	if len(conflicts) > 0 {
-		fmt.Fprintf(&b, "  %s  %d slash-command conflict(s)\n", styleWarn.Render("⚠"), len(conflicts))
-		for i, c := range conflicts {
-			if i >= 3 {
-				fmt.Fprintf(&b, "      %s and %d more\n", styleDim.Render("…"), len(conflicts)-3)
-				break
-			}
-			fmt.Fprintf(&b, "      %s  /%s\n", styleDim.Render(string(c.Kind)), c.Effective)
+		add(fmt.Sprintf("  %s  %d slash-command conflict(s)", styleWarn.Render("⚠"), len(conflicts)))
+		for _, c := range conflicts {
+			addFix(fmt.Sprintf("    %s  /%s",
+				styleDim.Render(string(c.Kind)), c.Effective),
+				catSlashConflict, c.Effective, "")
 		}
 	}
-	b.WriteString("\n")
+	add("")
 
 	// --- Redundancies / warnings ---------------------------------------
-	var warnings []string
-	// same MCP enabled in both user + project (double-loads)
+	// duplicate-load: same MCP in user + project scope
 	projSet := map[string]bool{}
 	for _, n := range projMCPs {
 		projSet[n] = true
@@ -311,25 +784,18 @@ func (v *summaryView) render() string {
 		}
 	}
 	sort.Strings(dup)
-	if len(dup) > 0 {
-		warnings = append(warnings, fmt.Sprintf("MCPs active in BOTH user and project scope (will load twice): %s", strings.Join(dup, ", ")))
-	}
-	// stash entry also active in user scope -> the user forgot to clean up one side
-	var stashAndUser []string
+	// stash entry duplicated in user scope
 	userSet := map[string]bool{}
 	for _, n := range userMCPs {
 		userSet[n] = true
 	}
+	var stashAndUser []string
 	for _, n := range stashed {
 		if userSet[n] {
 			stashAndUser = append(stashAndUser, n)
 		}
 	}
-	if len(stashAndUser) > 0 {
-		warnings = append(warnings, fmt.Sprintf("MCPs in BOTH stash and user scope (stash is redundant): %s", strings.Join(stashAndUser, ", ")))
-	}
-	// Redundancy checks below care about plugins that ACTUALLY load, not
-	// installed-but-disabled ones.
+	// stash entries also provided by an enabled plugin
 	enabledPluginMCPs := map[string]bool{}
 	for name, srcs := range v.st.pluginMCPs {
 		for _, s := range srcs {
@@ -339,33 +805,25 @@ func (v *summaryView) render() string {
 			}
 		}
 	}
-	// Stashed MCPs also registered by an enabled plugin: the stash is useless (plugin provides it)
 	var stashedButPluginProvides []string
 	for _, n := range stashed {
 		if enabledPluginMCPs[n] {
 			stashedButPluginProvides = append(stashedButPluginProvides, n)
 		}
 	}
-	if len(stashedButPluginProvides) > 0 {
-		warnings = append(warnings, fmt.Sprintf("MCPs in stash that are ALSO provided by an enabled plugin (stash entry is redundant): %s", strings.Join(stashedButPluginProvides, ", ")))
-	}
-	// user-scope duplicating a plugin-sourced MCP: two copies will try to load
 	var userDupPlugin []string
 	for _, n := range userMCPs {
 		if enabledPluginMCPs[n] {
 			userDupPlugin = append(userDupPlugin, n)
 		}
 	}
-	if len(userDupPlugin) > 0 {
-		warnings = append(warnings, fmt.Sprintf("user-scope MCPs also registered by plugin (duplicate load): %s", strings.Join(userDupPlugin, ", ")))
-	}
-	// mcp.json allow-list includes names not actually in .mcp.json
+	// stale .mcp.json refs
+	var stale []string
 	if len(mcpjsonNames) > 0 {
 		mcpjsonSet := map[string]bool{}
 		for _, n := range mcpjsonNames {
 			mcpjsonSet[n] = true
 		}
-		var stale []string
 		for _, n := range v.st.cj.ProjectMcpjsonEnabled(v.st.project) {
 			if !mcpjsonSet[n] {
 				stale = append(stale, n)
@@ -376,57 +834,67 @@ func (v *summaryView) render() string {
 				stale = append(stale, n)
 			}
 		}
-		if len(stale) > 0 {
-			warnings = append(warnings, fmt.Sprintf(".mcp.json allow/deny references missing servers: %s", strings.Join(stale, ", ")))
-		}
-	}
-	if unknown > 0 {
-		warnings = append(warnings, fmt.Sprintf("%d plugin(s) enabled in settings but not installed on disk — Claude Code will warn on load", unknown))
-	}
-	if installedOnly > 0 {
-		warnings = append(warnings, fmt.Sprintf("%d plugin(s) on disk but not registered in settings — try `plugin install <id> --marketplace <m>`", installedOnly))
 	}
 
-	if len(warnings) == 0 {
-		b.WriteString(styleOK.Render("Redundancies: (none — everything looks clean)"))
+	hasWarn := len(dup)+len(stashAndUser)+len(stashedButPluginProvides)+len(userDupPlugin)+len(stale) > 0
+	if !hasWarn {
+		add(styleOK.Render("Redundancies: (none — everything looks clean)"))
 	} else {
-		b.WriteString(styleWarn.Render("Redundancies:") + "\n")
-		for _, w := range warnings {
-			b.WriteString("  • " + w + "\n")
+		add(styleWarn.Render("Redundancies:"))
+		for _, n := range dup {
+			addFix(fmt.Sprintf("  %s  active in BOTH user and project scope (will load twice): %s",
+				styleWarn.Render("⚠"), n),
+				catDuplicateLoad, n, v.st.project)
+		}
+		for _, n := range stashAndUser {
+			addFix(fmt.Sprintf("  %s  stash redundant with user scope: %s", styleWarn.Render("⚠"), n),
+				catStashRedundantWithUser, n, "")
+		}
+		for _, n := range stashedButPluginProvides {
+			addFix(fmt.Sprintf("  %s  stash ghosted by enabled plugin: %s", styleWarn.Render("⚠"), n),
+				catStashGhostedByPlugin, n, "")
+		}
+		for _, n := range userDupPlugin {
+			addFix(fmt.Sprintf("  %s  user-scope duplicates plugin MCP: %s", styleWarn.Render("⚠"), n),
+				catUserDupPlugin, n, "")
+		}
+		for _, n := range stale {
+			addFix(fmt.Sprintf("  %s  stale .mcp.json ref: %s", styleWarn.Render("⚠"), n),
+				catStaleMcpjson, n, v.st.project)
 		}
 	}
 
-	// scroll
-	lines := strings.Split(b.String(), "\n")
-	maxH := v.h - 2
-	if maxH < 5 {
-		maxH = 5
-	}
-	if v.top > len(lines)-maxH {
-		v.top = len(lines) - maxH
-	}
-	if v.top < 0 {
-		v.top = 0
-	}
-	end := v.top + maxH
-	if end > len(lines) {
-		end = len(lines)
-	}
-	return strings.Join(lines[v.top:end], "\n")
+	return rows
 }
 
 func (v *summaryView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *summaryView) helpText() string {
-	return "j/k: scroll  g: top  p: prune orphans"
+	if v.fixRunning {
+		return "applying LLM fix — please wait"
+	}
+	if v.llmRunning {
+		return "LLM review in progress…"
+	}
+	if v.postReview != nil {
+		return "y: keep change  u/n/esc: revert from snapshot  j/k: scroll diff"
+	}
+	if v.pendingFix != nil {
+		return "y: apply  n/esc: cancel  j/k: scroll preview"
+	}
+	suffix := ""
+	if !v.claudeOnPath {
+		suffix = "  " + styleDim.Render("(claude CLI missing)")
+	}
+	return "j/k: navigate  f: fix issue  l: LLM review  p: bulk prune  g: top" + suffix
 }
 
 func (v *summaryView) capturingInput() bool { return false }
 
 // --- helpers ---------------------------------------------------------------
 
-func row(b *strings.Builder, label string, count int, sample string) {
-	fmt.Fprintf(b, "%s %3d  %s\n", label, count, styleDim.Render(sample))
+func formatRow(label string, count int, sample string) string {
+	return fmt.Sprintf("%s %3d  %s", label, count, styleDim.Render(sample))
 }
 
 func truncateList(ss []string, max int) string {
@@ -444,4 +912,11 @@ func warnNum(n int) string {
 		return styleDim.Render("0")
 	}
 	return styleWarn.Render(fmt.Sprintf("%d", n))
+}
+
+func max0(n int) int {
+	if n < 0 {
+		return 0
+	}
+	return n
 }

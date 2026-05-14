@@ -109,7 +109,15 @@ apart from genuinely absent sources.
 
 **Summary tab**
 
-Read-only overview of every scope's counts, per-project overrides, and redundancies (e.g., "MCPs in stash that are also provided by an enabled plugin — stash entry is redundant").
+| Key | Action |
+|---|---|
+| `j` / `k` / arrows | navigate fixable issues (skips display rows; scrolls past the ends) |
+| `f` | preview a fix for the selected issue (in-place orphan/stash prune, or `claude --print` for config edits) |
+| `l` | run an LLM review on the selected issue without applying it |
+| `y` / `n` / `esc` | approve / cancel in the confirm panel; `u` reverts a landed CLI fix |
+| `p` | bulk-prune orphan overrides (legacy; press twice to confirm) |
+
+Bird's-eye overview of every scope's counts, per-project overrides, and redundancies. Each actionable row (orphan override, stash redundancy, duplicate-load, slash-command conflict, plugin registration drift) is cursor-selectable and fixable in place — orphan prunes and stash drops apply directly to the in-memory state (save with `w`), and config edits hand off to `claude --print` non-interactively with an in-TUI spinner.
 
 **Doctor tab**
 
@@ -123,7 +131,7 @@ Read-only overview of every scope's counts, per-project overrides, and redundanc
 | `y` / `n` | approve / reject the previewed fix (in confirm panel) |
 | `u` | revert a CLI fix from its on-disk snapshot (in post-review panel) |
 
-Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pressing `f` opens a preview panel: in-TUI fixes show a unified diff of the exact change before you approve; Claude-CLI fixes show the full prompt first, then after the CLI runs, show the resulting diff and let you keep (`y`) or revert (`u`). Every fix snapshots the original file to `~/.claude-mcp-backups/doctor/` (kept: 20 newest per file, max age 30 days).
+Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pressing `f` opens a preview panel: in-TUI fixes show a unified diff of the exact change before you approve; Claude-CLI fixes show the full prompt first, then after the CLI runs, show the resulting diff and let you keep (`y`) or revert (`u`). Every fix snapshots the original file to `~/.claude-mcp-backups/doctor/` (kept: 20 newest per file, max age 30 days). The CLI fix runs **inside the TUI** with a live spinner + elapsed-time panel — it no longer drops you to a raw terminal mid-flow.
 
 **Global**
 
@@ -243,7 +251,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-271 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+279 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

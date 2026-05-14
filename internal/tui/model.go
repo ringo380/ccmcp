@@ -93,6 +93,28 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.st.spinnerFrame = m.spinner.View()
 		return m, cmd
 	}
+	// fixDoneMsg routes to the view that initiated the fix, regardless of which
+	// tab is currently focused. Both doctor and summary share execFixCmd, so
+	// without explicit routing a fix started on one tab and observed via tab
+	// switch would silently land nowhere.
+	if done, ok := msg.(fixDoneMsg); ok {
+		switch done.origin {
+		case tabDoctor:
+			cmd := m.doctor.update(done)
+			if m.doctor.flash != "" {
+				m.message = m.doctor.flash
+				m.doctor.flash = ""
+			}
+			return m, cmd
+		case tabSummary:
+			cmd := m.summary.update(done)
+			if m.summary.flash != "" {
+				m.message = m.summary.flash
+				m.summary.flash = ""
+			}
+			return m, cmd
+		}
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
