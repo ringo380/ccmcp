@@ -8,37 +8,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ringo380/ccmcp/internal/doctor"
 )
-
-type fixKind int
-
-const (
-	fixInTUI fixKind = iota
-	fixClaudeCLI
-)
-
-type fixProposal struct {
-	summary   string
-	kind      fixKind
-	target    string   // primary file being modified
-	proposed  []byte   // pre-computed post-state bytes (fixInTUI only); nil for CLI
-	cliArgs   []string // args for exec.Command("claude", cliArgs...)
-	cliPrompt string   // full prompt text (CLI only) — shown verbatim in confirm panel
-
-	// runtime-populated
-	snapshotPath string // disk path of pre-fix snapshot, set by executeFix
-	beforeBytes  []byte // in-memory copy of target file pre-fix (for CLI revert)
-}
-
-type doctorFixDoneMsg struct {
-	err      error
-	proposal *fixProposal // the proposal that just finished — used to drive postReview
-}
 
 // doctorView runs structural lint checks on CLAUDE.md and MEMORY.md and
 // displays the results. Press 'r' to re-run lint; 'l' to run an LLM review;
@@ -64,6 +40,15 @@ type doctorView struct {
 	llmRunning bool
 	llmResults []llmReviewResult
 	showLLM    bool
+
+	// In-flight CLI fix state. When fixRunning is true, the view renders a
+	// spinner+elapsed panel instead of the lint list so the user has live
+	// feedback while claude --print works. fixOutput captures combined
+	// stdout/stderr for error display on failure.
+	fixRunning   bool
+	fixStartedAt time.Time
+	fixTarget    string
+	fixOutput    []byte
 
 	// claudeOnPath is cached at view init: when false, LLM review and fix-via-CLI
 	// are unavailable and the keys 'l' / 'f' / 'a' surface a friendly hint instead.
@@ -150,10 +135,15 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		v.flash = ""
 		return nil
 	}
-	if done, ok := msg.(doctorFixDoneMsg); ok {
+	if done, ok := msg.(fixDoneMsg); ok && done.origin == tabDoctor {
+		v.fixRunning = false
+		v.fixOutput = done.output
 		v.lastFixErr = done.err
 		if done.err != nil {
 			v.flash = styleErr.Render("fix failed: " + enrichExitStatus(done.err.Error()))
+			if tail := tailOutput(done.output, 12); tail != "" {
+				v.flash += "\n" + styleDim.Render(tail)
+			}
 			v.loaded = false // re-lint to show current state
 			return nil
 		}
@@ -437,13 +427,6 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-// execFixCmd is the indirection used to run the claude CLI. Tests replace it.
-var execFixCmd = func(cmd *exec.Cmd, p *fixProposal) tea.Cmd {
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return doctorFixDoneMsg{err: err, proposal: p}
-	})
-}
-
 func (v *doctorView) executeFix() tea.Cmd {
 	p := v.pendingFix
 	v.pendingFix = nil
@@ -487,9 +470,10 @@ func (v *doctorView) executeFix() tea.Cmd {
 	if b, err := os.ReadFile(p.target); err == nil {
 		p.beforeBytes = b
 	}
-	// Trust the cached init state: if claudeOnPath was true at startup, hand the
-	// command off even when LookPath now fails — exec.Command resolves PATH
-	// lazily at Start() time and tests stub execFixCmd before any real spawn.
+	// Trust the cached init state: if claudeOnPath was true at startup, hand
+	// the command off even when LookPath now fails. exec.Command stores the
+	// bare name and resolves it at process-start (inside CombinedOutput), and
+	// tests stub execFixCmd so no real spawn happens in unit tests.
 	cliPath, err := exec.LookPath("claude")
 	if err != nil {
 		if !v.claudeOnPath {
@@ -504,7 +488,14 @@ func (v *doctorView) executeFix() tea.Cmd {
 	// .claude/ ambient context. Without this, claude resolves cwd to wherever
 	// ccmcp was launched and the project's instructions never load.
 	cmd.Dir = v.st.project
-	return execFixCmd(cmd, p)
+	// Mark in-flight so render() shows the spinner panel until fixDoneMsg arrives.
+	// The global spinner in model.go is already self-ticking, which drives the
+	// per-second elapsed counter without any extra scheduling here.
+	v.fixRunning = true
+	v.fixStartedAt = time.Now()
+	v.fixTarget = p.target
+	v.fixOutput = nil
+	return execFixCmd(cmd, p, tabDoctor)
 }
 
 // revertFromSnapshot restores p.target to its pre-fix state. Prefers the on-disk snapshot;
@@ -536,15 +527,29 @@ func (v *doctorView) canRunLLM() bool {
 	return false
 }
 
-// enrichExitStatus rewrites bare "exit status N" messages from tea.ExecProcess
-// (which hands the TTY to the subprocess and so loses stderr capture) into a
-// hint that points the user to the output that scrolled by above.
+// enrichExitStatus rewrites bare "exit status N" messages into something the
+// user can act on. Stderr is now captured (see execFixCmd) and surfaced as a
+// trailing dim line, so we just clarify what exit code we got.
 func enrichExitStatus(msg string) string {
 	re := regexp.MustCompile(`^exit status (\d+)$`)
 	if m := re.FindStringSubmatch(strings.TrimSpace(msg)); m != nil {
-		return fmt.Sprintf("claude CLI exit %s — see output above", m[1])
+		return fmt.Sprintf("claude CLI exit %s", m[1])
 	}
 	return msg
+}
+
+// tailOutput returns the last `maxLines` non-empty trimmed lines of out,
+// joined with newlines, suitable for inline rendering under an error flash.
+// Empty input returns "".
+func tailOutput(out []byte, maxLines int) string {
+	if len(out) == 0 {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // wrapStyled hard-wraps s on whitespace to fit width-2 columns, returning one
@@ -588,8 +593,19 @@ func wrapStyled(s string, width int, style lipgloss.Style) []string {
 }
 
 func (v *doctorView) render() string {
-	if !v.loaded && !v.llmRunning {
+	if !v.loaded && !v.llmRunning && !v.fixRunning {
 		v.runLint()
+	}
+
+	if v.fixRunning {
+		target := filepath.Base(v.fixTarget)
+		if target == "" || target == "." {
+			target = "selected file"
+		}
+		return "Doctor — " + v.st.spinnerFrame +
+			styleProgress.Render(fmt.Sprintf("Applying LLM fix to %s… (%s)", target, fixElapsed(v.fixStartedAt))) +
+			"\n" + styleDim.Render("running claude --print non-interactively; press q to quit") +
+			"\n" + v.flash
 	}
 
 	if v.llmRunning {
@@ -810,6 +826,9 @@ func (v *doctorView) renderLLM() string {
 func (v *doctorView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *doctorView) helpText() string {
+	if v.fixRunning {
+		return "applying LLM fix — please wait"
+	}
 	if v.llmRunning {
 		return "LLM review in progress…"
 	}

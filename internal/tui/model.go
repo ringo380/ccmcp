@@ -93,6 +93,34 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.st.spinnerFrame = m.spinner.View()
 		return m, cmd
 	}
+	// fixDoneMsg routes to the view that initiated the fix, regardless of which
+	// tab is currently focused. Both doctor and summary share execFixCmd, so
+	// without explicit routing a fix started on one tab and observed via tab
+	// switch would silently land nowhere.
+	if done, ok := msg.(fixDoneMsg); ok {
+		switch done.origin {
+		case tabDoctor:
+			cmd := m.doctor.update(done)
+			if m.doctor.flash != "" {
+				m.message = m.doctor.flash
+				m.doctor.flash = ""
+			}
+			return m, cmd
+		case tabSummary:
+			cmd := m.summary.update(done)
+			if m.summary.flash != "" {
+				m.message = m.summary.flash
+				m.summary.flash = ""
+			}
+			return m, cmd
+		default:
+			// Unknown origin: surface to the user rather than silently dropping
+			// the result. Any new caller of execFixCmd must add a case above —
+			// this default catches the slip rather than letting a fix vanish.
+			m.message = styleErr.Render(fmt.Sprintf("internal: fixDoneMsg with unhandled origin %d", done.origin))
+			return m, nil
+		}
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width

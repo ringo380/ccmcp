@@ -102,10 +102,10 @@ func TestDoctorCLIFlowSimulatedPostReviewRevert(t *testing.T) {
 	t.Cleanup(func() { execFixCmd = orig })
 
 	modified := []byte("# MEMORY (rewritten by stub)\n")
-	execFixCmd = func(_cmd *exec.Cmd, p *fixProposal) tea.Cmd {
+	execFixCmd = func(_cmd *exec.Cmd, p *fixProposal, _ tabID) tea.Cmd {
 		_ = os.WriteFile(p.target, modified, 0o644)
 		return func() tea.Msg {
-			return doctorFixDoneMsg{err: nil, proposal: p}
+			return fixDoneMsg{err: nil, proposal: p, origin: tabDoctor}
 		}
 	}
 
@@ -131,7 +131,7 @@ func TestDoctorCLIFlowSimulatedPostReviewRevert(t *testing.T) {
 	var im tea.Model = m
 	im, cmd := im.Update(key("y"))
 	if cmd != nil {
-		// Run the returned command (it returns doctorFixDoneMsg synchronously in our stub).
+		// Run the returned command (it returns fixDoneMsg synchronously in our stub).
 		msg := cmd()
 		im, _ = im.Update(msg)
 	}
@@ -167,9 +167,9 @@ func TestDoctorCLIFixRunsFromProjectRoot(t *testing.T) {
 	t.Cleanup(func() { execFixCmd = orig })
 
 	var capturedDir string
-	execFixCmd = func(cmd *exec.Cmd, p *fixProposal) tea.Cmd {
+	execFixCmd = func(cmd *exec.Cmd, p *fixProposal, _ tabID) tea.Cmd {
 		capturedDir = cmd.Dir
-		return func() tea.Msg { return doctorFixDoneMsg{err: nil, proposal: p} }
+		return func() tea.Msg { return fixDoneMsg{err: nil, proposal: p, origin: tabDoctor} }
 	}
 
 	m := newModel(st)
@@ -262,8 +262,8 @@ func TestDoctorApplyReviewBuildsCLIProposal(t *testing.T) {
 	// Now confirm with 'y' but stub execFixCmd so we don't actually launch claude.
 	origExec := execFixCmd
 	t.Cleanup(func() { execFixCmd = origExec })
-	execFixCmd = func(_ *exec.Cmd, p *fixProposal) tea.Cmd {
-		return func() tea.Msg { return doctorFixDoneMsg{err: nil, proposal: p} }
+	execFixCmd = func(_ *exec.Cmd, p *fixProposal, _ tabID) tea.Cmd {
+		return func() tea.Msg { return fixDoneMsg{err: nil, proposal: p, origin: tabDoctor} }
 	}
 	m.doctor.claudeOnPath = true
 	im, cmd := im.Update(key("y"))
@@ -311,10 +311,10 @@ func TestDoctorCLINoChangeCleansSnapshot(t *testing.T) {
 
 	orig := execFixCmd
 	t.Cleanup(func() { execFixCmd = orig })
-	execFixCmd = func(_ *exec.Cmd, p *fixProposal) tea.Cmd {
+	execFixCmd = func(_ *exec.Cmd, p *fixProposal, _ tabID) tea.Cmd {
 		// Stub: rewrite the file with identical bytes (no real change).
 		_ = os.WriteFile(p.target, origBytes, 0o644)
-		return func() tea.Msg { return doctorFixDoneMsg{err: nil, proposal: p} }
+		return func() tea.Msg { return fixDoneMsg{err: nil, proposal: p, origin: tabDoctor} }
 	}
 
 	m := newModel(st)
@@ -395,9 +395,9 @@ func TestDoctorRevertDeletesSnapshot(t *testing.T) {
 	orig := execFixCmd
 	t.Cleanup(func() { execFixCmd = orig })
 	modified := []byte("# rewritten\n")
-	execFixCmd = func(_ *exec.Cmd, p *fixProposal) tea.Cmd {
+	execFixCmd = func(_ *exec.Cmd, p *fixProposal, _ tabID) tea.Cmd {
 		_ = os.WriteFile(p.target, modified, 0o644)
-		return func() tea.Msg { return doctorFixDoneMsg{err: nil, proposal: p} }
+		return func() tea.Msg { return fixDoneMsg{err: nil, proposal: p, origin: tabDoctor} }
 	}
 
 	m := newModel(st)
