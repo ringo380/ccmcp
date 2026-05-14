@@ -58,6 +58,10 @@ type summaryView struct {
 	fixTarget    string
 	fixOutput    []byte
 
+	// claudeOnPath is cached at view init. When false, the keys gated on the
+	// claude CLI (`l` review and `f` fix for fixClaudeCLI proposals) surface a
+	// friendly hint instead of attempting to spawn. fixInMemory proposals are
+	// unaffected and remain usable offline.
 	claudeOnPath bool
 }
 
@@ -190,11 +194,17 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 	}
 
 	// Rebuild rows up-front so cursor navigation + fixable lookups work even
-	// before the first render() call (e.g. when tests press f immediately after
-	// switching tabs). buildRows is cheap — same work render does — and keeps
-	// the cursor in sync with state mutations that just landed.
+	// before the first render() call (e.g. tests pressing f immediately after
+	// switching tabs). buildRows is pure state-read — same work render does —
+	// and keeps the cursor in sync with state mutations the prior tick landed
+	// (e.g. an in-memory fix that shrank the fixable set). The CLAUDE.md
+	// "lazy-load in render()" rule targets expensive first-time loads (network
+	// probes, GC sweeps); a state-derived row list isn't that.
 	v.rows = v.buildRows()
 	fixable := v.fixableRows()
+	if v.cursor >= len(fixable) {
+		v.cursor = max0(len(fixable) - 1)
+	}
 
 	switch key.String() {
 	case "up", "k":
@@ -206,9 +216,12 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 	case "down", "j":
 		if len(fixable) > 0 && v.cursor < len(fixable)-1 {
 			v.cursor++
-		} else {
-			v.top++
 		}
+		// No fallthrough to body-scroll here: render() handles auto-scroll
+		// for the cursor and clamps v.top to actual line count. Use pgdn/G
+		// to scroll past the last fixable row. Falling through used to
+		// increment v.top unboundedly on each j press at end-of-list — the
+		// visual was masked by render's clamp but state drifted.
 	case "pgup":
 		v.top -= 10
 		if v.top < 0 {
@@ -302,6 +315,14 @@ func (v *summaryView) executeFix() tea.Cmd {
 			v.flash = styleErr.Render("fix failed: " + err.Error())
 			return nil
 		}
+		// Per CLAUDE.md "TUI toggle keys that change the visible set should
+		// reset v.index = 0; v.top = 0 to prevent dangling cursor." The
+		// fix shrinks the fixable list — invalidate cursor + scroll so the
+		// next render starts from a known-good frame regardless of where
+		// the user was navigating before.
+		v.rows = nil
+		v.cursor = 0
+		v.top = 0
 		v.flash = styleOK.Render(flash)
 		return nil
 
@@ -422,17 +443,18 @@ func (v *summaryView) render() string {
 		v.cursor = max0(len(fixable) - 1)
 	}
 
-	// Resolve the cursor's row in the full v.rows slice for highlighting.
+	// Resolve the cursor's row in the full v.rows slice by counting fixable
+	// entries. fixable[v.cursor] and v.rows[i] both derive from this same
+	// buildRows() pass, so the i-th fixable row in v.rows is identically the
+	// cursor's target — no need to match on identity.
 	var cursorRowIdx int = -1
 	if len(fixable) > 0 {
-		want := fixable[v.cursor]
 		fixSeen := 0
 		for i, r := range v.rows {
 			if !r.fixable() {
 				continue
 			}
 			if fixSeen == v.cursor {
-				_ = want // silence unused (we just need the index)
 				cursorRowIdx = i
 				break
 			}

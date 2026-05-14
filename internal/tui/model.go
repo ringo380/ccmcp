@@ -113,6 +113,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.summary.flash = ""
 			}
 			return m, cmd
+		default:
+			// Unknown origin: surface to the user rather than silently dropping
+			// the result. Any new caller of execFixCmd must add a case above —
+			// this default catches the slip rather than letting a fix vanish.
+			m.message = styleErr.Render(fmt.Sprintf("internal: fixDoneMsg with unhandled origin %d", done.origin))
+			return m, nil
 		}
 	}
 	switch msg := msg.(type) {

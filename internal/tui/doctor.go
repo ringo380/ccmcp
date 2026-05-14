@@ -470,9 +470,10 @@ func (v *doctorView) executeFix() tea.Cmd {
 	if b, err := os.ReadFile(p.target); err == nil {
 		p.beforeBytes = b
 	}
-	// Trust the cached init state: if claudeOnPath was true at startup, hand the
-	// command off even when LookPath now fails — exec.Command resolves PATH
-	// lazily at Start() time and tests stub execFixCmd before any real spawn.
+	// Trust the cached init state: if claudeOnPath was true at startup, hand
+	// the command off even when LookPath now fails. exec.Command stores the
+	// bare name and resolves it at process-start (inside CombinedOutput), and
+	// tests stub execFixCmd so no real spawn happens in unit tests.
 	cliPath, err := exec.LookPath("claude")
 	if err != nil {
 		if !v.claudeOnPath {

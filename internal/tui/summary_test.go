@@ -237,6 +237,53 @@ func TestDoctorFixErrorSurfacesOutputInline(t *testing.T) {
 	}
 }
 
+// TestSummaryCursorClampedAfterFix asserts that after an in-memory fix
+// shrinks the fixable set, the cursor + v.top reset so subsequent key
+// handlers can't index fixable[v.cursor] out of bounds (regression guard
+// for the gap between executeFix() and render()'s clamp).
+func TestSummaryCursorClampedAfterFix(t *testing.T) {
+	st, _ := buildState(t)
+	seedOrphanOverride(t, st, "ghost-clamp-a")
+	seedOrphanOverride(t, st, "ghost-clamp-b")
+
+	m := newModel(st)
+	// Switch to Summary and move the cursor to the LAST fixable row.
+	drive(m, "9", "j")
+	if got := m.summary.cursor; got != 1 {
+		t.Fatalf("expected cursor=1 after one j, got %d", got)
+	}
+
+	// Apply the fix at cursor=1. After apply, the row disappears.
+	drive(m, "f", "y")
+	if m.summary.cursor != 0 {
+		t.Fatalf("expected cursor reset to 0 after fix, got %d", m.summary.cursor)
+	}
+	if m.summary.top != 0 {
+		t.Fatalf("expected v.top reset to 0 after fix, got %d", m.summary.top)
+	}
+
+	// Pressing f again on the remaining fixable row must succeed.
+	out := drive(m, "f")
+	if !strings.Contains(stripANSI(out), "Apply? y") {
+		t.Fatalf("expected confirm panel for second fix, got:\n%s", out)
+	}
+}
+
+// TestSummaryDownAtEndOfListIsNoop asserts that pressing j past the last
+// fixable row does not increment v.top (state-drift regression guard).
+func TestSummaryDownAtEndOfListIsNoop(t *testing.T) {
+	st, _ := buildState(t)
+	seedOrphanOverride(t, st, "ghost-only-row")
+
+	m := newModel(st)
+	drive(m, "9")
+	topBefore := m.summary.top
+	drive(m, "j", "j", "j")
+	if m.summary.top != topBefore {
+		t.Fatalf("v.top drifted on j-past-end: before=%d after=%d", topBefore, m.summary.top)
+	}
+}
+
 // TestSummaryStashGhostFix asserts a stash ghost can be removed via cursor+f.
 func TestSummaryStashGhostFix(t *testing.T) {
 	st, _ := buildState(t)
