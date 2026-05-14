@@ -69,6 +69,13 @@ type doctorView struct {
 	// are unavailable and the keys 'l' / 'f' surface a friendly hint instead.
 	claudeOnPath bool
 
+	// appliedReviewIdx is the index into llmResults of the review that the current
+	// pendingFix proposal originated from (set when 'a' opens the gate). -1 means
+	// the pending proposal didn't come from the apply-review path. We defer setting
+	// `applied=true` on the review until the user confirms with 'y', so canceling
+	// with 'n' leaves the review re-applyable.
+	appliedReviewIdx int
+
 	flash string
 }
 
@@ -81,6 +88,7 @@ type llmReviewResult struct {
 	path    string
 	content string
 	err     error
+	applied bool // true once the user has run `a` to apply this review's suggestions
 }
 
 type doctorLLMResultMsg struct {
@@ -88,7 +96,7 @@ type doctorLLMResultMsg struct {
 }
 
 func newDoctorView(st *state) *doctorView {
-	v := &doctorView{st: st}
+	v := &doctorView{st: st, appliedReviewIdx: -1}
 	if _, err := exec.LookPath("claude"); err == nil {
 		v.claudeOnPath = true
 	}
@@ -153,13 +161,18 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		if done.proposal != nil && done.proposal.kind == fixClaudeCLI {
 			after, err := os.ReadFile(done.proposal.target)
 			if err != nil {
-				v.flash = styleErr.Render("read post-fix file: " + err.Error())
+				v.flash = styleErr.Render(fmt.Sprintf(
+					"read post-fix %s: %s — snapshot kept at %s",
+					filepath.Base(done.proposal.target), err.Error(), done.proposal.snapshotPath,
+				))
 				v.loaded = false
 				return nil
 			}
 			diff := unifiedDiff(string(done.proposal.beforeBytes), string(after), 3)
 			if diff == "" {
 				// Claude exited 0 but didn't change anything — nothing to review.
+				// Drop the snapshot we took preemptively; nothing to revert to.
+				deleteSnapshot(done.proposal.snapshotPath)
 				v.flash = styleWarn.Render("claude CLI made no changes")
 				v.lastFix = nil
 				v.loaded = false
@@ -202,6 +215,8 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			if err := v.revertFromSnapshot(v.postReview); err != nil {
 				v.flash = styleErr.Render("revert failed: " + err.Error())
 			} else {
+				// File is restored — snapshot is redundant, drop it so GC has less to sweep.
+				deleteSnapshot(v.postReview.snapshotPath)
 				v.flash = styleOK.Render("reverted: " + v.postReview.summary)
 			}
 			v.postReview = nil
@@ -222,11 +237,25 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 	if v.pendingFix != nil {
 		switch key.String() {
 		case "y":
+			// If this proposal originated from the apply-review path, the user is now
+			// committing — mark the source review applied so it isn't re-offered.
+			if v.appliedReviewIdx >= 0 && v.appliedReviewIdx < len(v.llmResults) {
+				v.llmResults[v.appliedReviewIdx].applied = true
+				v.appliedReviewIdx = -1
+			}
 			return v.executeFix()
 		case "n", "esc":
+			cameFromReview := v.appliedReviewIdx >= 0
 			v.pendingFix = nil
 			v.previewDiff = ""
 			v.previewScroll = 0
+			v.appliedReviewIdx = -1
+			if cameFromReview {
+				// Return to the LLM review the user was considering, so they can
+				// re-read it or try again with 'a'.
+				v.showLLM = true
+				v.top = 0
+			}
 		case "j", "down":
 			v.previewScroll++
 		case "k", "up":
@@ -241,10 +270,40 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 	numIssues := len(v.allIssues)
 
 	switch key.String() {
+	case "a":
+		// Apply the next unapplied, error-free review by handing the feedback
+		// back to claude-cli. Same machinery as a per-issue fix: snapshot,
+		// approval, post-apply diff, keep/revert.
+		if !v.showLLM {
+			break
+		}
+		idx := nextApplicableReview(v.llmResults)
+		if idx < 0 {
+			v.flash = styleDim.Render("no remaining reviews to apply")
+			return nil
+		}
+		if !v.claudeOnPath {
+			v.flash = styleWarn.Render("apply review unavailable — claude CLI not found in PATH")
+			return nil
+		}
+		proposal := buildReviewApplyProposal(v.llmResults[idx])
+		v.previewDiff = buildCLIPromptPreview(proposal)
+		v.previewScroll = 0
+		v.pendingFix = proposal
+		// Remember which review this proposal came from so we can mark it applied
+		// only on approval ('y'), and restore the LLM view on cancel ('n'/'esc').
+		v.appliedReviewIdx = idx
+		// Drop back to lint view so the post-review diff panel renders cleanly
+		// over it rather than fighting the review text for screen space.
+		v.showLLM = false
 	case "r":
 		v.loaded = false // render() will re-run lint on the next frame
 		v.showLLM = false
 		v.llmResults = nil
+		v.flash = ""
+		v.lastFix = nil
+		v.lastFixErr = nil
+		v.appliedReviewIdx = -1
 	case "l":
 		if v.llmRunning {
 			return nil
@@ -277,7 +336,14 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			return doctorLLMResultMsg{results: results}
 		}
 	case "f":
-		if !v.showLLM && !v.llmRunning && numIssues > 0 {
+		if !v.llmRunning && numIssues > 0 {
+			// 'f' fixes the issue under the cursor — allowed from both lint view
+			// and the LLM-results view (since the cursor still tracks the lint set).
+			if v.showLLM {
+				// The cursor reflects the lint list, not the review list — drop back
+				// so the diff panel renders cleanly and the user sees what they're fixing.
+				v.showLLM = false
+			}
 			proposal, ok := buildFixProposal(v.allIssues[v.cursor], v.st.project)
 			if !ok {
 				v.flash = styleDim.Render("no automatic fix for " + v.allIssues[v.cursor].Code)
@@ -401,6 +467,9 @@ func (v *doctorView) executeFix() tea.Cmd {
 	if p.kind == fixInTUI {
 		if err := os.WriteFile(p.target, p.proposed, 0o644); err != nil {
 			v.lastFixErr = err
+			// Write failed — the file is unchanged, so the snapshot we took is orphan junk.
+			deleteSnapshot(p.snapshotPath)
+			p.snapshotPath = ""
 			v.flash = styleErr.Render("fix failed: " + err.Error())
 			return nil
 		}
@@ -431,6 +500,10 @@ func (v *doctorView) executeFix() tea.Cmd {
 		cliPath = "claude"
 	}
 	cmd := exec.Command(cliPath, p.cliArgs...)
+	// Run from the project root so Claude inherits the project's CLAUDE.md and
+	// .claude/ ambient context. Without this, claude resolves cwd to wherever
+	// ccmcp was launched and the project's instructions never load.
+	cmd.Dir = v.st.project
 	return execFixCmd(cmd, p)
 }
 
@@ -577,12 +650,12 @@ func (v *doctorView) render() string {
 	}
 
 	if v.pendingFix != nil {
-		b.WriteString(v.renderPreviewPanel("Fix: "+v.pendingFix.summary, v.previewDiff, "Apply? y / n   j/k: scroll"))
+		b.WriteString(v.renderPreviewPanel("Fix: "+v.pendingFix.summary, v.previewDiff, "Apply? y   Cancel? n / esc   j/k: scroll"))
 	} else if v.postReview != nil {
 		b.WriteString(v.renderPreviewPanel(
 			"Applied: "+v.postReview.summary,
 			v.previewDiff,
-			"Keep? y   Revert? u   j/k: scroll",
+			"Keep? y   Revert? u / n / esc   j/k: scroll",
 		))
 	}
 
@@ -695,7 +768,11 @@ func (v *doctorView) renderLLM() string {
 
 	var lines []string
 	for _, r := range v.llmResults {
-		lines = append(lines, styleDim.Render("── "+r.path+" ──"))
+		header := "── " + r.path + " ──"
+		if r.applied {
+			header += "  " + styleOK.Render("(applied)")
+		}
+		lines = append(lines, styleDim.Render(header))
 		if r.err != nil {
 			for _, wrapped := range wrapStyled("error: "+r.err.Error(), v.w-2, styleErr) {
 				lines = append(lines, "  "+wrapped)
@@ -737,17 +814,17 @@ func (v *doctorView) helpText() string {
 		return "LLM review in progress…"
 	}
 	if v.postReview != nil {
-		return "y: keep change  u: revert from snapshot  j/k: scroll diff"
+		return "y: keep change  u/n/esc: revert from snapshot  j/k: scroll diff"
 	}
 	if v.pendingFix != nil {
-		return "y: apply  n: cancel  j/k: scroll preview"
+		return "y: apply  n/esc: cancel  j/k: scroll preview"
 	}
 	suffix := ""
 	if !v.claudeOnPath {
 		suffix = "  " + styleDim.Render("(claude CLI missing)")
 	}
 	if v.showLLM {
-		return "r: re-run lint  l: LLM review  j/k: scroll  g/G: top/bottom" + suffix
+		return "r: re-run lint  l: LLM review  a: apply review  f: fix issue  j/k: scroll  g/G: top/bottom" + suffix
 	}
 	return "r: re-run lint  l: LLM review  j/k: navigate  f: fix issue  g/G: top/bottom" + suffix
 }
@@ -793,6 +870,18 @@ func (v *doctorView) totalLines() int {
 // In-TUI proposals carry pre-computed `proposed` bytes so the caller can render a diff against the
 // current target file before writing. CLI proposals carry the full prompt text in `cliPrompt`.
 func buildFixProposal(issue doctor.Issue, projectPath string) (*fixProposal, bool) {
+	// contextPreamble nudges Claude to load the project's ambient docs before
+	// editing, so tone/scope decisions match what the rest of the project does.
+	// The CLI fix is launched with cwd = project root (see executeFix), so these
+	// paths resolve relative to the project.
+	contextPreamble := func(extra ...string) string {
+		paths := []string{"./CLAUDE.md"}
+		paths = append(paths, extra...)
+		return fmt.Sprintf(
+			"Before editing, read %s to match the project's existing tone, scope, and conventions. Do not invent content that contradicts what's already there.\n\n",
+			strings.Join(paths, " and "),
+		)
+	}
 	cli := func(summary, target, prompt string) *fixProposal {
 		return &fixProposal{
 			summary:   summary,
@@ -834,22 +923,22 @@ func buildFixProposal(issue doctor.Issue, projectPath string) (*fixProposal, boo
 
 	case "MD003":
 		content := readLineContent(issue.File, issue.Line)
-		prompt := fmt.Sprintf(
-			"In %s at line %d, the line is too long (%s). Shorten it without losing meaning:\n\n%s",
+		prompt := contextPreamble() + fmt.Sprintf(
+			"In %s at line %d, the line is too long (%s). Shorten it without losing meaning. Preserve any links, code spans, and project-specific terminology:\n\n%s",
 			issue.File, issue.Line, issue.Message, content,
 		)
 		return cli(fmt.Sprintf("Shorten line %d in %s", issue.Line, filepath.Base(issue.File)), issue.File, prompt), true
 
 	case "MD004":
-		prompt := fmt.Sprintf(
-			"In %s at line %d, there is a broken markdown link (%s). Remove or fix the link.",
+		prompt := contextPreamble() + fmt.Sprintf(
+			"In %s at line %d, there is a broken markdown link (%s). Determine the correct target by reading the surrounding section and project layout, then either fix the link or remove it if the target no longer exists.",
 			issue.File, issue.Line, issue.Message,
 		)
 		return cli(fmt.Sprintf("Fix broken link at line %d in %s", issue.Line, filepath.Base(issue.File)), issue.File, prompt), true
 
 	case "MD005":
-		prompt := fmt.Sprintf(
-			"%s is too long (%s). Trim it to under 500 lines while preserving all critical content.",
+		prompt := contextPreamble() + fmt.Sprintf(
+			"%s is too long (%s). Trim it to under 500 lines while preserving all critical content — build/test/release commands, gotchas, project-specific conventions, and any 'never do X' rules. When in doubt about whether a section is load-bearing, check whether it's referenced elsewhere in the project before removing it. Prefer tightening prose and consolidating duplicated guidance over deleting whole topics.",
 			issue.File, issue.Message,
 		)
 		return cli(fmt.Sprintf("Trim %s to under 500 lines", filepath.Base(issue.File)), issue.File, prompt), true
@@ -857,42 +946,75 @@ func buildFixProposal(issue doctor.Issue, projectPath string) (*fixProposal, boo
 	case "MD002":
 		claudePath := filepath.Join(projectPath, "CLAUDE.md")
 		prompt := fmt.Sprintf(
-			"%s is empty. Add a minimal project overview and key development guidelines.",
+			"%s is empty. Inspect this project (README.md, package.json/go.mod/pyproject.toml, top-level directory layout, recent git history) and write a CLAUDE.md that captures: a one-paragraph project overview, the build/test/run commands, the project layout, and any conventions a contributor would need on day one. Keep it terse and accurate — do not invent features or guidelines that aren't supported by what's in the repo.",
 			claudePath,
 		)
 		return cli("Populate empty CLAUDE.md", claudePath, prompt), true
 
 	case "MEM001":
 		prompt := fmt.Sprintf(
-			"Create a MEMORY.md index file at %s for this project. It should be an empty memory index with just a level-1 heading.",
+			"Create a MEMORY.md index file at %s for this project. It should be an empty memory index with just a level-1 heading — no entries yet.",
 			issue.File,
 		)
 		return cli("Initialise MEMORY.md", issue.File, prompt), true
 
 	case "MEM003":
 		content := readLineContent(issue.File, issue.Line)
-		prompt := fmt.Sprintf(
-			"In MEMORY.md at line %d, shorten this index entry to ≤150 characters without losing the key information:\n\n%s",
+		prompt := contextPreamble("./MEMORY.md") + fmt.Sprintf(
+			"In MEMORY.md at line %d, shorten this index entry to ≤150 characters without losing the key information. Keep the link target and any disambiguating noun phrase; trim adjectives and filler:\n\n%s",
 			issue.Line, content,
 		)
 		return cli(fmt.Sprintf("Shorten MEMORY.md entry at line %d", issue.Line), issue.File, prompt), true
 
 	case "MEM004":
-		prompt := fmt.Sprintf(
-			"Fix the frontmatter in memory file %s: %s",
+		prompt := contextPreamble("./MEMORY.md") + fmt.Sprintf(
+			"Fix the frontmatter in memory file %s: %s. Required fields: name, description, metadata.type. Preserve the body content unchanged.",
 			issue.File, issue.Message,
 		)
 		return cli(fmt.Sprintf("Fix frontmatter in %s", filepath.Base(issue.File)), issue.File, prompt), true
 
 	case "MEM006":
-		prompt := fmt.Sprintf(
-			"Fix the 'type' field in %s — must be one of: user, feedback, project, reference. %s",
+		prompt := contextPreamble("./MEMORY.md") + fmt.Sprintf(
+			"Fix the 'type' field in %s — must be one of: user, feedback, project, reference. %s. Pick the value that best matches the memory's actual content; don't change the body.",
 			issue.File, issue.Message,
 		)
 		return cli(fmt.Sprintf("Fix invalid type in %s", filepath.Base(issue.File)), issue.File, prompt), true
 	}
 
 	return nil, false
+}
+
+// nextApplicableReview returns the index of the first review result that has
+// no error and hasn't been applied yet, or -1 if none qualify.
+func nextApplicableReview(results []llmReviewResult) int {
+	for i, r := range results {
+		if r.err != nil || r.applied {
+			continue
+		}
+		if strings.TrimSpace(r.content) == "" {
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
+// buildReviewApplyProposal turns an LLM review result into a fixClaudeCLI
+// proposal that hands the feedback back to claude with instructions to apply
+// the actionable suggestions, using the same approval + post-review cycle as
+// per-issue fixes.
+func buildReviewApplyProposal(r llmReviewResult) *fixProposal {
+	prompt := fmt.Sprintf(
+		"You previously produced this review of %s. Apply the actionable suggestions while preserving meaning and the file's existing structure.\n\nBefore editing, read ./CLAUDE.md (and ./MEMORY.md if the target is a memory file) so tone, scope, and conventions match the rest of the project. Do not delete content that's load-bearing for the project just because a suggestion is terse — when in doubt, tighten rather than remove.\n\nReview feedback:\n\n%s",
+		r.path, r.content,
+	)
+	return &fixProposal{
+		summary:   "Apply LLM review to " + filepath.Base(r.path),
+		kind:      fixClaudeCLI,
+		target:    r.path,
+		cliPrompt: prompt,
+		cliArgs:   claudeFixArgs(prompt),
+	}
 }
 
 func claudeFixArgs(prompt string) []string {
