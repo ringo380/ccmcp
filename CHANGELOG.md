@@ -6,6 +6,30 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Review-pass fixes
+
+- **Summary tab: skill/agent/command Discover + asset-lint now lazy-loaded
+  once per session** instead of running on every keystroke. Cache lives on
+  `summaryView`; `invalidateAssets()` fires after any fix lands so the next
+  render rescans. Per CLAUDE.md "TUI lazy-load point: trigger expensive lazy
+  work in render(), not update()".
+- **Plugins tab: successful retry of a failed plugin removes it from the
+  failures panel.** Previously the comment in `updateFailures` claimed this
+  but the implementation was a no-op; the entry persisted until `X` cleared
+  it. Panel auto-closes when its last entry is resolved.
+- **`ccmcp doctor assets --json` emits `[]` instead of `null`** when zero
+  issues are found. Downstream JSON consumers expecting an array no longer
+  break on the empty case.
+- **Plugin update probe for an uninstalled plugin invalidates the cache
+  entry** rather than silently dropping the result. Eliminates a corner-case
+  count drift after a plugin is removed mid-probe.
+- **`claudeAssetFixArgs` permission profile tightened** to match its doc
+  comment: `permDescription` now grants only `Edit,Write,Read` (was
+  `Edit,Write,Read,Glob,Grep`); `permRename` keeps `Glob,Grep,Bash` since
+  slug uniqueness check + `mv` genuinely need them.
+- **`claudeOnPath` field comment updated** to mention the new `F` bulk-fix
+  key (also gated on the claude CLI being available).
+
 ### Added
 
 - **Plugins tab: bulk-update failures now show the actual error and a hint.**

@@ -49,7 +49,10 @@ so this command is CI-friendly.`,
 		ags := agents.Discover(p.ClaudeConfigDir, proj, settings, installed, p.PluginsDir)
 		cmds := commands.Discover(p.ClaudeConfigDir, proj, settings, installed, p.PluginsDir)
 
-		var issues []doctor.Issue
+		// Non-nil initial value so the --json branch emits `[]` instead of
+		// `null` when every linter is clean — downstream JSON consumers expect
+		// an array.
+		issues := []doctor.Issue{}
 		issues = append(issues, doctor.LintSkills(sks)...)
 		issues = append(issues, doctor.LintAgents(ags)...)
 		issues = append(issues, doctor.LintCommands(cmds)...)

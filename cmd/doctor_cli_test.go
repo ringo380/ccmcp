@@ -163,3 +163,21 @@ func TestCLIDoctorAssets_JSON(t *testing.T) {
 		t.Errorf("expected SKILL003 in JSON output; got:\n%s", out)
 	}
 }
+
+// TestCLIDoctorAssets_JSONEmptyIsArrayNotNull: --json output must be a JSON
+// array, not the literal `null`, when there are zero issues. CI consumers
+// parsing the output expect to call .length / iterate the result.
+func TestCLIDoctorAssets_JSONEmptyIsArrayNotNull(t *testing.T) {
+	home := setupSandbox(t) // bare sandbox with no skills/agents/commands → zero issues
+	out, err := runCLI(t, home, "doctor", "assets", "--json")
+	if err != nil {
+		t.Fatalf("doctor assets --json failed: %v\n%s", err, out)
+	}
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "null" {
+		t.Fatalf("--json must emit `[]` not `null` for empty issues set; got %q", trimmed)
+	}
+	if trimmed != "[]" {
+		t.Fatalf("expected `[]` for zero issues, got %q", trimmed)
+	}
+}

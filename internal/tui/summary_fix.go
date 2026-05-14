@@ -304,9 +304,9 @@ func buildSummaryFixProposal(r summaryRow, st *state) (*fixProposal, bool) {
 }
 
 // permKind selects which --allowedTools set Claude is granted for an asset fix.
-// Description rewrites only need Edit/Write/Read; slug renames need Bash for `mv`;
-// the slash-conflict path additionally needs Read access to plugin directories
-// (already covered by the default Read perm).
+// Description rewrites only need Edit/Write/Read; slug renames additionally need
+// Glob+Grep (to verify the new slug isn't already taken across the skills
+// directory) and Bash (to `mv` the containing directory).
 type permKind int
 
 const (
@@ -318,7 +318,7 @@ const (
 // permission profile widens only when the task genuinely needs more — bulk-fix
 // reuses these via buildBulkFixPrompt so the same scoping rules apply.
 func claudeAssetFixArgs(prompt string, perm permKind) []string {
-	tools := "Edit,Write,Read,Glob,Grep"
+	tools := "Edit,Write,Read"
 	if perm == permRename {
 		tools = "Edit,Write,Read,Glob,Grep,Bash"
 	}
@@ -510,9 +510,9 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 
 func permLabel(p permKind) string {
 	if p == permRename {
-		return "Edit,Write,Read,Glob,Grep,Bash (directory renames require Bash mv)"
+		return "Edit,Write,Read,Glob,Grep,Bash (slug renames need uniqueness check + `mv`)"
 	}
-	return "Edit,Write,Read,Glob,Grep"
+	return "Edit,Write,Read"
 }
 
 // buildBulkPrompt assembles the Claude prompt for a bulk-fix of `targets` (all in

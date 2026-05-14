@@ -84,6 +84,27 @@ func saveLastFailures(backupsDir string, failures []bulkUpdateFailure) error {
 	return os.WriteFile(path, b, 0o600)
 }
 
+// dropFailure removes the entry for `id` from `failures` in place and reports
+// whether anything changed. Used by the retry path so a successful retry clears
+// the panel's record (and lets the persisted file shrink accordingly). Pointer
+// receiver because we may reslice down to nil/empty.
+func dropFailure(failures *[]bulkUpdateFailure, id string) bool {
+	if failures == nil || len(*failures) == 0 {
+		return false
+	}
+	out := (*failures)[:0]
+	removed := false
+	for _, f := range *failures {
+		if f.ID == id {
+			removed = true
+			continue
+		}
+		out = append(out, f)
+	}
+	*failures = out
+	return removed
+}
+
 // loadLastFailures returns the persisted failure set if it exists and is fresh
 // (mtime within lastFailuresMaxAge). A stale or missing file returns ok=false; the
 // stale file is left in place rather than deleted, since the user may want to see

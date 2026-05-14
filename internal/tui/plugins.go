@@ -371,6 +371,24 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		v.st.dirtyPlugins = true
 		v.st.rescanPluginMCPs()
 		v.st.updates.InvalidatePlugin(m.id)
+		// A successful single-plugin update may have come from the failures
+		// panel's R retry. Remove the now-resolved entry from lastFailures so
+		// the panel doesn't keep showing it, and update the persisted file.
+		// Cheap when lastFailures is empty (the loop short-circuits).
+		if removed := dropFailure(&v.lastFailures, m.id); removed {
+			_ = saveLastFailures(v.st.paths.BackupsDir, v.lastFailures)
+			// If the panel just emptied, drop the user back to the regular
+			// plugins view so they don't stare at an empty "Bulk-update
+			// failures (0)" pane.
+			if v.mode == "failures" && len(v.lastFailures) == 0 {
+				v.mode = ""
+				v.failuresIndex = 0
+				v.failuresTop = 0
+				v.failuresExpanded = false
+			} else if v.mode == "failures" && v.failuresIndex >= len(v.lastFailures) {
+				v.failuresIndex = len(v.lastFailures) - 1
+			}
+		}
 		v.rebuild()
 		oldS := pluginFirstN(m.oldSha, 8)
 		newS := pluginFirstN(m.result.GitCommitSha, 8)
@@ -409,10 +427,27 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		// that's the visible symptom of "10 updates available" sticking after a
 		// successful bulk update. Re-fire the probe against current state instead.
 		if m.status.Local != "" {
+			stale := false
+			stillInstalled := false
 			for _, ip := range v.st.installed.List() {
-				if ip.ID == m.id && ip.GitCommitSha != "" && ip.GitCommitSha != m.status.Local {
-					return v.scheduleCheckPlugin(m.id)
+				if ip.ID == m.id {
+					stillInstalled = true
+					if ip.GitCommitSha != "" && ip.GitCommitSha != m.status.Local {
+						stale = true
+					}
+					break
 				}
+			}
+			if stale && stillInstalled {
+				return v.scheduleCheckPlugin(m.id)
+			}
+			if !stillInstalled {
+				// Plugin was removed between probe-schedule and result. Drop
+				// any cached entry so the count doesn't lag behind reality;
+				// don't trust this stale result either.
+				v.st.updates.InvalidatePlugin(m.id)
+				v.rebuild()
+				return nil
 			}
 		}
 		v.st.updates.PutPlugin(m.id, m.status)

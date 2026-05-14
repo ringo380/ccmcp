@@ -399,3 +399,62 @@ func TestBulkFixRefusesInMemoryCategories(t *testing.T) {
 		t.Fatalf("expected refusal flash for in-memory category; got:\n%s", clean)
 	}
 }
+
+// TestSummaryAssetCacheLazyLoadsOnce: ensureAssets is sentinel-gated; calling
+// it twice does not re-read from disk. Verified by mutating an underlying file
+// after the first load — the cached values must NOT reflect the on-disk change
+// until invalidateAssets is called.
+func TestSummaryAssetCacheLazyLoadsOnce(t *testing.T) {
+	st, p := buildState(t)
+	skillDir := p.ClaudeConfigDir + "/skills/cache-test"
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillDir+"/SKILL.md",
+		[]byte("---\nname: cache-test\ndescription: short\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := &summaryView{st: st}
+	v.ensureAssets()
+	firstCount := len(v.cachedSkills)
+	if firstCount == 0 {
+		t.Fatalf("expected at least one cached skill")
+	}
+
+	// Add a new skill on disk. Without invalidation, the cache should NOT see it.
+	skillDir2 := p.ClaudeConfigDir + "/skills/added-after-cache"
+	if err := os.MkdirAll(skillDir2, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillDir2+"/SKILL.md",
+		[]byte("---\nname: added-after-cache\ndescription: short\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	v.ensureAssets()
+	if len(v.cachedSkills) != firstCount {
+		t.Errorf("ensureAssets re-read disk without invalidation: had %d skills, now %d", firstCount, len(v.cachedSkills))
+	}
+
+	v.invalidateAssets()
+	v.ensureAssets()
+	if len(v.cachedSkills) != firstCount+1 {
+		t.Errorf("after invalidate+ensure, expected %d skills, got %d", firstCount+1, len(v.cachedSkills))
+	}
+}
+
+// TestSummaryAssetCachePopulatedFromBuildRows: the first call to buildRows
+// should populate the cache (since render() goes through it), so update()'s
+// row-build path always sees lint findings on the very next keypress.
+func TestSummaryAssetCachePopulatedFromBuildRows(t *testing.T) {
+	st, _ := buildState(t)
+	v := &summaryView{st: st}
+	if v.assetsLoaded {
+		t.Fatal("assetsLoaded should start false")
+	}
+	_ = v.buildRows()
+	if !v.assetsLoaded {
+		t.Fatal("buildRows should have populated assets cache via ensureAssets")
+	}
+}

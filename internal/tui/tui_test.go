@@ -1622,3 +1622,70 @@ func TestSaveAndLoadLastFailuresRoundTrip(t *testing.T) {
 		t.Error("loadLastFailures should report ok=false after empty save")
 	}
 }
+
+// TestRetrySuccessClearsFailureRecord: a successful pluginUpdateResultMsg for
+// an id that's in lastFailures must remove the entry so the panel auto-empties.
+func TestRetrySuccessClearsFailureRecord(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	_ = drive(m, "2")
+
+	m.plugins.lastFailures = []bulkUpdateFailure{
+		{ID: "plug-one@mkt", Err: "boom", Hint: "retry"},
+		{ID: "plug-two@mkt", Err: "splat", Hint: "fix net"},
+	}
+	m.plugins.lastFailuresLoaded = true
+
+	var im tea.Model = m
+	im, _ = im.Update(pluginUpdateResultMsg{
+		id:          "plug-one@mkt",
+		oldSha:      "old",
+		oldInstPath: "/x/1",
+		result: &install.Result{
+			QualifiedID: "plug-one@mkt", InstallPath: "/x/1-new", Version: "v2", GitCommitSha: "new",
+		},
+	})
+
+	if len(m.plugins.lastFailures) != 1 || m.plugins.lastFailures[0].ID != "plug-two@mkt" {
+		t.Fatalf("plug-one should be dropped from lastFailures, got %+v", m.plugins.lastFailures)
+	}
+}
+
+// TestStaleUpdateCheckForUninstalledPluginInvalidates: when the probe arrives
+// for a plugin that's been uninstalled, the cache entry must be cleared rather
+// than poisoned with stale data.
+func TestStaleUpdateCheckForUninstalledPluginInvalidates(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	_ = drive(m, "2")
+
+	st.updates.PutPlugin("ghost@mkt", updates.Status{Local: "old", Remote: "new", Outdated: true})
+
+	var im tea.Model = m
+	im, _ = im.Update(pluginUpdateCheckMsg{
+		id: "ghost@mkt",
+		status: updates.Status{Local: "old", Remote: "new", Outdated: true},
+	})
+
+	if _, ok := st.updates.Plugin("ghost@mkt"); ok {
+		t.Fatalf("uninstalled plugin's cache entry should be cleared, but Plugin() still returns ok")
+	}
+}
+
+// TestDropFailureHelper covers the ID-removal helper.
+func TestDropFailureHelper(t *testing.T) {
+	xs := []bulkUpdateFailure{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+	if !dropFailure(&xs, "b") {
+		t.Fatal("expected dropFailure to report removed=true for present id")
+	}
+	if len(xs) != 2 || xs[0].ID != "a" || xs[1].ID != "c" {
+		t.Fatalf("after drop got %+v", xs)
+	}
+	if dropFailure(&xs, "missing") {
+		t.Fatal("expected removed=false for absent id")
+	}
+	var nilSlice []bulkUpdateFailure
+	if dropFailure(&nilSlice, "x") {
+		t.Fatal("nil slice should report removed=false")
+	}
+}

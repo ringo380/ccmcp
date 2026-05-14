@@ -53,6 +53,21 @@ type summaryView struct {
 	// each independently after Claude finishes. Cleared in executeFix.
 	bulkFixFiles []string
 
+	// Lazy-loaded asset state. skills/agents/commands Discover plus the lint
+	// passes all hit the filesystem; per CLAUDE.md "TUI lazy-load point: trigger
+	// *expensive* lazy work … in render(), not update()", we cache the results
+	// on the view and refresh only when ensureAssets() is called from render()
+	// with assetsLoaded=false. invalidateAssets() flips the sentinel after a
+	// fix lands so the next render rescans.
+	assetsLoaded       bool
+	cachedSkills       []skills.Skill
+	cachedAgents       []agents.Agent
+	cachedCmds         []commands.Command
+	cachedConflicts    []commands.Conflict
+	cachedSkillIssues  []doctor.Issue
+	cachedAgentIssues  []doctor.Issue
+	cachedCmdIssues    []doctor.Issue
+
 	// LLM review state (per-row review; only the selected row is sent).
 	llmRunning bool
 	llmResult  string // last review body
@@ -65,9 +80,9 @@ type summaryView struct {
 	fixOutput    []byte
 
 	// claudeOnPath is cached at view init. When false, the keys gated on the
-	// claude CLI (`l` review and `f` fix for fixClaudeCLI proposals) surface a
-	// friendly hint instead of attempting to spawn. fixInMemory proposals are
-	// unaffected and remain usable offline.
+	// claude CLI (`l` review, `f` fix for fixClaudeCLI proposals, and `F` bulk
+	// fix) surface a friendly hint instead of attempting to spawn. fixInMemory
+	// proposals are unaffected and remain usable offline.
 	claudeOnPath bool
 }
 
@@ -116,9 +131,14 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			v.previewBody = diff
 			v.previewScroll = 0
 			v.flash = ""
+			// Claude may have edited a skill/agent/command file. Drop the
+			// asset-lint cache so the next render re-scans and removes any
+			// rows whose issue was fixed.
+			v.invalidateAssets()
 			return nil
 		}
 		v.flash = styleOK.Render("fix applied")
+		v.invalidateAssets()
 		return nil
 	}
 
@@ -154,6 +174,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			} else {
 				deleteSnapshot(v.postReview.snapshotPath)
 				v.flash = styleOK.Render("reverted: " + v.postReview.summary)
+				v.invalidateAssets()
 			}
 			v.postReview = nil
 			v.previewBody = ""
@@ -355,6 +376,10 @@ func (v *summaryView) executeFix() tea.Cmd {
 		v.cursor = 0
 		v.top = 0
 		v.flash = styleOK.Render(flash)
+		// applyFn may have toggled enabledPlugins / skillOverrides, which
+		// changes Discover's enablement view. Drop the cache so next render
+		// reflects the new state.
+		v.invalidateAssets()
 		return nil
 
 	case fixClaudeCLI:
@@ -619,10 +644,45 @@ func (v *summaryView) renderPreviewPanel(title, body, footer string) string {
 	return sb.String()
 }
 
+// ensureAssets is the lazy-load point for skill/agent/command discovery and the
+// asset-lint passes. All four operations open files on disk; per CLAUDE.md they
+// should run once per session (sentinel-gated) rather than per keystroke. Called
+// from buildRows so both update() and render() paths get a populated cache
+// without each having to remember to invoke it. Invalidated by invalidateAssets
+// after any fix that may have mutated an asset file.
+func (v *summaryView) ensureAssets() {
+	if v.assetsLoaded {
+		return
+	}
+	v.cachedSkills = skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	v.cachedAgents = agents.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	v.cachedCmds = commands.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	v.cachedConflicts = commands.FindConflicts(v.cachedCmds, v.cachedSkills)
+	v.cachedSkillIssues = doctor.LintSkills(v.cachedSkills)
+	v.cachedAgentIssues = doctor.LintAgents(v.cachedAgents)
+	v.cachedCmdIssues = doctor.LintCommands(v.cachedCmds)
+	v.assetsLoaded = true
+}
+
+// invalidateAssets clears the lazy-loaded asset cache so the next render rescans.
+// Called after any fix that may have mutated a skill/agent/command file or
+// flipped enabledPlugins/skillOverrides (which changes Discover's enablement view).
+func (v *summaryView) invalidateAssets() {
+	v.assetsLoaded = false
+	v.cachedSkills = nil
+	v.cachedAgents = nil
+	v.cachedCmds = nil
+	v.cachedConflicts = nil
+	v.cachedSkillIssues = nil
+	v.cachedAgentIssues = nil
+	v.cachedCmdIssues = nil
+}
+
 // buildRows assembles the full row list. Display rows (titles, plain stats,
 // blank separators) carry cat=catNone; fixable rows carry their category +
 // the key/project needed to construct a fix proposal.
 func (v *summaryView) buildRows() []summaryRow {
+	v.ensureAssets()
 	var rows []summaryRow
 
 	add := func(text string) {
@@ -789,10 +849,14 @@ func (v *summaryView) buildRows() []summaryRow {
 	add("")
 
 	// --- Skills / Agents / Commands ------------------------------------
-	discoveredSkills := skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
-	discoveredAgents := agents.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
-	discoveredCmds := commands.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
-	conflicts := commands.FindConflicts(discoveredCmds, discoveredSkills)
+	// Pull from the lazy-loaded cache (populated by ensureAssets from render()).
+	// buildRows is called from update() too, so doing the Discover/lint walks
+	// here would violate CLAUDE.md's "expensive work in render(), not update()"
+	// rule on every keystroke.
+	discoveredSkills := v.cachedSkills
+	discoveredAgents := v.cachedAgents
+	discoveredCmds := v.cachedCmds
+	conflicts := v.cachedConflicts
 	var skillEnabled, skillPlugin, skillUser int
 	for _, s := range discoveredSkills {
 		if s.Enabled {
@@ -840,9 +904,10 @@ func (v *summaryView) buildRows() []summaryRow {
 	// Only error-severity issues become fixable rows — warnings are reported as
 	// counts so the user can decide whether to act. The `key` for these rows is
 	// the file path so buildSummaryFixProposal / buildBulkFixProposal can dispatch.
-	skillIssues := doctor.LintSkills(discoveredSkills)
-	agentIssues := doctor.LintAgents(discoveredAgents)
-	cmdIssues := doctor.LintCommands(discoveredCmds)
+	// Findings come from the lazy-loaded cache populated by ensureAssets().
+	skillIssues := v.cachedSkillIssues
+	agentIssues := v.cachedAgentIssues
+	cmdIssues := v.cachedCmdIssues
 	var skillErr, skillWarn, agentErr, agentWarn, cmdWarn int
 	for _, iss := range skillIssues {
 		if iss.Severity == doctor.SeverityError {
