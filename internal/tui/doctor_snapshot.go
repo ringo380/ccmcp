@@ -13,6 +13,17 @@ import (
 // doctorSnapshotKeep is the per-source-file retention floor. Tests override.
 var doctorSnapshotKeep = 20
 
+// deleteSnapshot best-effort removes a single snapshot file. Empty paths and
+// already-gone files are silently tolerated; any other error is also swallowed
+// because failing to delete a snapshot must never block the user-visible flow
+// (GC will sweep it within doctorSnapshotMaxAge).
+func deleteSnapshot(path string) {
+	if path == "" {
+		return
+	}
+	_ = os.Remove(path)
+}
+
 // doctorSnapshotMaxAge is the age cap; files older than this are deleted regardless of count.
 var doctorSnapshotMaxAge = 30 * 24 * time.Hour
 

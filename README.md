@@ -243,7 +243,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-264 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+271 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

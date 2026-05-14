@@ -6,6 +6,34 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Doctor tab: `a` (apply review) no longer marks the review applied until
+  the user confirms with `y`.** Previously pressing `a` set
+  `applied=true` immediately, so canceling with `n` left the review
+  marked done and unreachable by a subsequent `a`. Approval is now
+  deferred to the actual confirm gate, and canceling restores the LLM
+  review screen so the user lands back on the suggestion they were
+  considering.
+- **Doctor tab: orphan fix-snapshots are cleaned up.** When the claude
+  CLI exits cleanly but writes no changes, when an in-TUI fix's
+  `os.WriteFile` fails after the snapshot was already taken, and after
+  a successful revert from the post-apply gate, the now-redundant
+  snapshot under `~/.claude-mcp-backups/doctor/` is removed
+  immediately rather than waiting for the 30-day GC sweep. The "Keep"
+  path still preserves the snapshot as a manual recovery escape hatch.
+
+### Changed
+
+- **Doctor tab polish.** `f` (fix issue) is now available from the LLM
+  review view as well as the lint view. Pressing `r` (re-run lint)
+  now also clears stale flash messages and last-fix state instead of
+  letting them bleed into the fresh run. The post-apply ReadFile
+  error message now names the affected file and points at the
+  still-on-disk snapshot. Confirm and post-review panel footers, plus
+  the help-text strip, advertise the full key set (`n`/`esc` cancel
+  the apply gate; `u`/`n`/`esc` all revert from the post-review gate).
+
 ## [0.9.0] — 2026-05-12
 
 ### Changed
