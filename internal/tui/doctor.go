@@ -66,7 +66,7 @@ type doctorView struct {
 	showLLM    bool
 
 	// claudeOnPath is cached at view init: when false, LLM review and fix-via-CLI
-	// are unavailable and the keys 'l' / 'f' surface a friendly hint instead.
+	// are unavailable and the keys 'l' / 'f' / 'a' surface a friendly hint instead.
 	claudeOnPath bool
 
 	// appliedReviewIdx is the index into llmResults of the review that the current
