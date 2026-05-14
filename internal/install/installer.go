@@ -303,28 +303,36 @@ func installGithub(obj map[string]any, cacheRoot string, r *Result) (*Result, er
 
 // --- git helpers -----------------------------------------------------------
 
-func gitClone(url, dst string) error {
-	if _, err := os.Stat(filepath.Join(dst, ".git")); err == nil {
-		// already cloned — fetch to refresh
-		cmd := exec.Command("git", "-C", dst, "fetch", "--tags", "--quiet")
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	cmd := exec.Command("git", "clone", "--quiet", url, dst)
-	cmd.Stderr = os.Stderr
+// runGit runs a git command, captures stderr, and wraps any non-zero exit with the
+// full stderr text so callers (TUI failure panel, retry hints) can show the user
+// what actually went wrong. stdout is still discarded for cmds that don't need it.
+func runGit(label string, args ...string) error {
+	cmd := exec.Command("git", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git clone %s: %w", url, err)
+		s := strings.TrimSpace(stderr.String())
+		if s == "" {
+			return fmt.Errorf("git %s: %w", label, err)
+		}
+		return fmt.Errorf("git %s: %w\n--- stderr ---\n%s", label, err, s)
 	}
 	return nil
 }
 
+func gitClone(url, dst string) error {
+	if _, err := os.Stat(filepath.Join(dst, ".git")); err == nil {
+		// already cloned — fetch to refresh
+		return runGit("fetch "+url, "-C", dst, "fetch", "--tags", "--quiet")
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	return runGit("clone "+url, "clone", "--quiet", url, dst)
+}
+
 func gitCheckout(repo, ref string) error {
-	cmd := exec.Command("git", "-C", repo, "checkout", "--quiet", ref)
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return runGit("checkout "+ref, "-C", repo, "checkout", "--quiet", ref)
 }
 
 func gitHeadSha(repo string) (string, error) {

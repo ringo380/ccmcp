@@ -96,6 +96,8 @@ apart from genuinely absent sources.
 |---|---|
 | `space` | toggle plugin enabled/disabled |
 | `A` / `N` | bulk enable/disable every visible plugin |
+| `B` | bulk update — re-fetch every installed plugin |
+| `F` | show last bulk-update failures (stderr + hint; `R` retries one) |
 | `f` | cycle filter: all → enabled → disabled |
 | `/` | search |
 
@@ -113,6 +115,7 @@ apart from genuinely absent sources.
 |---|---|
 | `j` / `k` / arrows | navigate fixable issues (skips display rows; scrolls past the ends) |
 | `f` | preview a fix for the selected issue (in-place orphan/stash prune, or `claude --print` for config edits) |
+| `F` | bulk-fix all issues in the cursor's category in one `claude` run (skill/agent/command frontmatter rewrites, slash conflicts, etc.) |
 | `l` | run an LLM review on the selected issue without applying it |
 | `y` / `n` / `esc` | approve / cancel in the confirm panel; `u` reverts a landed CLI fix |
 | `p` | bulk-prune orphan overrides (legacy; press twice to confirm) |
@@ -251,7 +254,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-281 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+309 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

@@ -15,6 +15,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/classify"
 	"github.com/ringo380/ccmcp/internal/commands"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/doctor"
 	"github.com/ringo380/ccmcp/internal/skills"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 )
@@ -47,6 +48,26 @@ type summaryView struct {
 	previewBody   string // styled multi-line body shown in the confirm panel
 	previewScroll int
 
+	// Bulk-fix scratch (set by F key). On apply, every file in bulkFixFiles is
+	// snapshotted alongside the proposal's primary target so the user can revert
+	// each independently after Claude finishes. Cleared in executeFix.
+	bulkFixFiles []string
+
+	// Lazy-loaded asset state. skills/agents/commands Discover plus the lint
+	// passes all hit the filesystem; per CLAUDE.md "TUI lazy-load point: trigger
+	// *expensive* lazy work … in render(), not update()", we cache the results
+	// on the view and refresh only when ensureAssets() is called from render()
+	// with assetsLoaded=false. invalidateAssets() flips the sentinel after a
+	// fix lands so the next render rescans.
+	assetsLoaded       bool
+	cachedSkills       []skills.Skill
+	cachedAgents       []agents.Agent
+	cachedCmds         []commands.Command
+	cachedConflicts    []commands.Conflict
+	cachedSkillIssues  []doctor.Issue
+	cachedAgentIssues  []doctor.Issue
+	cachedCmdIssues    []doctor.Issue
+
 	// LLM review state (per-row review; only the selected row is sent).
 	llmRunning bool
 	llmResult  string // last review body
@@ -59,9 +80,9 @@ type summaryView struct {
 	fixOutput    []byte
 
 	// claudeOnPath is cached at view init. When false, the keys gated on the
-	// claude CLI (`l` review and `f` fix for fixClaudeCLI proposals) surface a
-	// friendly hint instead of attempting to spawn. fixInMemory proposals are
-	// unaffected and remain usable offline.
+	// claude CLI (`l` review, `f` fix for fixClaudeCLI proposals, and `F` bulk
+	// fix) surface a friendly hint instead of attempting to spawn. fixInMemory
+	// proposals are unaffected and remain usable offline.
 	claudeOnPath bool
 }
 
@@ -110,9 +131,18 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			v.previewBody = diff
 			v.previewScroll = 0
 			v.flash = ""
+			// Drop asset cache only when this fix could have touched
+			// skills/agents/commands or enabledPlugins/skillOverrides.
+			// Edits to ~/.claude.json mcpServers etc. don't affect Discover.
+			if categoryAffectsAssets(done.proposal.cat) {
+				v.invalidateAssets()
+			}
 			return nil
 		}
 		v.flash = styleOK.Render("fix applied")
+		if done.proposal != nil && categoryAffectsAssets(done.proposal.cat) {
+			v.invalidateAssets()
+		}
 		return nil
 	}
 
@@ -148,6 +178,9 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			} else {
 				deleteSnapshot(v.postReview.snapshotPath)
 				v.flash = styleOK.Render("reverted: " + v.postReview.summary)
+				if categoryAffectsAssets(v.postReview.cat) {
+					v.invalidateAssets()
+				}
 			}
 			v.postReview = nil
 			v.previewBody = ""
@@ -274,6 +307,31 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		v.previewBody = v.buildFixPreview(proposal)
 		v.previewScroll = 0
 		v.pendingFix = proposal
+	case "F":
+		// Bulk-fix every fixable row sharing the cursor's category. Skips
+		// in-memory categories (use `p` for prune) — they're refused with a hint.
+		if len(fixable) == 0 {
+			v.flash = styleDim.Render("no fixable issues — Summary is clean")
+			return nil
+		}
+		row := fixable[v.cursor]
+		if !bulkFixCategory(row.cat) {
+			v.flash = styleDim.Render("bulk-fix not available for " + summarizeRow(row) + " — use `p` to prune or `f` per row")
+			return nil
+		}
+		proposal, files, ok := buildBulkFixProposal(row, fixable, v.st)
+		if !ok {
+			v.flash = styleDim.Render("nothing to bulk-fix in this category")
+			return nil
+		}
+		if !v.claudeOnPath {
+			v.flash = styleWarn.Render("bulk-fix unavailable — claude CLI not found in PATH")
+			return nil
+		}
+		v.bulkFixFiles = files
+		v.previewBody = v.buildFixPreview(proposal)
+		v.previewScroll = 0
+		v.pendingFix = proposal
 	case "p":
 		if v.pendingPrune {
 			v.doPrune()
@@ -324,6 +382,13 @@ func (v *summaryView) executeFix() tea.Cmd {
 		v.cursor = 0
 		v.top = 0
 		v.flash = styleOK.Render(flash)
+		// Selectively invalidate the asset cache: orphan/stash prunes don't
+		// touch skills/agents/commands or enabledPlugins, so they keep the
+		// cache. Plugin-registration edits do, and so will any future
+		// in-memory category that flips skill state.
+		if categoryAffectsAssets(p.cat) {
+			v.invalidateAssets()
+		}
 		return nil
 
 	case fixClaudeCLI:
@@ -339,6 +404,19 @@ func (v *summaryView) executeFix() tea.Cmd {
 		if b, err := os.ReadFile(p.target); err == nil {
 			p.beforeBytes = b
 		}
+		// Bulk fix: snapshot every additional file too. Failures here are logged
+		// to the flash but don't abort the run — the primary target snapshot
+		// covers the most common revert case, and the user can manually restore
+		// from disk if needed.
+		for _, extra := range v.bulkFixFiles {
+			if extra == "" || extra == p.target {
+				continue
+			}
+			if _, err := snapshotForFix(extra, snapDir); err != nil {
+				v.flash = styleWarn.Render("bulk snapshot skipped for " + extra + ": " + err.Error())
+			}
+		}
+		v.bulkFixFiles = nil
 		cliPath, err := exec.LookPath("claude")
 		if err != nil {
 			if !v.claudeOnPath {
@@ -575,10 +653,45 @@ func (v *summaryView) renderPreviewPanel(title, body, footer string) string {
 	return sb.String()
 }
 
+// ensureAssets is the lazy-load point for skill/agent/command discovery and the
+// asset-lint passes. All four operations open files on disk; per CLAUDE.md they
+// should run once per session (sentinel-gated) rather than per keystroke. Called
+// from buildRows so both update() and render() paths get a populated cache
+// without each having to remember to invoke it. Invalidated by invalidateAssets
+// after any fix that may have mutated an asset file.
+func (v *summaryView) ensureAssets() {
+	if v.assetsLoaded {
+		return
+	}
+	v.cachedSkills = skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	v.cachedAgents = agents.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	v.cachedCmds = commands.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	v.cachedConflicts = commands.FindConflicts(v.cachedCmds, v.cachedSkills)
+	v.cachedSkillIssues = doctor.LintSkills(v.cachedSkills)
+	v.cachedAgentIssues = doctor.LintAgents(v.cachedAgents)
+	v.cachedCmdIssues = doctor.LintCommands(v.cachedCmds)
+	v.assetsLoaded = true
+}
+
+// invalidateAssets clears the lazy-loaded asset cache so the next render rescans.
+// Called after any fix that may have mutated a skill/agent/command file or
+// flipped enabledPlugins/skillOverrides (which changes Discover's enablement view).
+func (v *summaryView) invalidateAssets() {
+	v.assetsLoaded = false
+	v.cachedSkills = nil
+	v.cachedAgents = nil
+	v.cachedCmds = nil
+	v.cachedConflicts = nil
+	v.cachedSkillIssues = nil
+	v.cachedAgentIssues = nil
+	v.cachedCmdIssues = nil
+}
+
 // buildRows assembles the full row list. Display rows (titles, plain stats,
 // blank separators) carry cat=catNone; fixable rows carry their category +
 // the key/project needed to construct a fix proposal.
 func (v *summaryView) buildRows() []summaryRow {
+	v.ensureAssets()
 	var rows []summaryRow
 
 	add := func(text string) {
@@ -745,10 +858,14 @@ func (v *summaryView) buildRows() []summaryRow {
 	add("")
 
 	// --- Skills / Agents / Commands ------------------------------------
-	discoveredSkills := skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
-	discoveredAgents := agents.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
-	discoveredCmds := commands.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
-	conflicts := commands.FindConflicts(discoveredCmds, discoveredSkills)
+	// Pull from the lazy-loaded cache (populated by ensureAssets from render()).
+	// buildRows is called from update() too, so doing the Discover/lint walks
+	// here would violate CLAUDE.md's "expensive work in render(), not update()"
+	// rule on every keystroke.
+	discoveredSkills := v.cachedSkills
+	discoveredAgents := v.cachedAgents
+	discoveredCmds := v.cachedCmds
+	conflicts := v.cachedConflicts
 	var skillEnabled, skillPlugin, skillUser int
 	for _, s := range discoveredSkills {
 		if s.Enabled {
@@ -789,6 +906,66 @@ func (v *summaryView) buildRows() []summaryRow {
 			addFix(fmt.Sprintf("    %s  /%s",
 				styleDim.Render(string(c.Kind)), c.Effective),
 				catSlashConflict, c.Effective, "")
+		}
+	}
+
+	// Asset-lint findings (CC 2.1.141: skill/agent/command frontmatter rules).
+	// Only error-severity issues become fixable rows — warnings are reported as
+	// counts so the user can decide whether to act. The `key` for these rows is
+	// the file path so buildSummaryFixProposal / buildBulkFixProposal can dispatch.
+	// Findings come from the lazy-loaded cache populated by ensureAssets().
+	skillIssues := v.cachedSkillIssues
+	agentIssues := v.cachedAgentIssues
+	cmdIssues := v.cachedCmdIssues
+	var skillErr, skillWarn, agentErr, agentWarn, cmdWarn int
+	for _, iss := range skillIssues {
+		if iss.Severity == doctor.SeverityError {
+			skillErr++
+		} else {
+			skillWarn++
+		}
+	}
+	for _, iss := range agentIssues {
+		if iss.Severity == doctor.SeverityError {
+			agentErr++
+		} else {
+			agentWarn++
+		}
+	}
+	for _, iss := range cmdIssues {
+		if iss.Severity == doctor.SeverityWarning {
+			cmdWarn++
+		}
+	}
+	if skillErr+skillWarn+agentErr+agentWarn+cmdWarn > 0 {
+		add(fmt.Sprintf("  %s  asset-lint findings (CC 2.1.141): %d skill error(s) / %d warning(s), %d agent error(s) / %d warning(s), %d command warning(s)",
+			styleWarn.Render("⚠"), skillErr, skillWarn, agentErr, agentWarn, cmdWarn))
+		for _, iss := range skillIssues {
+			cat := catNone
+			switch iss.Code {
+			case "SKILL001":
+				cat = catSkillNameInvalid
+			case "SKILL002":
+				cat = catSkillNameTooLong
+			case "SKILL003":
+				if iss.Severity == doctor.SeverityError {
+					cat = catSkillDescTooLong
+				}
+			}
+			if cat == catNone {
+				continue
+			}
+			addFix(fmt.Sprintf("    %s  %s  %s", styleErr.Render("✗"), iss.Code, iss.Message), cat, iss.File, "")
+		}
+		for _, iss := range agentIssues {
+			if iss.Code == "AGENT001" && iss.Severity == doctor.SeverityError {
+				addFix(fmt.Sprintf("    %s  %s  %s", styleErr.Render("✗"), iss.Code, iss.Message), catAgentDescTooLong, iss.File, "")
+			}
+		}
+		for _, iss := range cmdIssues {
+			if iss.Code == "CMD001" {
+				addFix(fmt.Sprintf("    %s  %s  %s", styleWarn.Render("⚠"), iss.Code, iss.Message), catCommandDescTooLong, iss.File, "")
+			}
 		}
 	}
 	add("")
