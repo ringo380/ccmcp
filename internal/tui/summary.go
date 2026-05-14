@@ -15,6 +15,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/classify"
 	"github.com/ringo380/ccmcp/internal/commands"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/doctor"
 	"github.com/ringo380/ccmcp/internal/skills"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 )
@@ -46,6 +47,11 @@ type summaryView struct {
 	postReview    *fixProposal
 	previewBody   string // styled multi-line body shown in the confirm panel
 	previewScroll int
+
+	// Bulk-fix scratch (set by F key). On apply, every file in bulkFixFiles is
+	// snapshotted alongside the proposal's primary target so the user can revert
+	// each independently after Claude finishes. Cleared in executeFix.
+	bulkFixFiles []string
 
 	// LLM review state (per-row review; only the selected row is sent).
 	llmRunning bool
@@ -274,6 +280,31 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		v.previewBody = v.buildFixPreview(proposal)
 		v.previewScroll = 0
 		v.pendingFix = proposal
+	case "F":
+		// Bulk-fix every fixable row sharing the cursor's category. Skips
+		// in-memory categories (use `p` for prune) — they're refused with a hint.
+		if len(fixable) == 0 {
+			v.flash = styleDim.Render("no fixable issues — Summary is clean")
+			return nil
+		}
+		row := fixable[v.cursor]
+		if !bulkFixCategory(row.cat) {
+			v.flash = styleDim.Render("bulk-fix not available for " + summarizeRow(row) + " — use `p` to prune or `f` per row")
+			return nil
+		}
+		proposal, files, ok := buildBulkFixProposal(row, fixable, v.st)
+		if !ok {
+			v.flash = styleDim.Render("nothing to bulk-fix in this category")
+			return nil
+		}
+		if !v.claudeOnPath {
+			v.flash = styleWarn.Render("bulk-fix unavailable — claude CLI not found in PATH")
+			return nil
+		}
+		v.bulkFixFiles = files
+		v.previewBody = v.buildFixPreview(proposal)
+		v.previewScroll = 0
+		v.pendingFix = proposal
 	case "p":
 		if v.pendingPrune {
 			v.doPrune()
@@ -339,6 +370,19 @@ func (v *summaryView) executeFix() tea.Cmd {
 		if b, err := os.ReadFile(p.target); err == nil {
 			p.beforeBytes = b
 		}
+		// Bulk fix: snapshot every additional file too. Failures here are logged
+		// to the flash but don't abort the run — the primary target snapshot
+		// covers the most common revert case, and the user can manually restore
+		// from disk if needed.
+		for _, extra := range v.bulkFixFiles {
+			if extra == "" || extra == p.target {
+				continue
+			}
+			if _, err := snapshotForFix(extra, snapDir); err != nil {
+				v.flash = styleWarn.Render("bulk snapshot skipped for " + extra + ": " + err.Error())
+			}
+		}
+		v.bulkFixFiles = nil
 		cliPath, err := exec.LookPath("claude")
 		if err != nil {
 			if !v.claudeOnPath {
@@ -789,6 +833,65 @@ func (v *summaryView) buildRows() []summaryRow {
 			addFix(fmt.Sprintf("    %s  /%s",
 				styleDim.Render(string(c.Kind)), c.Effective),
 				catSlashConflict, c.Effective, "")
+		}
+	}
+
+	// Asset-lint findings (CC 2.1.141: skill/agent/command frontmatter rules).
+	// Only error-severity issues become fixable rows — warnings are reported as
+	// counts so the user can decide whether to act. The `key` for these rows is
+	// the file path so buildSummaryFixProposal / buildBulkFixProposal can dispatch.
+	skillIssues := doctor.LintSkills(discoveredSkills)
+	agentIssues := doctor.LintAgents(discoveredAgents)
+	cmdIssues := doctor.LintCommands(discoveredCmds)
+	var skillErr, skillWarn, agentErr, agentWarn, cmdWarn int
+	for _, iss := range skillIssues {
+		if iss.Severity == doctor.SeverityError {
+			skillErr++
+		} else {
+			skillWarn++
+		}
+	}
+	for _, iss := range agentIssues {
+		if iss.Severity == doctor.SeverityError {
+			agentErr++
+		} else {
+			agentWarn++
+		}
+	}
+	for _, iss := range cmdIssues {
+		if iss.Severity == doctor.SeverityWarning {
+			cmdWarn++
+		}
+	}
+	if skillErr+skillWarn+agentErr+agentWarn+cmdWarn > 0 {
+		add(fmt.Sprintf("  %s  asset-lint findings (CC 2.1.141): %d skill error(s) / %d warning(s), %d agent error(s) / %d warning(s), %d command warning(s)",
+			styleWarn.Render("⚠"), skillErr, skillWarn, agentErr, agentWarn, cmdWarn))
+		for _, iss := range skillIssues {
+			cat := catNone
+			switch iss.Code {
+			case "SKILL001":
+				cat = catSkillNameInvalid
+			case "SKILL002":
+				cat = catSkillNameTooLong
+			case "SKILL003":
+				if iss.Severity == doctor.SeverityError {
+					cat = catSkillDescTooLong
+				}
+			}
+			if cat == catNone {
+				continue
+			}
+			addFix(fmt.Sprintf("    %s  %s  %s", styleErr.Render("✗"), iss.Code, iss.Message), cat, iss.File, "")
+		}
+		for _, iss := range agentIssues {
+			if iss.Code == "AGENT001" && iss.Severity == doctor.SeverityError {
+				addFix(fmt.Sprintf("    %s  %s  %s", styleErr.Render("✗"), iss.Code, iss.Message), catAgentDescTooLong, iss.File, "")
+			}
+		}
+		for _, iss := range cmdIssues {
+			if iss.Code == "CMD001" {
+				addFix(fmt.Sprintf("    %s  %s  %s", styleWarn.Render("⚠"), iss.Code, iss.Message), catCommandDescTooLong, iss.File, "")
+			}
 		}
 	}
 	add("")

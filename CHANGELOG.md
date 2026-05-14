@@ -6,6 +6,50 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Plugins tab: bulk-update failures now show the actual error and a hint.**
+  Per-plugin git stderr is captured by the installer and surfaced in a new
+  failures panel (`F` from the plugins tab). The panel lists every failed
+  plugin id, a one-line error summary, and a heuristic hint (network /
+  permission / stale-pin / disk-full / etc.). `enter` expands the full
+  stderr, `R` retries the selected plugin, `X` clears the record, `esc`
+  closes. Failures are persisted to `~/.claude-mcp-backups/last-bulk-failures.json`
+  (7-day TTL) so the panel survives tab switches and TUI restarts. The
+  bulk-update flash gained a `(press F to view)` hint when any items failed.
+
+- **Doctor: `ccmcp doctor assets` lints skills/agents/commands against
+  Claude Code 2.1.141 frontmatter constraints.** New `internal/doctor/asset_lint.go`
+  validates skill `name` (`^[a-z0-9-]+$`, ≤64 chars — hard requirement),
+  skill `description`+`when_to_use` combined length (warn at 1200, error at
+  1536 — content past the cap is silently dropped from skill listings),
+  agent `description` length, command `description` palette-readability cap,
+  and plugin manifest description. New issue codes: SKILL001/002/003,
+  AGENT001, CMD001, PLUGIN001. CI-friendly exit code: 1 on any error-severity
+  finding, 0 otherwise. `--json` for machine-readable output.
+
+- **Summary tab: asset-lint findings appear as fixable rows + new `F` bulk
+  fix.** Skill name/description, agent description, and command description
+  violations from the new lint package surface in the Summary tab as
+  selectable issues. `F` (capital) gathers every fixable row in the cursor's
+  category and hands them all to Claude in one prompt, with per-category
+  permission scoping (description rewrites get Edit/Write/Read/Glob/Grep;
+  skill slug renames also get Bash for `mv`). Bulk-fix refuses in-memory
+  categories (orphans) and redirects to the existing `p` prune flow. All
+  affected files are snapshotted before dispatch under
+  `~/.claude-mcp-backups/doctor/` so each can be reverted independently.
+
+### Fixed
+
+- **Plugins tab: "(N update available)" no longer stays stuck after a
+  successful bulk update.** Update probes scheduled when the tab was first
+  entered could arrive AFTER bulk-update completed and re-poison the cache
+  with the pre-update local SHA, so the counter never dropped. The
+  `pluginUpdateCheckMsg` handler now discards stale probe results whose
+  Local SHA disagrees with the on-disk SHA and schedules a fresh probe in
+  their place. Git operations in the installer also now capture stderr
+  into wrapped errors instead of dumping it to the terminal.
+
 ## [0.10.0] — 2026-05-14
 
 ### Added

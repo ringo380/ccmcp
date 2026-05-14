@@ -53,12 +53,22 @@ type pluginBulkUpdateResultMsg struct {
 	// races against rebuild() / List() on the render thread.
 	applied []bulkUpdateApplied
 	skipped []string
-	failed  []string
+	failed  []bulkUpdateFailure
 	// streamed=true means the per-item handler already applied each entry; the
 	// result handler should skip its UpdateInstall+InvalidatePlugin loop to avoid
 	// redundant work. Direct senders (existing tests, future CLI integrations)
 	// leave it false so the result handler stays responsible for landing state.
 	streamed bool
+}
+
+// bulkUpdateFailure captures a per-plugin failure during bulk update along with a
+// human-readable hint computed from the error text. Kept around between bulk runs
+// (and persisted to ~/.claude-mcp-backups/last-bulk-failures.json) so the user can
+// re-open the failure panel with `F` even after switching tabs or restarting the TUI.
+type bulkUpdateFailure struct {
+	ID   string `json:"id"`
+	Err  string `json:"err"`
+	Hint string `json:"hint"`
 }
 
 type bulkUpdateApplied struct {
@@ -134,7 +144,16 @@ type pluginView struct {
 	bulkIndex   int
 	bulkApplied []bulkUpdateApplied
 	bulkSkipped []string
-	bulkFailed  []string
+	bulkFailed  []bulkUpdateFailure
+
+	// lastFailures survives past bulkUpdating=false. Loaded from disk on first
+	// render of this view; populated by bulk-update completion. `F` opens the
+	// failures panel against this slice.
+	lastFailures      []bulkUpdateFailure
+	lastFailuresLoaded bool
+	failuresIndex     int
+	failuresTop       int
+	failuresExpanded  bool
 
 	// two-step remove confirmation
 	pendingRemove string
@@ -255,7 +274,17 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			// Treat a nil result as a failure even when err is nil — should never
 			// happen given install.Install's contract, but a defensive guard keeps
 			// the switch from dereferencing nil in the SHA comparison below.
-			v.bulkFailed = append(v.bulkFailed, t.id)
+			errText := ""
+			if m.err != nil {
+				errText = m.err.Error()
+			} else {
+				errText = "install returned nil result with no error"
+			}
+			v.bulkFailed = append(v.bulkFailed, bulkUpdateFailure{
+				ID:   t.id,
+				Err:  errText,
+				Hint: classifyUpdateError(errText),
+			})
 		case m.result.GitCommitSha != "" && t.oldSha != "" && m.result.GitCommitSha == t.oldSha:
 			// Real sha match: nothing changed. An empty oldSha plus empty result sha
 			// (non-git source) would spuriously match, so the guard above gates on both.
@@ -305,6 +334,11 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			v.st.dirtyPlugins = true
 			v.st.rescanPluginMCPs()
 		}
+		// Persist failures so `F` (capital) can re-open the panel later. Survives
+		// tab switches and TUI restarts (loaded back via loadLastFailures on first
+		// render). An empty failure set clears any prior on-disk file.
+		v.lastFailures = m.failed
+		_ = saveLastFailures(v.st.paths.BackupsDir, m.failed)
 		parts := []string{}
 		if len(m.applied) > 0 {
 			parts = append(parts, fmt.Sprintf("%d updated", len(m.applied)))
@@ -313,7 +347,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			parts = append(parts, fmt.Sprintf("%d already up to date", len(m.skipped)))
 		}
 		if len(m.failed) > 0 {
-			parts = append(parts, styleErr.Render(fmt.Sprintf("%d failed", len(m.failed))))
+			parts = append(parts, styleErr.Render(fmt.Sprintf("%d failed (press F to view)", len(m.failed))))
 		}
 		if len(parts) == 0 {
 			v.flash = styleDim.Render("no installed plugins to update")
@@ -369,6 +403,18 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		return nil
 
 	case pluginUpdateCheckMsg:
+		// Discard stale checks. The probe was scheduled before some intervening
+		// update (single or bulk) landed a new local SHA on disk. Trusting it would
+		// re-poison the cache with Outdated=true for a plugin we just upgraded —
+		// that's the visible symptom of "10 updates available" sticking after a
+		// successful bulk update. Re-fire the probe against current state instead.
+		if m.status.Local != "" {
+			for _, ip := range v.st.installed.List() {
+				if ip.ID == m.id && ip.GitCommitSha != "" && ip.GitCommitSha != m.status.Local {
+					return v.scheduleCheckPlugin(m.id)
+				}
+			}
+		}
 		v.st.updates.PutPlugin(m.id, m.status)
 		v.rebuild()
 		return nil
@@ -396,6 +442,11 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 	// Available sub-view mode.
 	if v.mode == "available" {
 		return v.updateAvailable(key)
+	}
+
+	// Failures panel sub-view.
+	if v.mode == "failures" {
+		return v.updateFailures(key)
 	}
 
 	// Installed mode.
@@ -594,6 +645,24 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 	case "R":
 		return v.initialCheckCmdForce()
 
+	case "F":
+		// Lazy-load last-bulk-failures from disk if we haven't already this session.
+		if !v.lastFailuresLoaded {
+			if loaded, ok := loadLastFailures(v.st.paths.BackupsDir); ok {
+				v.lastFailures = loaded
+			}
+			v.lastFailuresLoaded = true
+		}
+		if len(v.lastFailures) == 0 {
+			v.flash = styleDim.Render("no bulk-update failures recorded")
+			return nil
+		}
+		v.mode = "failures"
+		v.failuresIndex = 0
+		v.failuresTop = 0
+		v.failuresExpanded = false
+		return nil
+
 	case "B":
 		if v.bulkUpdating || v.updating {
 			return nil
@@ -697,6 +766,31 @@ func (v *pluginView) buildCheckCmd() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// scheduleCheckPlugin re-fires a single-plugin update probe. Used by the stale-check
+// guard in pluginUpdateCheckMsg when an in-flight check arrives after a local update
+// landed a new SHA, so the cache gets a fresh result instead of the pre-update one.
+func (v *pluginView) scheduleCheckPlugin(id string) tea.Cmd {
+	var target config.InstalledPlugin
+	found := false
+	for _, ip := range v.st.installed.List() {
+		if ip.ID == id {
+			target = ip
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil
+	}
+	p := v.st.paths
+	return func() tea.Msg {
+		_, mkt := config.ParsePluginID(target.ID)
+		head := install.LocalMarketplaceHead(p, mkt)
+		s := updates.CheckPlugin(p, target, head)
+		return pluginUpdateCheckMsg{id: target.ID, status: s}
+	}
+}
+
 func (v *pluginView) updateAvailable(key tea.KeyMsg) tea.Cmd {
 	switch key.String() {
 	case "esc":
@@ -754,6 +848,19 @@ func (v *pluginView) updateAvailable(key tea.KeyMsg) tea.Cmd {
 func (v *pluginView) render() string {
 	if v.mode == "available" {
 		return v.renderAvailable()
+	}
+	if v.mode == "failures" {
+		return v.renderFailures()
+	}
+
+	// First-render hook: lazy-load persisted failures from disk so an `F` keypress
+	// (or the visible "(N failed)" hint) reflects the prior session's record. Cheap
+	// stat + json read; runs only once per view.
+	if !v.lastFailuresLoaded {
+		if loaded, ok := loadLastFailures(v.st.paths.BackupsDir); ok {
+			v.lastFailures = loaded
+		}
+		v.lastFailuresLoaded = true
 	}
 
 	visible := v.visibleRows()
@@ -971,4 +1078,10 @@ func (v *pluginView) helpText() string {
 	return "space: toggle  U: update  B: update all  x: remove  I: browse available  f: filter  A/N: all on/off  /: search"
 }
 
-func (v *pluginView) capturingInput() bool { return v.filterActive }
+func (v *pluginView) capturingInput() bool {
+	// Treat sub-view modes as "input" for the dispatcher so the model's global
+	// q/esc handler defers to the view first. Otherwise esc inside the failures
+	// panel or available-plugins panel triggers a quit-confirm instead of closing
+	// the panel.
+	return v.filterActive || v.mode == "failures" || v.mode == "available"
+}

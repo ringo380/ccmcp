@@ -116,3 +116,50 @@ func TestCLIDoctorMD_BrokenMemoryLink(t *testing.T) {
 		t.Errorf("expected MEM002 for broken memory link; got:\n%s", out)
 	}
 }
+
+func TestCLIDoctorAssets_Clean(t *testing.T) {
+	home := assetsSandbox(t)
+	out, err := runCLI(t, home, "doctor", "assets")
+	if err != nil {
+		t.Fatalf("doctor assets unexpectedly failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "no asset lint issues") {
+		t.Errorf("expected clean output; got:\n%s", out)
+	}
+}
+
+func TestCLIDoctorAssets_FlagsBadName(t *testing.T) {
+	home := setupSandbox(t)
+	bad := filepath.Join(home, ".claude", "skills", "Invalid_Name", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(bad), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bad, []byte("---\nname: Invalid_Name\ndescription: x\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCLI(t, home, "doctor", "assets")
+	// Errors expected — invalid name is SKILL001 error severity.
+	if err == nil {
+		t.Errorf("expected nonzero exit for SKILL001 error; got:\n%s", out)
+	}
+	if !strings.Contains(out, "SKILL001") {
+		t.Errorf("output should mention SKILL001; got:\n%s", out)
+	}
+}
+
+func TestCLIDoctorAssets_JSON(t *testing.T) {
+	home := setupSandbox(t)
+	longDesc := strings.Repeat("x", 1700)
+	body := "---\nname: longskill\ndescription: " + longDesc + "\n---\n"
+	skillFile := filepath.Join(home, ".claude", "skills", "longskill", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillFile, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := runCLI(t, home, "doctor", "assets", "--json")
+	if !strings.Contains(out, "SKILL003") {
+		t.Errorf("expected SKILL003 in JSON output; got:\n%s", out)
+	}
+}

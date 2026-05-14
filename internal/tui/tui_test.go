@@ -1356,8 +1356,14 @@ func TestTUIPluginBulkPerItemProgress(t *testing.T) {
 		target: m.plugins.bulkTargets[2],
 		err:    errFake("network down"),
 	})
-	if len(m.plugins.bulkFailed) != 1 || m.plugins.bulkFailed[0] != "plug-three@mkt" {
-		t.Errorf("bulkFailed = %v; want [plug-three@mkt]", m.plugins.bulkFailed)
+	if len(m.plugins.bulkFailed) != 1 || m.plugins.bulkFailed[0].ID != "plug-three@mkt" {
+		t.Errorf("bulkFailed = %v; want one entry for plug-three@mkt", m.plugins.bulkFailed)
+	}
+	if got := m.plugins.bulkFailed[0].Err; !strings.Contains(got, "network down") {
+		t.Errorf("bulkFailed[0].Err = %q; want it to contain the underlying error text", got)
+	}
+	if m.plugins.bulkFailed[0].Hint == "" {
+		t.Errorf("bulkFailed[0].Hint should be populated by classifyUpdateError")
 	}
 
 	// After the third item, the next cmd should emit pluginBulkUpdateResultMsg.
@@ -1447,7 +1453,7 @@ func TestTUIPluginBulkNilResultIsTreatedAsFailure(t *testing.T) {
 	// No panic, no err, no result. Must classify as failed.
 	im, _ = im.Update(pluginBulkItemDoneMsg{target: m.plugins.bulkTargets[0]})
 	_ = im
-	if len(m.plugins.bulkFailed) != 1 || m.plugins.bulkFailed[0] != "plug-x@mkt" {
+	if len(m.plugins.bulkFailed) != 1 || m.plugins.bulkFailed[0].ID != "plug-x@mkt" {
 		t.Errorf("nil-result payload should classify as failure; bulkFailed = %v", m.plugins.bulkFailed)
 	}
 }
@@ -1455,3 +1461,164 @@ func TestTUIPluginBulkNilResultIsTreatedAsFailure(t *testing.T) {
 type errFake string
 
 func (e errFake) Error() string { return string(e) }
+
+// TestStaleUpdateCheckDiscarded verifies that an in-flight pluginUpdateCheckMsg
+// arriving AFTER a local update bumped the SHA is discarded rather than re-poisoning
+// the cache. This is the root cause of the "10 updates available" stuck-count bug:
+// without this guard, a probe queued at tab-enter (computed against the pre-update
+// SHA) lands after bulk update completed and writes Outdated=true back.
+func TestStaleUpdateCheckDiscarded(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	_ = drive(m, "2")
+
+	// Simulate that plug-one's local SHA has just been bumped to newshaFull,
+	// but a pre-bump check is still in flight carrying Local="oldshaFull".
+	id := "plug-one@mkt"
+	// Hand-mutate installed_plugins SHA to the new value (as install.UpdateInstall would).
+	plugins, _ := st.installed.Raw["plugins"].(map[string]any)
+	if arr, ok := plugins[id].([]any); ok && len(arr) > 0 {
+		if entry, ok := arr[0].(map[string]any); ok {
+			entry["gitCommitSha"] = "newshaFull"
+		}
+	}
+
+	// Confirm the cache is clean.
+	st.updates.InvalidatePlugin(id)
+
+	// Deliver the stale check.
+	var im tea.Model = m
+	im, _ = im.Update(pluginUpdateCheckMsg{
+		id: id,
+		status: updates.Status{
+			Local:    "oldshaFull",
+			Remote:   "remotesha",
+			Outdated: true,
+		},
+	})
+
+	// The stale result must NOT have landed in the cache.
+	if s, ok := st.updates.Plugin(id); ok && s.Outdated {
+		t.Fatalf("stale check should be discarded, but cache shows Outdated=true (Local=%q)", s.Local)
+	}
+}
+
+// TestFreshUpdateCheckLandsInCache verifies the normal path still works: a check
+// whose Local matches the on-disk SHA is stored and used to render Outdated.
+func TestFreshUpdateCheckLandsInCache(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	_ = drive(m, "2")
+
+	id := "plug-one@mkt"
+	// On-disk SHA stays empty (buildState doesn't set one). The check's Local should
+	// also be empty to be considered fresh — the stale guard only triggers when
+	// status.Local is non-empty AND mismatches.
+	var im tea.Model = m
+	im, _ = im.Update(pluginUpdateCheckMsg{
+		id: id,
+		status: updates.Status{
+			Local:    "",
+			Remote:   "remotesha",
+			Outdated: true,
+		},
+	})
+
+	if s, ok := st.updates.Plugin(id); !ok || !s.Outdated {
+		t.Fatalf("fresh check should land in cache, got ok=%v outdated=%v", ok, s.Outdated)
+	}
+}
+
+// TestBulkUpdateRetainsFailureDetail verifies stderr / error text is captured per
+// failure with a hint, and that the panel opens via `F` to show them.
+func TestBulkUpdateRetainsFailureDetail(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	_ = drive(m, "2")
+
+	m.plugins.bulkUpdating = true
+	m.plugins.bulkTargets = []bulkUpdateTarget{
+		{id: "plug-one@mkt", name: "plug-one", mkt: "mkt"},
+	}
+
+	var im tea.Model = m
+	im, _ = im.Update(pluginBulkItemDoneMsg{
+		target: m.plugins.bulkTargets[0],
+		err:    errFake("git clone https://x.invalid: exit status 128\n--- stderr ---\nfatal: could not resolve host: x.invalid"),
+	})
+	if len(m.plugins.bulkFailed) != 1 {
+		t.Fatalf("want 1 failure, got %d", len(m.plugins.bulkFailed))
+	}
+	f := m.plugins.bulkFailed[0]
+	if !strings.Contains(f.Err, "could not resolve host") {
+		t.Errorf("captured Err should include stderr text; got %q", f.Err)
+	}
+	if !strings.Contains(strings.ToLower(f.Hint), "network") {
+		t.Errorf("classifyUpdateError should hint about network for resolve-host errors; got %q", f.Hint)
+	}
+
+	// Drive final summary so v.lastFailures is populated.
+	finalCmd := m.plugins.bulkRunNextItem()
+	im, _ = im.Update(finalCmd())
+
+	// `F` opens the panel.
+	view := drive(m, "F")
+	if !strings.Contains(view, "Bulk-update failures") {
+		t.Errorf("F should open the failures panel; got:\n%s", view)
+	}
+	if !strings.Contains(view, "plug-one@mkt") {
+		t.Errorf("panel should list the failed plugin id; got:\n%s", view)
+	}
+
+	// Esc closes.
+	_ = drive(m, "esc")
+	if m.plugins.mode != "" {
+		t.Errorf("esc should close failures panel, got mode=%q", m.plugins.mode)
+	}
+}
+
+// TestClassifyUpdateErrorHints covers the substring buckets so future text changes
+// in upstream git don't silently kill the hint UX.
+func TestClassifyUpdateErrorHints(t *testing.T) {
+	cases := map[string]string{
+		"fatal: could not resolve host: github.com":  "network",
+		"Permission denied (publickey)":               "permission",
+		"fatal: couldn't find remote ref refs/heads/x": "marketplace",
+		"error: 403":                                  "auth",
+		"No space left on device":                     "disk",
+		"git clone: random unknown error":             "details",
+	}
+	for input, mustContain := range cases {
+		hint := classifyUpdateError(input)
+		if !strings.Contains(strings.ToLower(hint), mustContain) {
+			t.Errorf("classifyUpdateError(%q) = %q; want it to contain %q", input, hint, mustContain)
+		}
+	}
+}
+
+// TestSaveAndLoadLastFailuresRoundTrip verifies the persistence layer for the
+// failures panel: a save followed by a fresh load returns the same set.
+func TestSaveAndLoadLastFailuresRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	in := []bulkUpdateFailure{
+		{ID: "plug-a@mkt", Err: "boom", Hint: "retry"},
+		{ID: "plug-b@mkt", Err: "splat", Hint: "fix network"},
+	}
+	if err := saveLastFailures(dir, in); err != nil {
+		t.Fatalf("saveLastFailures: %v", err)
+	}
+	out, ok := loadLastFailures(dir)
+	if !ok {
+		t.Fatal("loadLastFailures returned ok=false right after save")
+	}
+	if len(out) != 2 || out[0].ID != "plug-a@mkt" || out[1].Hint != "fix network" {
+		t.Fatalf("round-trip mismatch: %+v", out)
+	}
+	// Empty save should remove the file (clean run = no stale state).
+	if err := saveLastFailures(dir, nil); err != nil {
+		t.Fatalf("saveLastFailures(nil): %v", err)
+	}
+	if _, ok := loadLastFailures(dir); ok {
+		t.Error("loadLastFailures should report ok=false after empty save")
+	}
+}

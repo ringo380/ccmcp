@@ -26,6 +26,13 @@ const (
 	catPluginEnabledNotInstalled
 	catPluginInstalledNotEnabled
 	catSlashConflict
+	// Asset-lint categories (CC 2.1.141 compliance — see internal/doctor/asset_lint.go).
+	// All use fixClaudeCLI to let Claude rewrite content while preserving meaning.
+	catSkillNameInvalid    // ^[a-z0-9-]+$ violation: rename file AND directory
+	catSkillNameTooLong    // >64 chars: rename file AND directory
+	catSkillDescTooLong    // combined description+when_to_use too long: rewrite frontmatter
+	catAgentDescTooLong    // agent description too long
+	catCommandDescTooLong  // command description too long
 )
 
 // summaryRow is the unit of cursor navigation in the Summary tab. Display rows
@@ -205,8 +212,117 @@ func buildSummaryFixProposal(r summaryRow, st *state) (*fixProposal, bool) {
 			cliPrompt: prompt,
 			cliArgs:   claudeFixArgs(prompt),
 		}, true
+
+	case catSkillNameInvalid, catSkillNameTooLong:
+		// r.key carries the SKILL.md path so revert/snapshot can find the file.
+		// The actual rename is destructive (mv + frontmatter edit) so the prompt
+		// instructs Claude to also rename the directory and pick a unique slug.
+		file := r.key
+		dir := filepath.Dir(file)
+		reason := "use only lowercase letters, digits, and hyphens"
+		if r.cat == catSkillNameTooLong {
+			reason = "shrink it to 64 characters or fewer while keeping it descriptive"
+		}
+		prompt := fmt.Sprintf(
+			"The skill at %s has an invalid `name:` value per Claude Code 2.1.141 (name must match "+
+				"^[a-z0-9-]+$ with a 64-character hard cap). Read %s and:\n"+
+				"  1. Choose a new slug for `name:` that follows the rule (%s). Ensure no other "+
+				"skill in ~/.claude/skills/ or under installed plugins already uses it.\n"+
+				"  2. Update the frontmatter `name:` field in %s.\n"+
+				"  3. Rename the containing directory from its current basename to the new slug. "+
+				"Use Bash `mv %s <parent>/<new-slug>` so Claude Code's loader picks the skill up "+
+				"under its new directory name. Do not touch any other skills.",
+			file, file, reason, file, dir,
+		)
+		return &fixProposal{
+			summary:   "Rename skill " + filepath.Base(dir),
+			kind:      fixClaudeCLI,
+			target:    file,
+			cliPrompt: prompt,
+			cliArgs:   claudeAssetFixArgs(prompt, permRename),
+		}, true
+
+	case catSkillDescTooLong:
+		file := r.key
+		prompt := fmt.Sprintf(
+			"The skill at %s has a frontmatter `description:` (combined with `when_to_use:` when "+
+				"present) that exceeds the 1,536-character display limit documented for Claude "+
+				"Code 2.1.141. Content past the cap is silently dropped from skill listings, so "+
+				"the model never sees the trailing portion. Read %s and rewrite the description "+
+				"+ when_to_use so:\n"+
+				"  - The combined length is at most 1,200 characters (a comfortable margin).\n"+
+				"  - The key use case appears first.\n"+
+				"  - The original meaning is preserved; trim filler, not signal.\n"+
+				"Edit only the frontmatter block. Do not change the skill body, the `name:` "+
+				"field, or any other skill.",
+			file, file,
+		)
+		return &fixProposal{
+			summary:   "Shorten skill description " + filepath.Base(filepath.Dir(file)),
+			kind:      fixClaudeCLI,
+			target:    file,
+			cliPrompt: prompt,
+			cliArgs:   claudeAssetFixArgs(prompt, permDescription),
+		}, true
+
+	case catAgentDescTooLong:
+		file := r.key
+		prompt := fmt.Sprintf(
+			"The agent at %s has a frontmatter `description:` exceeding the 1,536-character "+
+				"display limit. Read %s and rewrite the description so it is at most 1,200 "+
+				"characters, leading with the agent's primary purpose. Preserve original "+
+				"meaning. Edit only the frontmatter description field; do not change name, "+
+				"model, or the agent body.",
+			file, file,
+		)
+		return &fixProposal{
+			summary:   "Shorten agent description " + filepath.Base(file),
+			kind:      fixClaudeCLI,
+			target:    file,
+			cliPrompt: prompt,
+			cliArgs:   claudeAssetFixArgs(prompt, permDescription),
+		}, true
+
+	case catCommandDescTooLong:
+		file := r.key
+		prompt := fmt.Sprintf(
+			"The slash command at %s has a frontmatter `description:` over 500 characters, "+
+				"which degrades the command palette UX. Read %s and shorten the description to "+
+				"under 400 characters, keeping the action verb-led summary. Edit only the "+
+				"frontmatter description; leave the command body intact.",
+			file, file,
+		)
+		return &fixProposal{
+			summary:   "Shorten command description " + filepath.Base(file),
+			kind:      fixClaudeCLI,
+			target:    file,
+			cliPrompt: prompt,
+			cliArgs:   claudeAssetFixArgs(prompt, permDescription),
+		}, true
 	}
 	return nil, false
+}
+
+// permKind selects which --allowedTools set Claude is granted for an asset fix.
+// Description rewrites only need Edit/Write/Read; slug renames need Bash for `mv`;
+// the slash-conflict path additionally needs Read access to plugin directories
+// (already covered by the default Read perm).
+type permKind int
+
+const (
+	permDescription permKind = iota
+	permRename
+)
+
+// claudeAssetFixArgs returns the Claude CLI args for an asset-fix prompt. The
+// permission profile widens only when the task genuinely needs more — bulk-fix
+// reuses these via buildBulkFixPrompt so the same scoping rules apply.
+func claudeAssetFixArgs(prompt string, perm permKind) []string {
+	tools := "Edit,Write,Read,Glob,Grep"
+	if perm == permRename {
+		tools = "Edit,Write,Read,Glob,Grep,Bash"
+	}
+	return []string{"--allowedTools", tools, "--permission-mode", "acceptEdits", "--print", prompt}
 }
 
 func labelForCat(c summaryCat) string {
@@ -276,12 +392,237 @@ func summarizeRow(r summaryRow) string {
 		return "Plugin installed on disk but not registered in settings"
 	case catSlashConflict:
 		return "Slash-command name collision across plugins/skills"
+	case catSkillNameInvalid:
+		return "Skill name violates ^[a-z0-9-]+$ (CC 2.1.141 hard requirement)"
+	case catSkillNameTooLong:
+		return "Skill name exceeds 64-character hard cap"
+	case catSkillDescTooLong:
+		return "Skill description+when_to_use exceeds 1,536-char display limit"
+	case catAgentDescTooLong:
+		return "Agent description exceeds 1,536-char display limit"
+	case catCommandDescTooLong:
+		return "Command description exceeds 500-char soft limit"
 	}
 	return "(unknown)"
+}
+
+// bulkFixCategory reports whether a category supports the F bulk-fix flow. In-memory
+// categories are excluded — `p` (prune) already handles them in one shot, and bulk
+// LLM rewrites only make sense for fixClaudeCLI categories.
+func bulkFixCategory(c summaryCat) bool {
+	switch c {
+	case catUserDupPlugin, catStaleMcpjson, catDuplicateLoad, catPluginInstalledNotEnabled,
+		catSlashConflict, catSkillNameInvalid, catSkillNameTooLong, catSkillDescTooLong,
+		catAgentDescTooLong, catCommandDescTooLong:
+		return true
+	}
+	return false
+}
+
+// permForCategory returns the permission profile to grant Claude when bulk-fixing
+// the given category. Matches the per-row claudeAssetFixArgs choice.
+func permForCategory(c summaryCat) permKind {
+	switch c {
+	case catSkillNameInvalid, catSkillNameTooLong:
+		return permRename
+	}
+	return permDescription
 }
 
 // pruneOrphanCount returns the count of recoverable orphans (plugin + stdio).
 // Used by the Summary cleanup-hint section that still surfaces `p` to prune.
 func pruneOrphanCount(c *classify.Overrides) int {
 	return len(c.OrphanPlugin) + len(c.OrphanStdio)
+}
+
+// buildBulkFixProposal collects every row sharing the cursor's category and
+// produces a single fixClaudeCLI proposal that hands all targets to Claude in
+// one prompt. Returns (nil, false) when the cursor's category is not bulk-fixable
+// (in-memory or unknown). The proposal's `target` is set to the first file so the
+// existing snapshot/revert pipeline still has a primary handle; additional files
+// are passed via the prompt body and listed in `previewLines` for the user.
+func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixProposal, []string, bool) {
+	if !bulkFixCategory(cursor.cat) {
+		return nil, nil, false
+	}
+	var targets []summaryRow
+	for _, r := range all {
+		if r.cat == cursor.cat {
+			targets = append(targets, r)
+		}
+	}
+	if len(targets) == 0 {
+		return nil, nil, false
+	}
+	// File path(s) Claude will touch — used for snapshot/revert and the
+	// confirmation modal preview. For categories whose `key` IS the file path
+	// (asset-lint findings) we use the keys directly; for config-edit categories
+	// we point at the appropriate config file.
+	var files []string
+	var primary string
+	switch cursor.cat {
+	case catSkillNameInvalid, catSkillNameTooLong, catSkillDescTooLong,
+		catAgentDescTooLong, catCommandDescTooLong:
+		for _, t := range targets {
+			files = append(files, t.key)
+		}
+		primary = files[0]
+	case catUserDupPlugin, catDuplicateLoad:
+		primary = st.paths.ClaudeJSON
+		files = []string{primary}
+	case catStaleMcpjson:
+		primary = filepath.Join(cursor.project, ".claude", "settings.json")
+		files = []string{primary}
+	case catPluginInstalledNotEnabled, catSlashConflict:
+		primary = st.paths.SettingsJSON
+		files = []string{primary}
+	}
+	prompt := buildBulkPrompt(cursor.cat, targets, st)
+	preview := []string{
+		fmt.Sprintf("Bulk fix: %s", summarizeRow(cursor)),
+		fmt.Sprintf("  %d item(s) in this category will be addressed in one Claude run", len(targets)),
+		"",
+		"Files Claude may edit:",
+	}
+	seen := map[string]bool{}
+	for _, f := range files {
+		if seen[f] {
+			continue
+		}
+		seen[f] = true
+		preview = append(preview, "  "+f)
+	}
+	preview = append(preview,
+		"",
+		fmt.Sprintf("Permissions: %s", permLabel(permForCategory(cursor.cat))),
+		"",
+		"y to apply, n/esc to cancel.",
+	)
+	return &fixProposal{
+		summary:      fmt.Sprintf("Bulk-fix %d %s", len(targets), summarizeRow(cursor)),
+		kind:         fixClaudeCLI,
+		target:       primary,
+		cliPrompt:    prompt,
+		cliArgs:      claudeAssetFixArgs(prompt, permForCategory(cursor.cat)),
+		previewLines: preview,
+	}, files, true
+}
+
+func permLabel(p permKind) string {
+	if p == permRename {
+		return "Edit,Write,Read,Glob,Grep,Bash (directory renames require Bash mv)"
+	}
+	return "Edit,Write,Read,Glob,Grep"
+}
+
+// buildBulkPrompt assembles the Claude prompt for a bulk-fix of `targets` (all in
+// the same category). Each prompt is tailored to the category's constraints; the
+// shape is "intro + list of items + constraints + scope guardrails".
+func buildBulkPrompt(cat summaryCat, targets []summaryRow, st *state) string {
+	var b strings.Builder
+	switch cat {
+	case catSkillNameInvalid, catSkillNameTooLong:
+		fmt.Fprintf(&b,
+			"Multiple skills violate the Claude Code 2.1.141 name rule (^[a-z0-9-]+$, max 64 chars). "+
+				"For EACH skill below: read the file, pick a new slug that follows the rule and isn't already "+
+				"used by another skill, update the frontmatter `name:`, and rename the containing directory via "+
+				"`mv <old-dir> <parent>/<new-slug>` so Claude Code's loader picks the skill up under its new "+
+				"directory name. Use Glob/Grep against ~/.claude/skills/ and the installed-plugins directories "+
+				"to verify uniqueness before each rename. Do not edit unrelated skills.\n\n",
+		)
+		for _, t := range targets {
+			fmt.Fprintf(&b, "  - %s\n", t.key)
+		}
+	case catSkillDescTooLong:
+		fmt.Fprintf(&b,
+			"Multiple skill SKILL.md files have a frontmatter `description:` (combined with `when_to_use:` "+
+				"when present) over the 1,536-character display limit documented for Claude Code 2.1.141. "+
+				"Content past the cap is silently dropped from skill listings. For EACH file below: read the "+
+				"current description, then rewrite it (and when_to_use if present) so the combined length is "+
+				"at most 1,200 characters, leading with the primary use case. Preserve meaning; trim filler. "+
+				"Edit only the frontmatter block; do not touch the body, the `name:` field, or any unrelated "+
+				"skills.\n\n",
+		)
+		for _, t := range targets {
+			fmt.Fprintf(&b, "  - %s\n", t.key)
+		}
+	case catAgentDescTooLong:
+		fmt.Fprintf(&b,
+			"Multiple agent files have frontmatter `description:` exceeding the 1,536-character display "+
+				"limit. For EACH file below: rewrite the description to ≤1,200 characters leading with the "+
+				"agent's primary purpose. Preserve meaning. Edit only frontmatter description; leave name, "+
+				"model, body, and other agents untouched.\n\n",
+		)
+		for _, t := range targets {
+			fmt.Fprintf(&b, "  - %s\n", t.key)
+		}
+	case catCommandDescTooLong:
+		fmt.Fprintf(&b,
+			"Multiple slash command files have a frontmatter `description:` over 500 characters, degrading "+
+				"the command palette UX. For EACH file below: shorten the description to under 400 characters "+
+				"with a verb-led action summary. Edit only frontmatter description; leave bodies intact and "+
+				"do not touch unrelated commands.\n\n",
+		)
+		for _, t := range targets {
+			fmt.Fprintf(&b, "  - %s\n", t.key)
+		}
+	case catUserDupPlugin:
+		fmt.Fprintf(&b,
+			"In ~/.claude.json, several user-scope MCP servers are ALSO provided by installed plugins. "+
+				"Plugin-shipped MCPs auto-load when the plugin is enabled, so two copies collide. For EACH name "+
+				"below, move the user-scope entry into ~/.claude-mcp-stash.json (preserving any user-only "+
+				"config overrides) and remove it from the user-scope mcpServers map. Keep the plugin source as "+
+				"the active definition. Do not touch any other MCP servers.\n\n",
+		)
+		for _, t := range targets {
+			fmt.Fprintf(&b, "  - %s\n", t.key)
+		}
+	case catDuplicateLoad:
+		fmt.Fprintf(&b,
+			"In ~/.claude.json, several MCP servers are defined at BOTH user scope and project scope for "+
+				"the current project (%s), which causes them to load twice. For EACH name below, decide which "+
+				"scope wins (project scope for per-project workflows; user scope for cross-project defaults), "+
+				"and remove the entry from the other scope while preserving the entry's full configuration on "+
+				"the winning scope. Do not touch unrelated MCP servers.\n\n",
+			st.project,
+		)
+		for _, t := range targets {
+			fmt.Fprintf(&b, "  - %s\n", t.key)
+		}
+	case catStaleMcpjson:
+		settingsPath := filepath.Join(st.project, ".claude", "settings.json")
+		fmt.Fprintf(&b,
+			"In %s, the enabledMcpjsonServers/disabledMcpjsonServers lists reference MCP names that no "+
+				"longer exist in %s/.mcp.json. For EACH stale name below, remove it from whichever list it "+
+				"appears in. Preserve all other entries verbatim. Do not edit %s/.mcp.json.\n\n",
+			settingsPath, st.project, st.project,
+		)
+		for _, t := range targets {
+			fmt.Fprintf(&b, "  - %s\n", t.key)
+		}
+	case catPluginInstalledNotEnabled:
+		fmt.Fprintf(&b,
+			"In ~/.claude/settings.json, register the following plugins that are already installed under "+
+				"~/.claude/plugins/ but missing from the enabledPlugins map. Inspect "+
+				"~/.claude/plugins/installed_plugins.json to confirm each entry's correct marketplace suffix "+
+				"(form: \"<id>@<marketplace>\"), then add them to enabledPlugins set to true. Preserve every "+
+				"other plugin entry verbatim.\n\n",
+		)
+		for _, t := range targets {
+			fmt.Fprintf(&b, "  - %s\n", t.key)
+		}
+	case catSlashConflict:
+		fmt.Fprintf(&b,
+			"Multiple slash commands are claimed by more than one source (plugin skill vs plugin command, "+
+				"or two different plugins). For EACH conflicting name below: inspect "+
+				"~/.claude/plugins/installed_plugins.json and the relevant plugin directories under "+
+				"~/.claude/plugins/ to identify the contributors, pick the definition the user most likely "+
+				"wants, and add the others to the appropriate skillOverrides/commandOverrides map in "+
+				"~/.claude/settings.json with value \"off\". Do NOT uninstall any plugins.\n\n",
+		)
+		for _, t := range targets {
+			fmt.Fprintf(&b, "  - /%s\n", t.key)
+		}
+	}
+	return b.String()
 }

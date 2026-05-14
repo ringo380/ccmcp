@@ -308,3 +308,94 @@ func TestSummaryStashGhostFix(t *testing.T) {
 		}
 	}
 }
+
+// TestSummaryAssetLintRowsAppear seeds an oversize skill description and verifies
+// the asset-lint row shows up in the Summary tab as a fixable item.
+func TestSummaryAssetLintRowsAppear(t *testing.T) {
+	st, p := buildState(t)
+	// Write a skill with a description over the 1536-char display limit.
+	skillDir := p.ClaudeConfigDir + "/skills/oversize-skill"
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("a", 1700)
+	body := "---\nname: oversize-skill\ndescription: " + long + "\n---\n"
+	if err := os.WriteFile(skillDir+"/SKILL.md", []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newModel(st)
+	out := drive(m, "9")
+	clean := stripANSI(out)
+	if !strings.Contains(clean, "SKILL003") {
+		t.Fatalf("expected SKILL003 row in Summary; got:\n%s", clean)
+	}
+	if !strings.Contains(clean, "asset-lint findings") {
+		t.Fatalf("expected asset-lint header; got:\n%s", clean)
+	}
+}
+
+// TestBulkFixCategoryGating verifies that bulkFixCategory accepts the expected
+// categories and rejects in-memory ones.
+func TestBulkFixCategoryGating(t *testing.T) {
+	bulkable := []summaryCat{
+		catUserDupPlugin, catStaleMcpjson, catDuplicateLoad, catPluginInstalledNotEnabled,
+		catSlashConflict, catSkillNameInvalid, catSkillNameTooLong, catSkillDescTooLong,
+		catAgentDescTooLong, catCommandDescTooLong,
+	}
+	for _, c := range bulkable {
+		if !bulkFixCategory(c) {
+			t.Errorf("bulkFixCategory(%v) = false; expected true", c)
+		}
+	}
+	notBulkable := []summaryCat{catOrphanPlugin, catOrphanStdio, catStashGhost, catPluginEnabledNotInstalled, catNone}
+	for _, c := range notBulkable {
+		if bulkFixCategory(c) {
+			t.Errorf("bulkFixCategory(%v) = true; expected false", c)
+		}
+	}
+}
+
+// TestBuildBulkFixProposalPermissions verifies the permission profile selection:
+// rename categories get Bash; description-rewrite categories don't.
+func TestBuildBulkFixProposalPermissions(t *testing.T) {
+	st, _ := buildState(t)
+	cases := []struct {
+		cat       summaryCat
+		wantBash  bool
+	}{
+		{catSkillNameInvalid, true},
+		{catSkillNameTooLong, true},
+		{catSkillDescTooLong, false},
+		{catAgentDescTooLong, false},
+		{catCommandDescTooLong, false},
+	}
+	for _, c := range cases {
+		row := summaryRow{cat: c.cat, key: "/tmp/x.md"}
+		all := []summaryRow{row}
+		p, _, ok := buildBulkFixProposal(row, all, st)
+		if !ok {
+			t.Errorf("bulk proposal for %v unexpectedly refused", c.cat)
+			continue
+		}
+		joined := strings.Join(p.cliArgs, " ")
+		hasBash := strings.Contains(joined, "Bash")
+		if hasBash != c.wantBash {
+			t.Errorf("cat %v: hasBash=%v, want %v (args=%q)", c.cat, hasBash, c.wantBash, joined)
+		}
+	}
+}
+
+// TestBulkFixRefusesInMemoryCategories: F on an orphan row must not invoke the
+// bulk machinery; should flash a hint pointing at `p`.
+func TestBulkFixRefusesInMemoryCategories(t *testing.T) {
+	st, _ := buildState(t)
+	seedOrphanOverride(t, st, "ghost-bulk-test")
+	m := newModel(st)
+	m.summary.claudeOnPath = true
+	out := drive(m, "9", "F")
+	clean := stripANSI(out)
+	if !strings.Contains(clean, "bulk-fix not available") {
+		t.Fatalf("expected refusal flash for in-memory category; got:\n%s", clean)
+	}
+}
