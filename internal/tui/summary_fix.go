@@ -188,20 +188,27 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 
 	case catPluginInstalledNotEnabled:
 		id := r.key
-		prompt := fmt.Sprintf(
-			"In ~/.claude/settings.json, register the plugin %q that is already installed under "+
-				"~/.claude/plugins/ but missing from the enabledPlugins map. Inspect "+
-				"~/.claude/plugins/installed_plugins.json to confirm the correct marketplace suffix (the entry "+
-				"keys take the form \"<id>@<marketplace>\"), then add it to enabledPlugins set to true. "+
-				"Preserve every other plugin entry verbatim.",
-			id,
-		)
 		return &fixProposal{
-			summary:   fmt.Sprintf("Register installed plugin %q", id),
-			kind:      fixClaudeCLI,
-			target:    st.paths.SettingsJSON,
-			cliPrompt: prompt,
-			cliArgs:   claudeFixArgs(prompt),
+			summary: fmt.Sprintf("Register installed plugin %q", id),
+			kind:    fixInMemory,
+			previewLines: []string{
+				"Set enabledPlugins[\"" + id + "\"] = true in ~/.claude/settings.json:",
+				"",
+				"The plugin is installed under ~/.claude/plugins/ but missing from",
+				"the enabledPlugins map, so Claude Code skips it on load.",
+				"Registering it as enabled activates the plugin's commands, skills,",
+				"agents, and MCP servers on next launch.",
+				"",
+				"Press w to save, or Q to discard.",
+			},
+			applyFn: func(s *state) (string, error) {
+				if _, known := s.settings.PluginEnabled(id); known {
+					return "", fmt.Errorf("plugin %q already registered — refresh with r", id)
+				}
+				s.settings.SetPluginEnabled(id, true)
+				s.dirtySettings = true
+				return "registered installed plugin " + id + " (press w to save)", nil
+			},
 		}, true
 
 	case catSlashConflict:
@@ -463,6 +470,51 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 	}
 	if len(targets) == 0 {
 		return nil, nil, false
+	}
+	// Special-case: catPluginInstalledNotEnabled is a deterministic settings.json
+	// edit — register each installed plugin with enabledPlugins[id]=true. No LLM
+	// needed; build an in-memory bulk proposal so the user gets one-keystroke fix
+	// for the whole batch without spawning Claude.
+	if cursor.cat == catPluginInstalledNotEnabled {
+		ids := make([]string, 0, len(targets))
+		for _, t := range targets {
+			ids = append(ids, t.key)
+		}
+		preview := []string{
+			fmt.Sprintf("Register %d installed plugin(s) in ~/.claude/settings.json:", len(ids)),
+			"",
+		}
+		for _, id := range ids {
+			preview = append(preview, "  enabledPlugins[\""+id+"\"] = true")
+		}
+		preview = append(preview,
+			"",
+			"Each plugin is installed under ~/.claude/plugins/ but missing from",
+			"enabledPlugins, so Claude Code skips it on load.",
+			"",
+			"Press w to save, or Q to discard.",
+		)
+		return &fixProposal{
+			summary:      fmt.Sprintf("Bulk-register %d installed plugin(s)", len(ids)),
+			kind:         fixInMemory,
+			previewLines: preview,
+			cat:          cursor.cat,
+			applyFn: func(s *state) (string, error) {
+				var added []string
+				for _, id := range ids {
+					if _, known := s.settings.PluginEnabled(id); known {
+						continue
+					}
+					s.settings.SetPluginEnabled(id, true)
+					added = append(added, id)
+				}
+				if len(added) == 0 {
+					return "", fmt.Errorf("all %d plugin(s) already registered — refresh with r", len(ids))
+				}
+				s.dirtySettings = true
+				return fmt.Sprintf("registered %d plugin(s) (press w to save)", len(added)), nil
+			},
+		}, []string{st.paths.SettingsJSON}, true
 	}
 	// File path(s) Claude will touch — used for snapshot/revert and the
 	// confirmation modal preview. For categories whose `key` IS the file path
