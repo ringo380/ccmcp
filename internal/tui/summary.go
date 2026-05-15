@@ -73,11 +73,14 @@ type summaryView struct {
 	llmResult  string // last review body
 	llmFor     summaryRow
 
-	// In-flight CLI fix state.
+	// In-flight CLI fix state. cliLog/showLog mirror the Doctor tab's
+	// togglable log panel — L reveals the last 10 streamed lines.
 	fixRunning   bool
 	fixStartedAt time.Time
 	fixTarget    string
 	fixOutput    []byte
+	cliLog       []string
+	showLog      bool
 
 	// claudeOnPath is cached at view init. When false, the keys gated on the
 	// claude CLI (`l` review, `f` fix for fixClaudeCLI proposals, and `F` bulk
@@ -102,6 +105,19 @@ func newSummaryView(st *state) *summaryView {
 }
 
 func (v *summaryView) update(msg tea.Msg) tea.Cmd {
+	if line, ok := msg.(cliStreamLineMsg); ok {
+		v.cliLog = appendStreamLine(v.cliLog, line.line, line.stderr)
+		return nil
+	}
+	if done, ok := msg.(chatDoneMsg); ok && done.origin == tabSummary {
+		if done.err != nil {
+			v.flash = styleErr.Render("chat session ended: " + done.err.Error())
+		} else {
+			v.flash = styleOK.Render("chat session ended — re-scanning")
+		}
+		v.invalidateAssets()
+		return nil
+	}
 	if done, ok := msg.(fixDoneMsg); ok && done.origin == tabSummary {
 		v.fixRunning = false
 		v.fixOutput = done.output
@@ -269,6 +285,17 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 	case "g", "home":
 		v.top = 0
 		v.cursor = 0
+	case "L":
+		v.showLog = !v.showLog
+		if v.showLog && len(v.cliLog) == 0 && !v.fixRunning {
+			v.flash = styleDim.Render("(no CLI activity yet — log will populate once a fix runs)")
+		}
+	case "c":
+		if !v.claudeOnPath {
+			v.flash = styleWarn.Render("chat follow-up unavailable — claude CLI not found in PATH")
+			return nil
+		}
+		return execChatCmd(v.st.project, v.chatContextPrompt(), tabSummary)
 	case "l":
 		if v.llmRunning {
 			return nil
@@ -435,6 +462,7 @@ func (v *summaryView) executeFix() tea.Cmd {
 		v.fixStartedAt = time.Now()
 		v.fixTarget = p.target
 		v.fixOutput = nil
+		v.cliLog = v.cliLog[:0]
 		return execFixCmd(cmd, p, tabSummary)
 	}
 	return nil
@@ -509,10 +537,14 @@ func (v *summaryView) render() string {
 		if target == "" || target == "." {
 			target = "config"
 		}
-		return "Summary — " + v.st.spinnerFrame +
+		head := "Summary — " + v.st.spinnerFrame +
 			styleProgress.Render(fmt.Sprintf("Applying LLM fix to %s… (%s)", target, fixElapsed(v.fixStartedAt))) +
-			"\n" + styleDim.Render("running claude --print non-interactively") +
+			"\n" + styleDim.Render("running claude --print non-interactively; L: toggle live log") +
 			"\n" + v.flash
+		if v.showLog {
+			head += "\n" + renderStreamPanel("Live CLI activity (last 10 lines):", v.cliLog, 10, v.w)
+		}
+		return head
 	}
 
 	if v.llmRunning {
@@ -965,6 +997,16 @@ func (v *summaryView) buildRows() []summaryRow {
 			if iss.Code == "AGENT001" && iss.Severity == doctor.SeverityError {
 				addFix(fmt.Sprintf("    %s  %s  %s", styleErr.Render("✗"), iss.Code, iss.Message), catAgentDescTooLong, iss.File, "")
 			}
+			if iss.Code == "AGENT002" {
+				// Surface both severities — at 13k+ the user benefits from
+				// being nudged before the hard cap; at 15k the lint already
+				// matters operationally.
+				icon := styleWarn.Render("⚠")
+				if iss.Severity == doctor.SeverityError {
+					icon = styleErr.Render("✗")
+				}
+				addFix(fmt.Sprintf("    %s  %s  %s", icon, iss.Code, iss.Message), catAgentBodyTooLong, iss.File, "")
+			}
 		}
 		for _, iss := range cmdIssues {
 			if iss.Code == "CMD001" {
@@ -1074,7 +1116,7 @@ func (v *summaryView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *summaryView) helpText() string {
 	if v.fixRunning {
-		return "applying LLM fix — please wait"
+		return "applying LLM fix — please wait  L: toggle live log"
 	}
 	if v.llmRunning {
 		return "LLM review in progress…"
@@ -1089,7 +1131,28 @@ func (v *summaryView) helpText() string {
 	if !v.claudeOnPath {
 		suffix = "  " + styleDim.Render("(claude CLI missing)")
 	}
-	return "j/k: navigate  f: fix issue  l: LLM review  p: bulk prune  g: top" + suffix
+	return "j/k: navigate  f: fix  F: bulk-fix  l: review  L: toggle log  c: chat  p: prune  g: top" + suffix
+}
+
+// chatContextPrompt builds a short context block appended to the system
+// prompt of the follow-up interactive claude session, so the model knows
+// what the user was just doing in ccmcp. Best-effort.
+func (v *summaryView) chatContextPrompt() string {
+	var b strings.Builder
+	b.WriteString("The user just dropped out of the ccmcp TUI Summary tab. ")
+	switch {
+	case v.postReview != nil:
+		fmt.Fprintf(&b, "They just applied a fix (%q) targeting %s and are reviewing the diff. ",
+			v.postReview.summary, v.postReview.target)
+	case len(v.rows) > 0 && v.cursor < len(v.rows) && v.rows[v.cursor].fixable():
+		r := v.rows[v.cursor]
+		fmt.Fprintf(&b, "They had cursor on a Summary issue: %s (key=%q). ",
+			summarizeRow(r), r.key)
+	default:
+		b.WriteString("They want to discuss MCP server / plugin / skill / agent / command hygiene in this project. ")
+	}
+	b.WriteString("Help them act on whatever they want to do next. The cwd is the project root; you have full Edit access.")
+	return b.String()
 }
 
 func (v *summaryView) capturingInput() bool { return false }

@@ -2,7 +2,12 @@ package doctor
 
 import (
 	"fmt"
+	"os"
 	"regexp"
+	"strings"
+	"sync"
+
+	"github.com/pkoukk/tiktoken-go"
 
 	"github.com/ringo380/ccmcp/internal/agents"
 	"github.com/ringo380/ccmcp/internal/assets"
@@ -31,6 +36,13 @@ const (
 	warnSkillDescChars    = 1200
 	maxAgentDescChars     = 1536
 	warnAgentDescChars    = 1200
+	// maxAgentBodyTokens caps the agent body (everything after the closing
+	// `---`) at Claude Code's 15k-token budget. Beyond this the model's
+	// context for the agent is silently truncated, defeating its purpose.
+	// warnAgentBodyTokens fires at 13k so users have headroom to trim
+	// before hitting the hard cap.
+	maxAgentBodyTokens    = 15000
+	warnAgentBodyTokens   = 13000
 	warnCommandDescChars  = 500
 	warnPluginDescChars   = 500
 )
@@ -99,7 +111,8 @@ func LintSkills(sks []skills.Skill) []Issue {
 	return out
 }
 
-// LintAgents validates each agent's frontmatter description length.
+// LintAgents validates each agent's frontmatter description length AND its
+// body token count against Claude Code's 15k-token budget.
 func LintAgents(ags []agents.Agent) []Issue {
 	var out []Issue
 	for _, a := range ags {
@@ -126,8 +139,83 @@ func LintAgents(ags []agents.Agent) []Issue {
 				Message:  fmt.Sprintf("agent description length %d approaches the %d-character display limit", len(desc), maxAgentDescChars),
 			})
 		}
+		if bodyTokens, err := agentBodyTokenCount(a.File); err == nil {
+			switch {
+			case bodyTokens > maxAgentBodyTokens:
+				out = append(out, Issue{
+					File:     a.File,
+					Severity: SeverityError,
+					Code:     "AGENT002",
+					Message:  fmt.Sprintf("agent body is %d tokens, over the %d-token Claude Code budget", bodyTokens, maxAgentBodyTokens),
+				})
+			case bodyTokens > warnAgentBodyTokens:
+				out = append(out, Issue{
+					File:     a.File,
+					Severity: SeverityWarning,
+					Code:     "AGENT002",
+					Message:  fmt.Sprintf("agent body is %d tokens, approaching the %d-token Claude Code budget", bodyTokens, maxAgentBodyTokens),
+				})
+			}
+		}
 	}
 	return out
+}
+
+// tokenEncoderOnce memoises the cl100k_base BPE encoder. Anthropic doesn't
+// publish its tokenizer publicly; OpenAI's cl100k_base is the standard close-
+// enough analog (within ~5% on prose, much closer than the 4-chars-per-token
+// rule of thumb).
+var (
+	tokenEncoderOnce sync.Once
+	tokenEncoder     *tiktoken.Tiktoken
+	tokenEncoderErr  error
+)
+
+func getTokenEncoder() (*tiktoken.Tiktoken, error) {
+	tokenEncoderOnce.Do(func() {
+		tokenEncoder, tokenEncoderErr = tiktoken.GetEncoding("cl100k_base")
+	})
+	return tokenEncoder, tokenEncoderErr
+}
+
+// agentBodyTokenCount reads `path`, strips the leading YAML frontmatter
+// block (if any), and returns the BPE token count of the remainder. Returns
+// an error only on read or encoder-init failure — empty bodies are 0 tokens.
+func agentBodyTokenCount(path string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	body := stripFrontmatter(string(data))
+	enc, err := getTokenEncoder()
+	if err != nil {
+		return 0, err
+	}
+	return len(enc.Encode(body, nil, nil)), nil
+}
+
+// stripFrontmatter removes a leading `---\n...\n---\n` YAML block if present.
+// Falls back to returning the input unchanged when no frontmatter is detected.
+func stripFrontmatter(s string) string {
+	if !strings.HasPrefix(s, "---\n") && !strings.HasPrefix(s, "---\r\n") {
+		return s
+	}
+	// Find the closing --- on its own line.
+	rest := s[4:]
+	for {
+		idx := strings.Index(rest, "\n---")
+		if idx < 0 {
+			return s
+		}
+		// Make sure the match is a complete line: followed by \n or EOF.
+		after := idx + 4
+		if after >= len(rest) || rest[after] == '\n' || rest[after] == '\r' {
+			body := rest[after:]
+			body = strings.TrimLeft(body, "\r\n")
+			return body
+		}
+		rest = rest[after:]
+	}
 }
 
 // LintCommands warns when a command frontmatter description is so long the palette

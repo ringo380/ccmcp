@@ -121,6 +121,43 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	if done, ok := msg.(chatDoneMsg); ok {
+		switch done.origin {
+		case tabDoctor:
+			cmd := m.doctor.update(done)
+			if m.doctor.flash != "" {
+				m.message = m.doctor.flash
+				m.doctor.flash = ""
+			}
+			return m, cmd
+		case tabSummary:
+			cmd := m.summary.update(done)
+			if m.summary.flash != "" {
+				m.message = m.summary.flash
+				m.summary.flash = ""
+			}
+			return m, cmd
+		}
+	}
+	// cliStreamLineMsg routes the same way — each line carries an origin so
+	// the line lands on the originating view's ring buffer regardless of
+	// where the user has navigated since starting the fix. Returning
+	// `line.next` re-arms the drainer for the following line; the chain ends
+	// when execFixCmd emits the terminal fixDoneMsg.
+	if line, ok := msg.(cliStreamLineMsg); ok {
+		switch line.origin {
+		case tabDoctor:
+			m.doctor.update(line)
+			return m, line.next
+		case tabSummary:
+			m.summary.update(line)
+			return m, line.next
+		default:
+			// Defensively keep draining so an unknown-origin run doesn't
+			// deadlock the channel.
+			return m, line.next
+		}
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -182,39 +219,51 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "tab":
 			m.tab = (m.tab + 1) % tabID(len(tabs))
+			m.message = ""
 			return m, m.tabEnterCmd()
 		case "shift+tab":
 			m.tab = (m.tab + tabID(len(tabs)) - 1) % tabID(len(tabs))
+			m.message = ""
 			return m, m.tabEnterCmd()
 		case "1":
 			m.tab = tabMCPs
+			m.message = ""
 			return m, m.mcps.initialCheckCmd()
 		case "2":
 			m.tab = tabPlugins
+			m.message = ""
 			return m, m.plugins.initialCheckCmd()
 		case "3":
 			m.tab = tabMarketplaces
+			m.message = ""
 			return m, m.marketplaces.initialCheckCmd()
 		case "4":
 			m.tab = tabDiscover
+			m.message = ""
 			return m, m.discover.initialCheckCmd()
 		case "5":
 			m.tab = tabSkills
+			m.message = ""
 			return m, nil
 		case "6":
 			m.tab = tabAgents
+			m.message = ""
 			return m, nil
 		case "7":
 			m.tab = tabCommands
+			m.message = ""
 			return m, nil
 		case "8":
 			m.tab = tabProfiles
+			m.message = ""
 			return m, nil
 		case "9":
 			m.tab = tabSummary
+			m.message = ""
 			return m, nil
 		case "0":
 			m.tab = tabDoctor
+			m.message = ""
 			return m, nil
 		}
 	}

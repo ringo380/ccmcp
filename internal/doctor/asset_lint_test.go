@@ -123,6 +123,44 @@ func TestLintAgentsDescriptionTooLong(t *testing.T) {
 	}
 }
 
+func TestLintAgentsBodyOverBudget(t *testing.T) {
+	tmp := t.TempDir()
+	file := filepath.Join(tmp, "fat-agent.md")
+	// Each "lorem ipsum " is 2 tokens in cl100k_base, so 8000 repeats
+	// ≈ 16k tokens — comfortably over the 15k error threshold.
+	body := "---\nname: fat\ndescription: short\n---\n" + strings.Repeat("lorem ipsum ", 8000)
+	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ag := agents.Agent{Name: "fat", Description: "short", File: file}
+	issues := LintAgents([]agents.Agent{ag})
+	var errFound bool
+	for _, iss := range issues {
+		if iss.Code == "AGENT002" && iss.Severity == SeverityError {
+			errFound = true
+		}
+	}
+	if !errFound {
+		t.Errorf("expected AGENT002 error for overbudget body; got %v", issues)
+	}
+}
+
+func TestLintAgentsBodyUnderBudget(t *testing.T) {
+	tmp := t.TempDir()
+	file := filepath.Join(tmp, "thin-agent.md")
+	body := "---\nname: thin\ndescription: short\n---\n# body\nstays well under the 13k warn threshold.\n"
+	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ag := agents.Agent{Name: "thin", Description: "short", File: file}
+	issues := LintAgents([]agents.Agent{ag})
+	for _, iss := range issues {
+		if iss.Code == "AGENT002" {
+			t.Errorf("did not expect AGENT002 for thin body; got %v", iss)
+		}
+	}
+}
+
 func TestLintCommandsDescription(t *testing.T) {
 	long := strings.Repeat("z", 600)
 	cmd := commands.Command{Slug: "x", Description: long, File: "/tmp/cmd.md"}

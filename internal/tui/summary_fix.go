@@ -32,6 +32,7 @@ const (
 	catSkillNameTooLong    // >64 chars: rename file AND directory
 	catSkillDescTooLong    // combined description+when_to_use too long: rewrite frontmatter
 	catAgentDescTooLong    // agent description too long
+	catAgentBodyTooLong    // agent body exceeds Claude Code's 15k-token budget
 	catCommandDescTooLong  // command description too long
 )
 
@@ -300,11 +301,39 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 		)
 		wrapped := wrapImperativeFixPrompt(file, prompt)
 		return &fixProposal{
-			summary:   "Shorten agent description " + filepath.Base(file),
-			kind:      fixClaudeCLI,
-			target:    file,
-			cliPrompt: wrapped,
-			cliArgs:   claudeAssetFixArgs(wrapped, permDescription),
+			summary:      "Shorten agent description " + filepath.Base(file),
+			kind:         fixClaudeCLI,
+			target:       file,
+			cliPrompt:    wrapped,
+			cliPromptRaw: prompt,
+			cliArgs:      claudeAssetFixArgs(wrapped, permDescription),
+		}, true
+
+	case catAgentBodyTooLong:
+		file := r.key
+		prompt := fmt.Sprintf(
+			"The agent at %s has a body (post-frontmatter content) exceeding Claude Code's "+
+				"15,000-token agent budget. Beyond this cap Claude Code silently truncates the "+
+				"agent's context, which defeats the agent's purpose. Read %s and trim the body "+
+				"to AT MOST 13,000 tokens by:\n"+
+				"  - removing or condensing duplicate examples\n"+
+				"  - tightening verbose explanations\n"+
+				"  - extracting reference material into a sibling file (a `references/` "+
+				"subdirectory or a linked Markdown file) and replacing it with a brief pointer\n"+
+				"  - dropping content that no longer matches how the agent is actually used\n"+
+				"Preserve the agent's core operating instructions, name, model, and frontmatter "+
+				"`description`. Edit ONLY the body (everything after the closing `---`). Do not "+
+				"touch any other agent.",
+			file, file,
+		)
+		wrapped := wrapImperativeFixPrompt(file, prompt)
+		return &fixProposal{
+			summary:      "Trim agent body " + filepath.Base(file),
+			kind:         fixClaudeCLI,
+			target:       file,
+			cliPrompt:    wrapped,
+			cliPromptRaw: prompt,
+			cliArgs:      claudeAssetFixArgs(wrapped, permDescription),
 		}, true
 
 	case catCommandDescTooLong:
@@ -428,6 +457,8 @@ func summarizeRow(r summaryRow) string {
 		return "Skill description+when_to_use exceeds 1,536-char display limit"
 	case catAgentDescTooLong:
 		return "Agent description exceeds 1,536-char display limit"
+	case catAgentBodyTooLong:
+		return "Agent body exceeds Claude Code's 15k-token budget"
 	case catCommandDescTooLong:
 		return "Command description exceeds 500-char soft limit"
 	}
@@ -441,7 +472,7 @@ func bulkFixCategory(c summaryCat) bool {
 	switch c {
 	case catUserDupPlugin, catStaleMcpjson, catDuplicateLoad, catPluginInstalledNotEnabled,
 		catSlashConflict, catSkillNameInvalid, catSkillNameTooLong, catSkillDescTooLong,
-		catAgentDescTooLong, catCommandDescTooLong:
+		catAgentDescTooLong, catAgentBodyTooLong, catCommandDescTooLong:
 		return true
 	}
 	return false
@@ -535,7 +566,7 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 	var primary string
 	switch cursor.cat {
 	case catSkillNameInvalid, catSkillNameTooLong, catSkillDescTooLong,
-		catAgentDescTooLong, catCommandDescTooLong:
+		catAgentDescTooLong, catAgentBodyTooLong, catCommandDescTooLong:
 		for _, t := range targets {
 			files = append(files, t.key)
 		}
@@ -597,6 +628,7 @@ func categoryAffectsAssets(c summaryCat) bool {
 		catSkillNameTooLong,             // same
 		catSkillDescTooLong,             // rewrites SKILL.md frontmatter → lint result changes
 		catAgentDescTooLong,             // same for agents
+		catAgentBodyTooLong,             // trims agent body → lint result changes
 		catCommandDescTooLong:           // same for commands
 		return true
 	}
@@ -647,6 +679,19 @@ func buildBulkPrompt(cat summaryCat, targets []summaryRow, st *state) string {
 				"limit. For EACH file below: rewrite the description to ≤1,200 characters leading with the "+
 				"agent's primary purpose. Preserve meaning. Edit only frontmatter description; leave name, "+
 				"model, body, and other agents untouched.\n\n",
+		)
+		for _, t := range targets {
+			fmt.Fprintf(&b, "  - %s\n", t.key)
+		}
+	case catAgentBodyTooLong:
+		fmt.Fprintf(&b,
+			"Multiple agent files have bodies exceeding Claude Code's 15,000-token budget. Beyond this cap "+
+				"Claude Code silently truncates the agent's context, defeating its purpose. For EACH file "+
+				"below: trim the body to AT MOST 13,000 tokens by removing duplicate examples, tightening "+
+				"verbose explanations, extracting reference material into a sibling file with a brief "+
+				"pointer in place, or dropping outdated content. Preserve the agent's core operating "+
+				"instructions, name, model, and frontmatter description. Edit ONLY the body (everything "+
+				"after the closing `---`); leave other agents untouched.\n\n",
 		)
 		for _, t := range targets {
 			fmt.Fprintf(&b, "  - %s\n", t.key)

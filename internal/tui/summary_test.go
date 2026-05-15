@@ -36,7 +36,7 @@ func TestSummaryCursorLandsOnFixableRow(t *testing.T) {
 	if !strings.Contains(clean, "ghost-orphan-row") {
 		t.Fatalf("expected the orphan key in output:\n%s", clean)
 	}
-	if !strings.Contains(clean, "f: fix issue") {
+	if !strings.Contains(clean, "f: fix") {
 		t.Fatalf("expected help footer to mention f, got:\n%s", clean)
 	}
 }

@@ -46,11 +46,14 @@ type doctorView struct {
 	// In-flight CLI fix state. When fixRunning is true, the view renders a
 	// spinner+elapsed panel instead of the lint list so the user has live
 	// feedback while claude --print works. fixOutput captures combined
-	// stdout/stderr for error display on failure.
+	// stdout/stderr for error display on failure. cliLog buffers the streamed
+	// stdout/stderr lines so `L` can reveal them in a bordered panel.
 	fixRunning   bool
 	fixStartedAt time.Time
 	fixTarget    string
 	fixOutput    []byte
+	cliLog       []string
+	showLog      bool
 
 	// claudeOnPath is cached at view init: when false, LLM review and fix-via-CLI
 	// are unavailable and the keys 'l' / 'f' / 'a' / 'F' surface a friendly
@@ -131,6 +134,19 @@ func tuiMemoryPath(claudeConfigDir, projectPath string) string {
 }
 
 func (v *doctorView) update(msg tea.Msg) tea.Cmd {
+	if line, ok := msg.(cliStreamLineMsg); ok {
+		v.cliLog = appendStreamLine(v.cliLog, line.line, line.stderr)
+		return nil
+	}
+	if done, ok := msg.(chatDoneMsg); ok && done.origin == tabDoctor {
+		if done.err != nil {
+			v.flash = styleErr.Render("chat session ended: " + done.err.Error())
+		} else {
+			v.flash = styleOK.Render("chat session ended — re-linting")
+		}
+		v.loaded = false
+		return nil
+	}
 	if result, ok := msg.(doctorLLMResultMsg); ok {
 		v.llmRunning = false
 		v.llmResults = result.results
@@ -350,6 +366,22 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		// Drop back to lint view so the post-review diff panel renders cleanly
 		// over it rather than fighting the review text for screen space.
 		v.showLLM = false
+	case "L":
+		v.showLog = !v.showLog
+		if v.showLog && len(v.cliLog) == 0 && !v.fixRunning {
+			v.flash = styleDim.Render("(no CLI activity yet — log will populate once a fix runs)")
+		}
+	case "c":
+		// Drop into an interactive `claude` session in the project root so
+		// the user can talk through what just happened (or didn't), ask the
+		// model questions, and apply manual follow-up edits. The TUI
+		// suspends; on exit chatDoneMsg re-lints.
+		if !v.claudeOnPath {
+			v.flash = styleWarn.Render("chat follow-up unavailable — claude CLI not found in PATH")
+			return nil
+		}
+		ctx := v.chatContextPrompt()
+		return execChatCmd(v.st.project, ctx, tabDoctor)
 	case "r":
 		v.loaded = false // render() will re-run lint on the next frame
 		v.showLLM = false
@@ -658,6 +690,7 @@ func (v *doctorView) executeFix() tea.Cmd {
 	v.fixStartedAt = time.Now()
 	v.fixTarget = p.target
 	v.fixOutput = nil
+	v.cliLog = v.cliLog[:0]
 	return execFixCmd(cmd, p, tabDoctor)
 }
 
@@ -795,10 +828,14 @@ func (v *doctorView) render() string {
 		if target == "" || target == "." {
 			target = "selected file"
 		}
-		return "Doctor — " + v.st.spinnerFrame +
+		head := "Doctor — " + v.st.spinnerFrame +
 			styleProgress.Render(fmt.Sprintf("Applying LLM fix to %s… (%s)", target, fixElapsed(v.fixStartedAt))) +
-			"\n" + styleDim.Render("running claude --print non-interactively; press q to quit") +
+			"\n" + styleDim.Render("running claude --print non-interactively; L: toggle live log, q to quit") +
 			"\n" + v.flash
+		if v.showLog {
+			head += "\n" + renderStreamPanel("Live CLI activity (last 10 lines):", v.cliLog, 10, v.w)
+		}
+		return head
 	}
 
 	if v.llmRunning {
@@ -1036,12 +1073,38 @@ func (v *doctorView) helpText() string {
 		suffix = "  " + styleDim.Render("(claude CLI missing)")
 	}
 	if v.showLLM {
-		return "r: re-run lint  l: LLM review  a: apply review  f: fix issue  F: bulk-fix category  j/k: scroll  g/G: top/bottom" + suffix
+		return "r: re-run lint  l: LLM review  a: apply review  f: fix  F: bulk-fix  L: toggle log  c: chat  j/k: scroll  g/G: top/bottom" + suffix
 	}
-	return "r: re-run lint  l: LLM review  j/k: navigate  f: fix issue  F: bulk-fix category  g/G: top/bottom" + suffix
+	return "r: re-run lint  l: LLM review  j/k: navigate  f: fix  F: bulk-fix  L: toggle log  c: chat  g/G: top/bottom" + suffix
 }
 
 func (v *doctorView) capturingInput() bool { return false }
+
+// chatContextPrompt builds a short context block appended to the system
+// prompt of the follow-up interactive claude session, so the model knows
+// what the user was just doing in ccmcp. Best-effort — when there's no
+// fresh fix context, an empty string is returned and the chat session
+// starts unprimed.
+func (v *doctorView) chatContextPrompt() string {
+	var b strings.Builder
+	b.WriteString("The user just dropped out of the ccmcp TUI Doctor tab. ")
+	switch {
+	case v.lastFix != nil && v.lastFixErr != nil:
+		fmt.Fprintf(&b, "Their last fix attempt was %q on %s and it failed: %s. ",
+			v.lastFix.summary, v.lastFix.target, v.lastFixErr.Error())
+	case v.postReview != nil:
+		fmt.Fprintf(&b, "They just applied a fix (%q on %s) and are reviewing the diff. ",
+			v.postReview.summary, v.postReview.target)
+	case len(v.allIssues) > 0 && v.cursor < len(v.allIssues):
+		iss := v.allIssues[v.cursor]
+		fmt.Fprintf(&b, "They had cursor on lint issue %s (%s:%d): %s. ",
+			iss.Code, iss.File, iss.Line, iss.Message)
+	default:
+		b.WriteString("They want to discuss the current project's CLAUDE.md / MEMORY.md / agent files. ")
+	}
+	b.WriteString("Help them act on whatever they want to do next. The cwd is the project root; you have full Edit access.")
+	return b.String()
+}
 
 func (v *doctorView) pageHeight() int {
 	h := v.h - 4

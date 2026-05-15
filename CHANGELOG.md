@@ -6,6 +6,35 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (v0.12 cycle, part 2)
+
+- **AGENT002 lint: agent body exceeds Claude Code's 15k-token budget.** Beyond
+  this cap Claude Code silently truncates the agent's context. The new lint
+  fires Error at ≥15k and Warning at ≥13k tokens, surfaced as a new Summary
+  category (`catAgentBodyTooLong`) that's fixable via single `f` or bulk `F`
+  through the existing CLI-fix infrastructure. Uses `pkoukk/tiktoken-go` with
+  the `cl100k_base` BPE encoding as a close-enough analog to Anthropic's
+  tokenizer.
+- **Togglable live LLM log panel.** `L` on the Doctor or Summary tab opens a
+  bordered panel showing the last 10 lines of streamed stdout/stderr from
+  the running `claude --print` process. stderr lines render in error color.
+  Restructured `execFixCmd` to use stdout/stderr pipes (replacing the
+  blocking `CombinedOutput`) and route each line as a `cliStreamLineMsg`
+  with an origin tabID so the buffer lands on the originating view
+  regardless of which tab is focused.
+- **`c` chat follow-up.** From Doctor or Summary, `c` suspends the TUI and
+  hands the terminal to an interactive `claude` session in the project
+  root. The session is primed via `--append-system-prompt` with context
+  about the user's recent action (last fix attempt, current lint cursor,
+  current Summary row). When claude exits, the TUI resumes and re-lints.
+
+### Fixed
+
+- **Status-line text no longer bleeds across tabs.** `m.message` is now
+  cleared on every tab-switch (numeric keys 1–0 plus tab/shift+tab). Without
+  this, a flash like "fixed: …" from one tab persisted onto the status line
+  of every subsequent tab.
+
 ### Added
 
 - **Doctor tab: bulk-fix by category (`F`).** Mirrors Summary's pattern —

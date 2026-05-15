@@ -647,3 +647,41 @@ func TestDoctorBulkFixCLIBundlesPrompt(t *testing.T) {
 		t.Fatalf("expected bundled prompt to enumerate both fixes, got:\n%s", prop.cliPrompt)
 	}
 }
+
+// TestStreamLineRingTrimsToCap asserts the ring buffer caps at streamRingMax
+// so a long-running fix doesn't grow memory without bound.
+func TestStreamLineRingTrimsToCap(t *testing.T) {
+	var ring []string
+	for i := 0; i < streamRingMax*3; i++ {
+		ring = appendStreamLine(ring, "noise", false)
+	}
+	if len(ring) != streamRingMax {
+		t.Fatalf("ring exceeded cap: got %d, want %d", len(ring), streamRingMax)
+	}
+}
+
+// TestStreamLineMarksStderr ensures stderr lines render distinctly in the
+// log panel (renderStreamPanel keys off the "!" prefix appendStreamLine adds).
+func TestStreamLineMarksStderr(t *testing.T) {
+	ring := appendStreamLine(nil, "out-line", false)
+	ring = appendStreamLine(ring, "err-line", true)
+	if !strings.HasPrefix(ring[1], "!") {
+		t.Fatalf("expected stderr entry to carry \"!\" prefix, got %q", ring[1])
+	}
+	if strings.HasPrefix(ring[0], "!") {
+		t.Fatalf("expected stdout entry NOT to carry \"!\" prefix, got %q", ring[0])
+	}
+}
+
+// TestTabChangeClearsStaleMessage drives the model to put text in m.message,
+// then switches tabs and asserts the status line resets.
+func TestTabChangeClearsStaleMessage(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	drive(m, "0") // start on Doctor
+	m.message = "leftover from doctor"
+	drive(m, "1") // switch to MCPs
+	if m.message != "" {
+		t.Fatalf("expected m.message cleared on tab change, got %q", m.message)
+	}
+}
