@@ -6,6 +6,22 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-05-15
+
+### Fixed
+
+- **Summary tab "installed but not in settings" fix is now deterministic.**
+  The `catPluginInstalledNotEnabled` row's `f` (and `F` bulk) handler used to
+  hand off to the claude CLI with a prompt asking it to register the plugin
+  in `enabledPlugins`. The LLM hop frequently produced no settings.json
+  change. Replaced with an in-memory edit that calls
+  `SetPluginEnabled(id, true)` directly — the plugin id already carries the
+  full `name@marketplace` suffix from `installed_plugins.json`, so no LLM is
+  needed. Mirrors the sibling `catPluginEnabledNotInstalled` pattern. The
+  bulk `F` handler's `claudeOnPath` gate was also tightened to only block
+  `fixClaudeCLI` proposals, so the new in-memory bulk path works without
+  the claude binary on PATH.
+
 ## [0.11.0] — 2026-05-14
 
 ### Review-pass fixes
@@ -635,7 +651,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.11.1
 [0.11.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.11.0
 [0.10.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.10.0
 [0.9.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.9.1
