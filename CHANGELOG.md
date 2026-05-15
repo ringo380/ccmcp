@@ -47,6 +47,30 @@ All notable changes to this project are documented here. Format based on
   list entry. Each falls back to the CLI only when the heuristic can't
   decide — no more LLM token spend for edits that are deterministic.
 
+### Review-pass fixes (post-PR)
+
+- **`commandView.capturingInput()` now includes `resolveActive`** so `esc`
+  inside the bulk-resolve picker closes the picker instead of triggering
+  `model.go`'s quit-confirm. CLAUDE.md mandates this for every TUI sub-view
+  mode; the omission was caught in code review.
+- **Bulk programmatic fix now enters the post-review gate**, so `u` reverts
+  the whole batch. Previously the CHANGELOG's revert claim was only true for
+  CLI bulk; the programmatic path applied immediately and left the user
+  without an in-TUI undo path even though snapshots existed on disk.
+- **Bulk CLI bundled prompt no longer double-wraps the imperative envelope.**
+  Per-issue raw prompt bodies are stored on `cliPromptRaw` and concatenated
+  under a single outer envelope so the model receives one set of "use the
+  Edit tool" instructions, not one per item.
+- **Bulk CLI no-edits check inspects every target**, not just the primary.
+  Claude can edit a secondary file and leave the primary unchanged; before
+  this fix that path flashed a false "no edits made" error and orphaned
+  secondary snapshots.
+- **Bulk revert guards empty snapshot paths** (a missing target at snapshot
+  time records `""`); on revert the file is removed instead of triggering a
+  false `os.ReadFile("")` failure. `prependMinimalFrontmatterBytes` also
+  refuses to run on files that already have frontmatter so a stale MEM004
+  issue can't produce double-frontmatter.
+
 ## [0.11.1] — 2026-05-15
 
 ### Fixed

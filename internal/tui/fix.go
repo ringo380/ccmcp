@@ -60,8 +60,9 @@ type fixProposal struct {
 	kind      fixKind
 	target    string   // primary file being modified (empty for fixInMemory)
 	proposed  []byte   // pre-computed post-state bytes (fixInTUI only); nil for CLI
-	cliArgs   []string // args for exec.Command("claude", cliArgs...)
-	cliPrompt string   // full prompt text (CLI only) — shown verbatim in confirm panel
+	cliArgs      []string // args for exec.Command("claude", cliArgs...)
+	cliPrompt    string   // full envelope-wrapped prompt text (CLI only) — shown verbatim in confirm panel and passed via cliArgs
+	cliPromptRaw string   // un-wrapped task body, used by bulk builders to concatenate multiple fixes under a single outer envelope without double-wrapping
 
 	// cat is the Summary-tab issue category this proposal addresses, used by
 	// the post-fix asset-cache invalidation logic to decide whether the fix

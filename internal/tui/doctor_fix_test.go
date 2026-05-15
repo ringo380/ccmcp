@@ -548,6 +548,63 @@ func TestDoctorBulkFixProgrammaticAppliesEveryFile(t *testing.T) {
 	if !strings.Contains(stripANSI(out), "bulk-fixed") {
 		t.Fatalf("expected 'bulk-fixed' flash in view, got:\n%s", out)
 	}
+
+	// After bulk apply, the postReview gate must be open so the user can `u`
+	// to revert. The CHANGELOG promises this behaviour for the whole batch.
+	if m.doctor.postReview == nil {
+		t.Fatalf("expected postReview to be set after successful bulk apply")
+	}
+	out = drive(m, "u")
+	got, _ = os.ReadFile(mem)
+	if !strings.Contains(string(got), "missing1.md") || !strings.Contains(string(got), "missing2.md") {
+		t.Fatalf("expected both broken-link lines restored after revert, got:\n%s", got)
+	}
+	if !strings.Contains(stripANSI(out), "reverted") {
+		t.Fatalf("expected 'reverted' flash, got:\n%s", out)
+	}
+}
+
+// TestDoctorBulkCLIPromptIsNotDoubleWrapped: the bundled CLI prompt must use
+// each per-issue body once (cliPromptRaw), not the already-envelope-wrapped
+// cliPrompt — otherwise every fix carries a redundant inner "You MUST use the
+// Edit tool" preamble inside the outer envelope, wasting tokens and giving
+// the model contradictory target instructions.
+func TestDoctorBulkCLIPromptIsNotDoubleWrapped(t *testing.T) {
+	st, _ := buildState(t)
+	mem := seedBadMemory(t, st)
+	cur := doctor.Issue{Code: "MEM003", File: mem, Line: 1, Message: "line 1 too long"}
+	other := doctor.Issue{Code: "MEM003", File: mem, Line: 2, Message: "line 2 too long"}
+	prop, ok := buildDoctorBulkFixProposal(cur, []doctor.Issue{cur, other}, st.project)
+	if !ok {
+		t.Fatalf("expected bulk-fix proposal")
+	}
+	// The imperative envelope's lead phrase should appear exactly once
+	// (the outer bundle wrapper), not twice (once outer + once per item).
+	hits := strings.Count(prop.cliPrompt, "You MUST use the Edit (or Write, for new files) tool")
+	if hits != 1 {
+		t.Fatalf("expected exactly 1 imperative preamble in bundled prompt, got %d:\n%s", hits, prop.cliPrompt)
+	}
+}
+
+// TestCommandViewCapturingInputIncludesResolveActive guards against the
+// global q/esc handler swallowing keys destined for the resolve picker.
+// CLAUDE.md mandates this for every TUI sub-view mode.
+func TestCommandViewCapturingInputIncludesResolveActive(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	drive(m, "0") // ensure model is initialised
+	cv := m.commands
+	if cv == nil {
+		t.Fatalf("commandView nil")
+	}
+	cv.resolveActive = true
+	if !cv.capturingInput() {
+		t.Fatalf("capturingInput() must return true while resolveActive — otherwise global q/esc consumes the key first")
+	}
+	cv.resolveActive = false
+	if cv.capturingInput() {
+		t.Fatalf("capturingInput() must return false when no sub-mode is active")
+	}
 }
 
 // TestDoctorBulkFixRefusesSingletonCategory: F is a no-op when only one issue

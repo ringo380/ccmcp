@@ -421,4 +421,8 @@ func (v *commandView) helpText() string {
 	return "/: filter  !: conflicts only  r: resolve  R: bulk-resolve  c: clear"
 }
 
-func (v *commandView) capturingInput() bool { return v.filterActive }
+// capturingInput swallows the global q/esc handler whenever this view is in a
+// sub-mode that needs to consume those keys itself. Without resolveActive
+// here, esc inside the resolve picker would trigger model.go's quit-confirm
+// before commandView.update() ever saw the key.
+func (v *commandView) capturingInput() bool { return v.filterActive || v.resolveActive }
