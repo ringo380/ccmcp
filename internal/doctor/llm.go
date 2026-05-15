@@ -92,9 +92,16 @@ func (o *ReviewOptions) model() string {
 	case ProviderOpenAI:
 		return "gpt-4o"
 	default:
-		return "claude-sonnet-4-6"
+		return DefaultAnthropicModel
 	}
 }
+
+// DefaultAnthropicModel is the cheap-but-capable model used for doctor review
+// and asset-lint fixes. Haiku is plenty for the mechanical edits these tasks
+// describe; Sonnet/Opus burned tokens on prose responses that often didn't
+// even invoke the Edit tool. Callers can override via ReviewOptions.Model or
+// the `--model` flag.
+const DefaultAnthropicModel = "claude-haiku-4-5"
 
 // resolveProvider applies the auto-fallback rule: when the caller passes a
 // zero-value Provider AND no API key is configured (env or explicit), fall
@@ -147,6 +154,63 @@ func Review(path string, opts ReviewOptions) (string, error) {
 		}
 		return callAnthropic(prompt, opts.model(), apiKey)
 	}
+}
+
+// BundleEntry describes one file to include in a bundled review.
+type BundleEntry struct {
+	Path    string
+	Content string
+}
+
+// ReviewBundle sends one LLM call covering every entry in `files`, returning a
+// single combined response. Per-file iteration in Review() was costly: with
+// Sonnet/Opus defaults a multi-file project paid for N independent prompts
+// when one bundled call would have produced equivalent guidance. Errors from a
+// single missing file are non-fatal — the call proceeds with the remaining
+// entries and the response notes the omission.
+func ReviewBundle(files []BundleEntry, opts ReviewOptions) (string, error) {
+	if len(files) == 0 {
+		return "", fmt.Errorf("ReviewBundle: no files to review")
+	}
+	provider := opts.resolveProvider()
+	opts.Provider = provider
+	prompt := buildBundlePrompt(files)
+
+	switch provider {
+	case ProviderClaudeCLI:
+		return callClaudeCLI(prompt, opts.model())
+	case ProviderOpenAI:
+		apiKey := opts.apiKey()
+		if apiKey == "" {
+			return "", fmt.Errorf("no API key: set OPENAI_API_KEY or pass --api-key")
+		}
+		return callOpenAI(prompt, opts.model(), apiKey)
+	default:
+		apiKey := opts.apiKey()
+		if apiKey == "" {
+			return "", fmt.Errorf("no API key: set ANTHROPIC_API_KEY or pass --api-key (or install the claude CLI for offline review)")
+		}
+		return callAnthropic(prompt, opts.model(), apiKey)
+	}
+}
+
+func buildBundlePrompt(files []BundleEntry) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "You are reviewing %d documentation file(s) used by Claude Code, Anthropic's AI coding assistant. Produce a single combined review covering all of them.\n\n", len(files))
+	b.WriteString(`For each file, evaluate:
+1. Clarity — unambiguous and actionable instructions?
+2. Completeness — obvious gaps for a development project?
+3. Redundancy — duplicated content, or content that belongs in code/git?
+4. Formatting — structure easy to scan?
+5. Staleness — outdated tool versions, deprecated workflows?
+
+Respond with one section per file. Use bullet points; skip categories with no issues. End each section with a 1-sentence verdict. After the last file, give a 1-sentence cross-file summary.
+
+`)
+	for i, f := range files {
+		fmt.Fprintf(&b, "── File %d/%d: %s ──\n<file path=%q>\n%s\n</file>\n\n", i+1, len(files), f.Path, f.Path, f.Content)
+	}
+	return b.String()
 }
 
 func buildPrompt(path, content string) string {

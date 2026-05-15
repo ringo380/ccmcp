@@ -127,14 +127,16 @@ Bird's-eye overview of every scope's counts, per-project overrides, and redundan
 | Key | Action |
 |---|---|
 | `r` | re-run lint checks |
-| `l` | run LLM review (requires `claude` CLI or `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) |
+| `l` | run one bundled LLM review across CLAUDE.md + MEMORY.md (Haiku, single call) |
+| `a` | apply the bundled review back to disk (single Claude call) |
 | `j` / `k` / arrows | scroll |
 | `g` / `G` | top / bottom |
-| `f` | preview a fix for the selected issue |
+| `f` | preview a fix for the selected issue (programmatic when possible) |
+| `F` | bulk-fix every issue sharing the cursor's code in one keystroke (programmatic stack, or single bundled `claude` call when CLI-only) |
 | `y` / `n` | approve / reject the previewed fix (in confirm panel) |
 | `u` | revert a CLI fix from its on-disk snapshot (in post-review panel) |
 
-Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pressing `f` opens a preview panel: in-TUI fixes show a unified diff of the exact change before you approve; Claude-CLI fixes show the full prompt first, then after the CLI runs, show the resulting diff and let you keep (`y`) or revert (`u`). Every fix snapshots the original file to `~/.claude-mcp-backups/doctor/` (kept: 20 newest per file, max age 30 days). The CLI fix runs **inside the TUI** with a live spinner + elapsed-time panel — it no longer drops you to a raw terminal mid-flow.
+Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pressing `f` opens a preview panel: in-TUI fixes show a unified diff of the exact change before you approve; Claude-CLI fixes show the full prompt first, then after the CLI runs, show the resulting diff and let you keep (`y`) or revert (`u`). Every fix snapshots the original file to `~/.claude-mcp-backups/doctor/` (kept: 20 newest per file, max age 30 days). `F` bulk-fixes every issue that shares the cursor's lint code in a single keystroke — programmatic codes (broken index entries, missing frontmatter fields, standalone broken links, empty MEMORY.md) are applied directly with per-file snapshots; CLI codes (line-too-long, file-too-long, content rewrites) are bundled into one `claude --print --model claude-haiku-4-5 --max-turns 4` invocation with a strict-imperative envelope that forces Edit-tool calls instead of prose responses.
 
 **Global**
 
@@ -254,7 +256,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-309 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+314 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

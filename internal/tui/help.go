@@ -104,6 +104,8 @@ func renderHelp(width int) string {
 
 	section("Commands tab")
 	kbd("!", "toggle conflicts-only view (shows ⚠ rows)")
+	kbd("r", "resolve conflict under cursor (skill off / ignore)")
+	kbd("R", "bulk-resolve every visible conflict (skill off all / ignore all)")
 	kbd("/", "filter by substring; c clears")
 	kbd("j/k or ↑/↓", "navigate; g/G top/bottom")
 
@@ -125,9 +127,11 @@ func renderHelp(width int) string {
 
 	section("Doctor tab")
 	kbd("r", "re-run lint checks")
-	kbd("l", "run LLM review (claude CLI or API key required)")
+	kbd("l", "run one bundled LLM review across CLAUDE.md + MEMORY.md (Haiku)")
+	kbd("a", "apply the bundled review back to disk (single Claude call)")
 	kbd("j/k or ↑/↓", "scroll; g/G top/bottom")
-	kbd("f", "preview a fix for the selected issue")
+	kbd("f", "preview a fix for the selected issue (programmatic when possible)")
+	kbd("F", "bulk-fix every issue sharing the cursor's code in one keystroke")
 	kbd("y / n", "approve / reject the previewed fix (in confirm panel)")
 	kbd("u", "revert a CLI fix from its on-disk snapshot (in post-review panel)")
 

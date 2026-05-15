@@ -205,7 +205,7 @@ func init() {
 
 	doctorMDCmd.Flags().BoolVar(&doctorLLMReview, "llm-review", false, "send each file to an LLM for quality feedback")
 	doctorMDCmd.Flags().StringVar(&doctorProvider, "provider", "", "LLM provider: anthropic|openai|claude-cli (default: auto — claude-cli when no API key is set)")
-	doctorMDCmd.Flags().StringVar(&doctorModel, "model", "", "override model (default: claude-sonnet-4-6 / gpt-4o)")
+	doctorMDCmd.Flags().StringVar(&doctorModel, "model", "", "override model (default: claude-haiku-4-5 / gpt-4o)")
 	doctorMDCmd.Flags().StringVar(&doctorAPIKey, "api-key", "", "API key (defaults to ANTHROPIC_API_KEY or OPENAI_API_KEY env var)")
 	doctorMDCmd.Flags().StringVar(&doctorMemoryDir, "memory-dir", "", "explicit path to memory directory (auto-detected by default)")
 	doctorMDCmd.Flags().BoolVar(&doctorUserLevel, "user", false, "also lint the user-level ~/.claude/CLAUDE.md")

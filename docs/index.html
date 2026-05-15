@@ -384,7 +384,7 @@ go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
       </div>
       <div class="card">
         <h3>Doctor</h3>
-        <p>Lint <code>CLAUDE.md</code> and <code>MEMORY.md</code> for structural issues — stale entries, missing sections, broken pointers. Add <code>--llm-review</code> for an LLM quality pass via Anthropic or OpenAI. Press <code>f</code> in the TUI to preview an autofix as a unified diff; every fix snapshots the original file to <code>~/.claude-mcp-backups/doctor/</code> and Claude-CLI fixes can be reverted with <code>u</code> after they land.</p>
+        <p>Lint <code>CLAUDE.md</code> and <code>MEMORY.md</code> for structural issues — stale entries, missing sections, broken pointers. Press <code>f</code> in the TUI to preview an autofix as a unified diff or <code>F</code> to bulk-fix every issue sharing the cursor's code in one keystroke (programmatic edits stack directly; CLI codes bundle into a single Claude Haiku invocation). The bundled <code>l</code> review and post-review <code>a</code> apply use the same single-call pattern. Every fix snapshots the original to <code>~/.claude-mcp-backups/doctor/</code> and Claude-CLI fixes can be reverted with <code>u</code>.</p>
       </div>
       <div class="card">
         <h3>Reports</h3>

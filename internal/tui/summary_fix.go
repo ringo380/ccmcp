@@ -141,12 +141,13 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 				"available if the user un-stashes later. Do not edit any other MCP server entries.",
 			name,
 		)
+		wrapped := wrapImperativeFixPrompt(st.paths.ClaudeJSON, prompt)
 		return &fixProposal{
 			summary:   fmt.Sprintf("Stash user-scope %q (plugin provides it)", name),
 			kind:      fixClaudeCLI,
 			target:    st.paths.ClaudeJSON,
-			cliPrompt: prompt,
-			cliArgs:   claudeFixArgs(prompt),
+			cliPrompt: wrapped,
+			cliArgs:   claudeFixArgs(wrapped),
 		}, true
 
 	case catStaleMcpjson:
@@ -159,12 +160,13 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 				"all other entries verbatim. Do not edit %s/.mcp.json.",
 			settingsPath, name, project, project,
 		)
+		wrapped := wrapImperativeFixPrompt(settingsPath, prompt)
 		return &fixProposal{
 			summary:   fmt.Sprintf("Clean stale .mcp.json ref %q", name),
 			kind:      fixClaudeCLI,
 			target:    settingsPath,
-			cliPrompt: prompt,
-			cliArgs:   claudeFixArgs(prompt),
+			cliPrompt: wrapped,
+			cliArgs:   claudeFixArgs(wrapped),
 		}, true
 
 	case catDuplicateLoad:
@@ -178,12 +180,13 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 				"on the winning scope. Do not touch any other MCP servers.",
 			name,
 		)
+		wrapped := wrapImperativeFixPrompt(st.paths.ClaudeJSON, prompt)
 		return &fixProposal{
 			summary:   fmt.Sprintf("Resolve duplicate-load %q", name),
 			kind:      fixClaudeCLI,
 			target:    st.paths.ClaudeJSON,
-			cliPrompt: prompt,
-			cliArgs:   claudeFixArgs(prompt),
+			cliPrompt: wrapped,
+			cliArgs:   claudeFixArgs(wrapped),
 		}, true
 
 	case catPluginInstalledNotEnabled:
@@ -222,12 +225,13 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 				"disable them. Do not uninstall any plugins; only override the conflicting command/skill.",
 			name, name,
 		)
+		wrapped := wrapImperativeFixPrompt(st.paths.SettingsJSON, prompt)
 		return &fixProposal{
 			summary:   fmt.Sprintf("Resolve slash conflict /%s", name),
 			kind:      fixClaudeCLI,
 			target:    st.paths.SettingsJSON,
-			cliPrompt: prompt,
-			cliArgs:   claudeFixArgs(prompt),
+			cliPrompt: wrapped,
+			cliArgs:   claudeFixArgs(wrapped),
 		}, true
 
 	case catSkillNameInvalid, catSkillNameTooLong:
@@ -251,12 +255,13 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 				"under its new directory name. Do not touch any other skills.",
 			file, file, reason, file, dir,
 		)
+		wrapped := wrapImperativeFixPrompt(file, prompt)
 		return &fixProposal{
 			summary:   "Rename skill " + filepath.Base(dir),
 			kind:      fixClaudeCLI,
 			target:    file,
-			cliPrompt: prompt,
-			cliArgs:   claudeAssetFixArgs(prompt, permRename),
+			cliPrompt: wrapped,
+			cliArgs:   claudeAssetFixArgs(wrapped, permRename),
 		}, true
 
 	case catSkillDescTooLong:
@@ -274,12 +279,13 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 				"field, or any other skill.",
 			file, file,
 		)
+		wrapped := wrapImperativeFixPrompt(file, prompt)
 		return &fixProposal{
 			summary:   "Shorten skill description " + filepath.Base(filepath.Dir(file)),
 			kind:      fixClaudeCLI,
 			target:    file,
-			cliPrompt: prompt,
-			cliArgs:   claudeAssetFixArgs(prompt, permDescription),
+			cliPrompt: wrapped,
+			cliArgs:   claudeAssetFixArgs(wrapped, permDescription),
 		}, true
 
 	case catAgentDescTooLong:
@@ -292,12 +298,13 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 				"model, or the agent body.",
 			file, file,
 		)
+		wrapped := wrapImperativeFixPrompt(file, prompt)
 		return &fixProposal{
 			summary:   "Shorten agent description " + filepath.Base(file),
 			kind:      fixClaudeCLI,
 			target:    file,
-			cliPrompt: prompt,
-			cliArgs:   claudeAssetFixArgs(prompt, permDescription),
+			cliPrompt: wrapped,
+			cliArgs:   claudeAssetFixArgs(wrapped, permDescription),
 		}, true
 
 	case catCommandDescTooLong:
@@ -309,12 +316,13 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 				"frontmatter description; leave the command body intact.",
 			file, file,
 		)
+		wrapped := wrapImperativeFixPrompt(file, prompt)
 		return &fixProposal{
 			summary:   "Shorten command description " + filepath.Base(file),
 			kind:      fixClaudeCLI,
 			target:    file,
-			cliPrompt: prompt,
-			cliArgs:   claudeAssetFixArgs(prompt, permDescription),
+			cliPrompt: wrapped,
+			cliArgs:   claudeAssetFixArgs(wrapped, permDescription),
 		}, true
 	}
 	return nil, false
@@ -339,7 +347,10 @@ func claudeAssetFixArgs(prompt string, perm permKind) []string {
 	if perm == permRename {
 		tools = "Edit,Write,Read,Glob,Grep,Bash"
 	}
-	return []string{"--allowedTools", tools, "--permission-mode", "acceptEdits", "--print", prompt}
+	args := []string{"--allowedTools", tools, "--permission-mode", "acceptEdits"}
+	args = append(args, claudeFixModelArgs()...)
+	args = append(args, "--print", prompt)
+	return args
 }
 
 func labelForCat(c summaryCat) string {
@@ -560,12 +571,13 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 		"",
 		"y to apply, n/esc to cancel.",
 	)
+	wrapped := wrapImperativeFixPrompt("", prompt)
 	return &fixProposal{
 		summary:      fmt.Sprintf("Bulk-fix %d %s", len(targets), summarizeRow(cursor)),
 		kind:         fixClaudeCLI,
 		target:       primary,
-		cliPrompt:    prompt,
-		cliArgs:      claudeAssetFixArgs(prompt, permForCategory(cursor.cat)),
+		cliPrompt:    wrapped,
+		cliArgs:      claudeAssetFixArgs(wrapped, permForCategory(cursor.cat)),
 		previewLines: preview,
 		cat:          cursor.cat,
 	}, files, true

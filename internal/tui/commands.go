@@ -29,10 +29,13 @@ type commandView struct {
 	conflictsOnly bool
 	conflictMap   map[string]commands.Conflict // effective → conflict
 
-	// resolve picker: active when user presses 'r' on a conflicted row
-	resolveActive    bool
-	resolveConflict  *commands.Conflict
-	resolveCanDisable bool // true when Kind == SkillVsCommand
+	// resolve picker: active when user presses 'r' on a conflicted row, or 'R'
+	// for bulk across every visible conflict.
+	resolveActive     bool
+	resolveConflict   *commands.Conflict
+	resolveCanDisable bool // true when Kind == SkillVsCommand (single) or any visible conflict is SkillVsCommand (bulk)
+	resolveBulk       bool
+	resolveBulkRows   []commands.Conflict // populated when resolveBulk=true
 
 	flash string
 }
@@ -81,7 +84,7 @@ func (v *commandView) rebuild() {
 }
 
 func (v *commandView) update(msg tea.Msg) tea.Cmd {
-	// Resolve picker mode.
+	// Resolve picker mode (single or bulk).
 	if v.resolveActive {
 		k, ok := msg.(tea.KeyMsg)
 		if !ok {
@@ -89,14 +92,25 @@ func (v *commandView) update(msg tea.Msg) tea.Cmd {
 		}
 		switch k.String() {
 		case "s":
-			if v.resolveCanDisable {
+			if !v.resolveCanDisable {
+				return nil
+			}
+			if v.resolveBulk {
+				v.applyBulkResolveDisableSkill()
+			} else {
 				v.applyResolveDisableSkill()
 			}
 		case "i":
-			v.applyResolveIgnore()
+			if v.resolveBulk {
+				v.applyBulkResolveIgnore()
+			} else {
+				v.applyResolveIgnore()
+			}
 		case "esc":
 			v.resolveActive = false
 			v.resolveConflict = nil
+			v.resolveBulk = false
+			v.resolveBulkRows = nil
 			v.flash = styleDim.Render("resolve cancelled")
 		}
 		return nil
@@ -165,6 +179,44 @@ func (v *commandView) update(msg tea.Msg) tea.Cmd {
 	case "!":
 		v.conflictsOnly = !v.conflictsOnly
 		v.rebuild()
+	case "R":
+		// Bulk resolution across every visible row that has a conflict.
+		// Conflicts already filtered by conflictsOnly + text filter via
+		// v.rows + v.conflictMap. Dedupe by Effective so the same conflict
+		// doesn't show up twice (Effective + Slug rows can both match).
+		seen := map[string]bool{}
+		var batch []commands.Conflict
+		anyDisable := false
+		for _, row := range v.rows {
+			cf, ok := v.conflictMap[row.Effective]
+			if !ok {
+				cf, ok = v.conflictMap[row.Slug]
+			}
+			if !ok {
+				continue
+			}
+			if seen[cf.Effective] {
+				continue
+			}
+			seen[cf.Effective] = true
+			batch = append(batch, cf)
+			if cf.Kind == commands.SkillVsCommand {
+				anyDisable = true
+			}
+		}
+		if len(batch) == 0 {
+			v.flash = styleDim.Render("no conflicts visible (toggle ! to show conflicts only)")
+			return nil
+		}
+		v.resolveBulk = true
+		v.resolveBulkRows = batch
+		v.resolveCanDisable = anyDisable
+		v.resolveActive = true
+		if anyDisable {
+			v.flash = styleDim.Render(fmt.Sprintf("resolve %d conflict(s): [s]kill off all / [i]gnore all / esc", len(batch)))
+		} else {
+			v.flash = styleDim.Render(fmt.Sprintf("resolve %d conflict(s): [i]gnore all / esc", len(batch)))
+		}
 	case "r":
 		if len(v.rows) == 0 {
 			return nil
@@ -226,6 +278,77 @@ func (v *commandView) applyResolveIgnore() {
 		return
 	}
 	v.flash = styleOK.Render(fmt.Sprintf("/%s added to ignore list", c.Effective))
+	v.rebuild()
+}
+
+// applyBulkResolveDisableSkill disables every visible SkillVsCommand conflict's
+// skill in one save. Non-SkillVsCommand entries are skipped (the s branch is
+// only offered when at least one disable target exists). Single Backup+Save at
+// the end avoids spamming backup files for a batch.
+func (v *commandView) applyBulkResolveDisableSkill() {
+	rows := v.resolveBulkRows
+	v.resolveActive = false
+	v.resolveBulk = false
+	v.resolveBulkRows = nil
+	disabled := 0
+	skipped := 0
+	for _, c := range rows {
+		if c.Kind != commands.SkillVsCommand {
+			skipped++
+			continue
+		}
+		v.st.settings.SetSkillOverride(c.Effective, "off")
+		disabled++
+	}
+	if disabled == 0 {
+		v.flash = styleDim.Render("nothing to disable (no SkillVsCommand conflicts in batch)")
+		return
+	}
+	if err := config.Backup(v.st.settings.Path, v.st.paths.BackupsDir); err != nil {
+		v.flash = styleErr.Render("backup: " + err.Error())
+		return
+	}
+	if err := v.st.settings.Save(); err != nil {
+		v.flash = styleErr.Render("save: " + err.Error())
+		return
+	}
+	msg := fmt.Sprintf("disabled %d skill(s) via skillOverrides", disabled)
+	if skipped > 0 {
+		msg += fmt.Sprintf(" (skipped %d non-skill conflict[s])", skipped)
+	}
+	v.flash = styleOK.Render(msg)
+	v.rebuild()
+}
+
+// applyBulkResolveIgnore appends every visible conflict's effective name to the
+// ignore list and saves once. Already-ignored entries are skipped.
+func (v *commandView) applyBulkResolveIgnore() {
+	rows := v.resolveBulkRows
+	v.resolveActive = false
+	v.resolveBulk = false
+	v.resolveBulkRows = nil
+	ig, err := commands.LoadIgnores(v.st.paths.Ignores)
+	if err != nil {
+		v.flash = styleErr.Render("load ignores: " + err.Error())
+		return
+	}
+	added := 0
+	for _, c := range rows {
+		if ig.Has(c.Effective) {
+			continue
+		}
+		ig.Add(c.Effective)
+		added++
+	}
+	if added == 0 {
+		v.flash = styleDim.Render("all visible conflicts were already ignored")
+		return
+	}
+	if err := ig.Save(); err != nil {
+		v.flash = styleErr.Render("save ignores: " + err.Error())
+		return
+	}
+	v.flash = styleOK.Render(fmt.Sprintf("added %d conflict(s) to ignore list", added))
 	v.rebuild()
 }
 
@@ -295,7 +418,11 @@ func (v *commandView) helpText() string {
 		}
 		return "[i]gnore / esc: cancel"
 	}
-	return "/: filter  !: conflicts only  r: resolve  c: clear"
+	return "/: filter  !: conflicts only  r: resolve  R: bulk-resolve  c: clear"
 }
 
-func (v *commandView) capturingInput() bool { return v.filterActive }
+// capturingInput swallows the global q/esc handler whenever this view is in a
+// sub-mode that needs to consume those keys itself. Without resolveActive
+// here, esc inside the resolve picker would trigger model.go's quit-confirm
+// before commandView.update() ever saw the key.
+func (v *commandView) capturingInput() bool { return v.filterActive || v.resolveActive }
