@@ -324,7 +324,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			v.flash = styleDim.Render("nothing to bulk-fix in this category")
 			return nil
 		}
-		if !v.claudeOnPath {
+		if proposal.kind == fixClaudeCLI && !v.claudeOnPath {
 			v.flash = styleWarn.Render("bulk-fix unavailable — claude CLI not found in PATH")
 			return nil
 		}
