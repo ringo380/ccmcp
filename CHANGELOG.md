@@ -6,6 +6,47 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Doctor tab: bulk-fix by category (`F`).** Mirrors Summary's pattern —
+  pressing `F` on any lint issue collects every issue sharing the cursor's
+  lint code and applies them in one keystroke. Programmatic codes (MEM001,
+  MEM002, MEM004 missing-frontmatter, MEM005, MD004 standalone) stack each
+  per-file edit on top of the previous (line-removals sort descending to
+  avoid line-number drift) with one snapshot per file; CLI codes (MEM003,
+  MD003, MD005, MD002, MEM006) bundle into a single `claude` invocation
+  whose prompt enumerates every target. The whole batch is reverted by `u`
+  in the post-review panel.
+- **Doctor tab: bulk LLM review.** `l` now sends ONE bundled prompt covering
+  every reviewable doc file in the project (CLAUDE.md + MEMORY.md) and
+  produces a single sectioned response. `a` applies that single review back
+  to disk in one Claude call. Previously the model was invoked per-file.
+- **Commands tab: bulk conflict resolution (`R`).** Resolves every visible
+  slash-command conflict in one banner — `s` disables every conflicting
+  skill via `skillOverrides` (one save + one backup); `i` adds every visible
+  effective name to the ignore list (one save).
+
+### Changed
+
+- **Default LLM model for doctor/asset fixes is now `claude-haiku-4-5`** (was
+  `claude-sonnet-4-6`). Both providers (`anthropic`, `claude-cli`) honour
+  the new default; pass `--model` to override. Every `claude --print`
+  invocation in the TUI now also passes `--max-turns 4` to bound runaway
+  loops and `--model claude-haiku-4-5` to stop burning Sonnet tokens on
+  edits Haiku handles fine.
+- **Doctor fix prompts wrap every CLI invocation in a strict-imperative
+  envelope** that orders the model to use the Edit/Write tool against the
+  named target instead of responding in prose. The historical "claude exited
+  0 with no edits" failure mode used to flash a low-key warning; it now
+  surfaces as a styled error with the captured CLI tail so wasted token
+  spend is impossible to miss.
+- **Doctor fixes are now programmatic-first.** `MEM001` (missing MEMORY.md)
+  writes a skeleton index directly; `MEM004 missing frontmatter` prepends a
+  minimal `name`/`description`/`metadata.type` block derived from the
+  filename; `MD004 broken link` removes the line when it's a self-contained
+  list entry. Each falls back to the CLI only when the heuristic can't
+  decide — no more LLM token spend for edits that are deterministic.
+
 ## [0.11.1] — 2026-05-15
 
 ### Fixed

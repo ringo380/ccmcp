@@ -124,7 +124,11 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			diff := unifiedDiff(string(done.proposal.beforeBytes), string(after), 3)
 			if diff == "" {
 				deleteSnapshot(done.proposal.snapshotPath)
-				v.flash = styleWarn.Render("claude CLI made no changes")
+				flash := styleErr.Render("claude CLI exited 0 but made no edits — token spend wasted")
+				if tail := tailOutput(done.output, 8); tail != "" {
+					flash += "\n" + styleDim.Render(tail)
+				}
+				v.flash = flash
 				return nil
 			}
 			v.postReview = done.proposal

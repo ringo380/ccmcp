@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/ringo380/ccmcp/internal/doctor"
 )
 
 // seedBadMemory writes a MEMORY.md with one broken index entry that will trigger MEM002.
@@ -337,8 +339,8 @@ func TestDoctorCLINoChangeCleansSnapshot(t *testing.T) {
 	}
 
 	view := stripANSI(im.View())
-	if !strings.Contains(view, "no changes") {
-		t.Fatalf("expected 'no changes' flash, got:\n%s", view)
+	if !strings.Contains(view, "no edits") {
+		t.Fatalf("expected 'no edits' flash, got:\n%s", view)
 	}
 	if got := snapshotCount(t, doctorSnapshotDir(st.paths.BackupsDir)); got != 0 {
 		t.Fatalf("expected snapshot dir to be empty after no-change, got %d entries", got)
@@ -491,3 +493,100 @@ func TestDoctorReLintClearsStaleState(t *testing.T) {
 type errStale struct{}
 
 func (errStale) Error() string { return "stale" }
+
+// TestDoctorBulkFixProgrammaticAppliesEveryFile asserts that pressing F on a
+// category with multiple programmatic-fixable issues applies them all in one
+// keystroke without spawning the CLI. Seeded with two broken MEM002 links in
+// the same MEMORY.md plus a missing-frontmatter MEM004 in a sibling file —
+// only the MEM002s share a code, so F on the MEM002 row must clean both
+// broken-link lines (one disk write per line, line numbers handled correctly).
+func TestDoctorBulkFixProgrammaticAppliesEveryFile(t *testing.T) {
+	st, _ := buildState(t)
+	memDir := tuiMemoryPath(st.paths.ClaudeConfigDir, st.project)
+	if err := os.MkdirAll(memDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mem := filepath.Join(memDir, "MEMORY.md")
+	body := "# MEMORY\n\n- [Good](good.md) — kept\n- [Broken1](missing1.md) — first dead\n- [Broken2](missing2.md) — second dead\n"
+	if err := os.WriteFile(mem, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memDir, "good.md"), []byte("---\nname: good\ndescription: ok\nmetadata:\n  type: project\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newModel(st)
+	// Lint runs lazily on first render; switching tab does the trick.
+	out := drive(m, "0")
+	if !strings.Contains(stripANSI(out), "MEM002") {
+		t.Fatalf("expected MEM002 issues to render, got:\n%s", out)
+	}
+	// Find a cursor index on a MEM002 issue. Simpler: navigate to first
+	// MEM002 with 'g' (which puts cursor on first issue — depends on layout).
+	// For determinism, set cursor by scanning v.allIssues.
+	dv := m.doctor
+	cursorIdx := -1
+	for i, iss := range dv.allIssues {
+		if iss.Code == "MEM002" {
+			cursorIdx = i
+			break
+		}
+	}
+	if cursorIdx < 0 {
+		t.Fatalf("no MEM002 issue found in allIssues: %+v", dv.allIssues)
+	}
+	dv.cursor = cursorIdx
+	out = drive(m, "F", "y")
+
+	got, _ := os.ReadFile(mem)
+	if strings.Contains(string(got), "missing1.md") || strings.Contains(string(got), "missing2.md") {
+		t.Fatalf("expected both broken-link lines removed, got:\n%s", got)
+	}
+	if !strings.Contains(string(got), "good.md") {
+		t.Fatalf("expected the good link line preserved, got:\n%s", got)
+	}
+	if !strings.Contains(stripANSI(out), "bulk-fixed") {
+		t.Fatalf("expected 'bulk-fixed' flash in view, got:\n%s", out)
+	}
+}
+
+// TestDoctorBulkFixRefusesSingletonCategory: F is a no-op when only one issue
+// shares the cursor's code. The plan-time decision was "no point bulk-fixing
+// one issue" — confirm that path surfaces the explanatory flash.
+func TestDoctorBulkFixRefusesSingletonCategory(t *testing.T) {
+	st, _ := buildState(t)
+	seedBadMemory(t, st) // single MEM002 only
+	m := newModel(st)
+	drive(m, "0")
+	dv := m.doctor
+	for i, iss := range dv.allIssues {
+		if iss.Code == "MEM002" {
+			dv.cursor = i
+			break
+		}
+	}
+	out := drive(m, "F")
+	if !strings.Contains(stripANSI(out), "no bulk-fix available") {
+		t.Fatalf("expected 'no bulk-fix available' flash in view, got:\n%s", out)
+	}
+}
+
+// TestDoctorBulkFixCLIBundlesPrompt asserts that for an all-CLI category, F
+// builds a single bundled prompt naming every target. We exercise the proposal
+// builder directly with fabricated MEM003 issues.
+func TestDoctorBulkFixCLIBundlesPrompt(t *testing.T) {
+	st, _ := buildState(t)
+	mem := seedBadMemory(t, st)
+	cur := doctor.Issue{Code: "MEM003", File: mem, Line: 1, Message: "line 1 too long (170 chars)"}
+	other := doctor.Issue{Code: "MEM003", File: mem, Line: 2, Message: "line 2 too long (180 chars)"}
+	prop, ok := buildDoctorBulkFixProposal(cur, []doctor.Issue{cur, other}, st.project)
+	if !ok {
+		t.Fatalf("expected bulk-fix proposal for two MEM003 issues")
+	}
+	if prop.kind != fixClaudeCLI {
+		t.Fatalf("expected fixClaudeCLI, got %v", prop.kind)
+	}
+	if !strings.Contains(prop.cliPrompt, "Fix 1/2") || !strings.Contains(prop.cliPrompt, "Fix 2/2") {
+		t.Fatalf("expected bundled prompt to enumerate both fixes, got:\n%s", prop.cliPrompt)
+	}
+}
