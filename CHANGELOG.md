@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-05-15
+
 ### Added (v0.12 cycle, part 2)
 
 - **AGENT002 lint: agent body exceeds Claude Code's 15k-token budget.** Beyond
@@ -745,7 +747,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.12.0
 [0.11.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.11.1
 [0.11.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.11.0
 [0.10.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.10.0
