@@ -121,6 +121,8 @@ func renderHelp(width int) string {
 	kbd("g / home", "jump to top")
 	kbd("f", "preview a fix for the selected issue (in-place or via claude CLI)")
 	kbd("F", "bulk-fix all issues in the cursor's category via claude CLI")
+	kbd("L", "toggle live log panel (last 10 lines of streamed CLI activity)")
+	kbd("c", "drop into an interactive claude session in the project root")
 	kbd("l", "run LLM review on the selected issue (claude CLI required)")
 	kbd("y / n / esc", "approve / cancel in confirm panel; u also reverts a CLI fix")
 	kbd("p", "bulk-prune orphan overrides (legacy; press twice to confirm)")
@@ -132,6 +134,8 @@ func renderHelp(width int) string {
 	kbd("j/k or ↑/↓", "scroll; g/G top/bottom")
 	kbd("f", "preview a fix for the selected issue (programmatic when possible)")
 	kbd("F", "bulk-fix every issue sharing the cursor's code in one keystroke")
+	kbd("L", "toggle live log panel (last 10 lines of streamed CLI activity)")
+	kbd("c", "drop into an interactive claude session in the project root")
 	kbd("y / n", "approve / reject the previewed fix (in confirm panel)")
 	kbd("u", "revert a CLI fix from its on-disk snapshot (in post-review panel)")
 
