@@ -86,6 +86,17 @@ func newModel(st *state) *model {
 
 func (m *model) Init() tea.Cmd { return m.spinner.Tick }
 
+// killActiveFixes best-effort terminates any in-flight `claude --print` fix
+// subprocesses spawned by execFixCmd before the TUI quits. Without this, a
+// fix can outlive the parent process: pump goroutines block on the full
+// channel, cmd.Wait keeps the child alive, and the user sees claude still
+// running in their terminal after pressing q. Safe to call when nothing is
+// running.
+func (m *model) killActiveFixes() {
+	killIfRunning(m.doctor.fixCmd)
+	killIfRunning(m.summary.fixCmd)
+}
+
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if t, ok := msg.(spinner.TickMsg); ok {
 		var cmd tea.Cmd
@@ -137,6 +148,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.summary.flash = ""
 			}
 			return m, cmd
+		default:
+			// Mirror the fixDoneMsg default arm: surface unhandled origins
+			// instead of silently dropping them, so a new chat caller that
+			// forgets to register lands on the user's status line rather
+			// than vanishing.
+			m.message = styleErr.Render(fmt.Sprintf("internal: chatDoneMsg with unhandled origin %d", done.origin))
+			return m, nil
 		}
 	}
 	// cliStreamLineMsg routes the same way — each line carries an origin so
@@ -191,6 +209,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "ctrl+c":
+			m.killActiveFixes()
 			return m, tea.Quit
 		case "?":
 			m.showHelp = true
@@ -200,10 +219,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = styleWarn.Render("unsaved changes — press Q again or `w` to save + quit, `D` to discard + quit")
 				return m, nil
 			}
+			m.killActiveFixes()
 			return m, tea.Quit
 		case "Q":
+			m.killActiveFixes()
 			return m, tea.Quit
 		case "D":
+			m.killActiveFixes()
 			return m, tea.Quit // discard on exit
 		case "w":
 			if !m.st.anyDirty() {

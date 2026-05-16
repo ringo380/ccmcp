@@ -52,6 +52,7 @@ type doctorView struct {
 	fixStartedAt time.Time
 	fixTarget    string
 	fixOutput    []byte
+	fixCmd       *exec.Cmd // active subprocess; nil between runs. Used by the model's quit path to kill an in-flight `claude --print` instead of orphaning it.
 	cliLog       []string
 	showLog      bool
 
@@ -157,6 +158,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 	}
 	if done, ok := msg.(fixDoneMsg); ok && done.origin == tabDoctor {
 		v.fixRunning = false
+		v.fixCmd = nil
 		v.fixOutput = done.output
 		v.lastFixErr = done.err
 		if done.err != nil {
@@ -690,6 +692,7 @@ func (v *doctorView) executeFix() tea.Cmd {
 	v.fixStartedAt = time.Now()
 	v.fixTarget = p.target
 	v.fixOutput = nil
+	v.fixCmd = cmd
 	v.cliLog = v.cliLog[:0]
 	return execFixCmd(cmd, p, tabDoctor)
 }

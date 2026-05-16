@@ -673,6 +673,20 @@ func TestStreamLineMarksStderr(t *testing.T) {
 	}
 }
 
+// TestChatDoneMsgUnknownOriginSurfacesError asserts the default arm on the
+// chatDoneMsg switch flashes an error rather than silently dropping the
+// message. Mirrors the same property held for fixDoneMsg and cliStreamLineMsg.
+func TestChatDoneMsgUnknownOriginSurfacesError(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	drive(m, "0") // ensure model is initialised
+	im, _ := m.Update(chatDoneMsg{err: nil, origin: tabID(99)})
+	mod := im.(*model)
+	if !strings.Contains(stripANSI(mod.message), "chatDoneMsg with unhandled origin") {
+		t.Fatalf("expected unhandled-origin error flash, got %q", mod.message)
+	}
+}
+
 // TestTabChangeClearsStaleMessage drives the model to put text in m.message,
 // then switches tabs and asserts the status line resets.
 func TestTabChangeClearsStaleMessage(t *testing.T) {

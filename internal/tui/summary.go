@@ -74,11 +74,14 @@ type summaryView struct {
 	llmFor     summaryRow
 
 	// In-flight CLI fix state. cliLog/showLog mirror the Doctor tab's
-	// togglable log panel — L reveals the last 10 streamed lines.
+	// togglable log panel — L reveals the last 10 streamed lines. fixCmd
+	// holds the active subprocess so the model's quit path can kill it
+	// instead of orphaning the process.
 	fixRunning   bool
 	fixStartedAt time.Time
 	fixTarget    string
 	fixOutput    []byte
+	fixCmd       *exec.Cmd
 	cliLog       []string
 	showLog      bool
 
@@ -120,6 +123,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 	}
 	if done, ok := msg.(fixDoneMsg); ok && done.origin == tabSummary {
 		v.fixRunning = false
+		v.fixCmd = nil
 		v.fixOutput = done.output
 		if done.err != nil {
 			v.flash = styleErr.Render("fix failed: " + enrichExitStatus(done.err.Error()))
@@ -462,6 +466,7 @@ func (v *summaryView) executeFix() tea.Cmd {
 		v.fixStartedAt = time.Now()
 		v.fixTarget = p.target
 		v.fixOutput = nil
+		v.fixCmd = cmd
 		v.cliLog = v.cliLog[:0]
 		return execFixCmd(cmd, p, tabSummary)
 	}
@@ -1137,15 +1142,21 @@ func (v *summaryView) helpText() string {
 // chatContextPrompt builds a short context block appended to the system
 // prompt of the follow-up interactive claude session, so the model knows
 // what the user was just doing in ccmcp. Best-effort.
+//
+// v.cursor indexes into the *fixable* subset (see fixableRows / render), not
+// the raw v.rows slice — addressing v.rows[v.cursor] returns the wrong row
+// whenever non-fixable display rows precede the cursor. Use fixable[v.cursor]
+// so the prompt actually describes the issue under the cursor.
 func (v *summaryView) chatContextPrompt() string {
 	var b strings.Builder
 	b.WriteString("The user just dropped out of the ccmcp TUI Summary tab. ")
+	fixable := v.fixableRows()
 	switch {
 	case v.postReview != nil:
 		fmt.Fprintf(&b, "They just applied a fix (%q) targeting %s and are reviewing the diff. ",
 			v.postReview.summary, v.postReview.target)
-	case len(v.rows) > 0 && v.cursor < len(v.rows) && v.rows[v.cursor].fixable():
-		r := v.rows[v.cursor]
+	case len(fixable) > 0 && v.cursor < len(fixable):
+		r := fixable[v.cursor]
 		fmt.Fprintf(&b, "They had cursor on a Summary issue: %s (key=%q). ",
 			summarizeRow(r), r.key)
 	default:

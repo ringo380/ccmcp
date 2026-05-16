@@ -184,9 +184,13 @@ var execFixCmd = func(cmd *exec.Cmd, p *fixProposal, origin tabID) tea.Cmd {
 	wg.Add(2)
 	go pump(stdoutR, false, &wg)
 	go pump(stderrR, true, &wg)
+	// Capture the Wait error in a goroutine-shared slot so the drainer can
+	// fall back to it when ProcessState alone produces an unhelpful exit
+	// code (e.g. "exit status -1" on signal kill).
+	var waitErr error
 	go func() {
 		wg.Wait()
-		_ = cmd.Wait()
+		waitErr = cmd.Wait()
 		close(s.lines)
 	}()
 
@@ -201,6 +205,12 @@ var execFixCmd = func(cmd *exec.Cmd, p *fixProposal, origin tabID) tea.Cmd {
 			var exitErr error
 			if st := cmd.ProcessState; st != nil && !st.Success() {
 				exitErr = fmt.Errorf("exit status %d", st.ExitCode())
+			}
+			if exitErr == nil && waitErr != nil {
+				// Signal-killed processes leave ProcessState reporting
+				// success=false with a -1 code; prefer the richer Wait
+				// error in that case so the user sees a real message.
+				exitErr = waitErr
 			}
 			s.mu.Lock()
 			out := append([]byte(nil), s.captured...)
@@ -220,6 +230,20 @@ func fixElapsed(started time.Time) string {
 		return "0s"
 	}
 	return time.Since(started).Truncate(time.Second).String()
+}
+
+// killIfRunning best-effort kills the given exec.Cmd's process if it's still
+// alive. Used by the global quit path so an in-flight claude --print doesn't
+// outlive the TUI session. Safe to call with nil. Ignores all errors — by
+// design, this is fire-and-forget cleanup.
+func killIfRunning(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		return
+	}
+	_ = cmd.Process.Kill()
 }
 
 // appendStreamLine inserts `line` (annotated with its stderr origin via the
