@@ -31,6 +31,7 @@ func runTUI(_ context.Context) error {
 	if err != nil {
 		return err
 	}
+	tui.Version = currentVersion()
 	return tui.Run(p, proj)
 }
 
@@ -44,6 +45,7 @@ func runTUIDump(tab string) error {
 	if err != nil {
 		return err
 	}
+	tui.Version = currentVersion()
 	out, err := tui.Dump(p, proj, tab)
 	if err != nil {
 		return err

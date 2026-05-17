@@ -10,6 +10,9 @@ import (
 	"github.com/ringo380/ccmcp/internal/updates"
 )
 
+// Version is set by the cmd layer before Run/Dump; empty hides the header version (tests).
+var Version string
+
 // Run launches the bubbletea TUI.
 func Run(p paths.Paths, projectPath string) error {
 	st, err := loadState(p, projectPath)

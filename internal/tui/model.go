@@ -407,6 +407,14 @@ func (m *model) View() string {
 	}
 	var header strings.Builder
 	header.WriteString(styleTitle.Render("ccmcp"))
+	if Version != "" {
+		header.WriteString(" ")
+		v := Version
+		if v[0] >= '0' && v[0] <= '9' {
+			v = "v" + v
+		}
+		header.WriteString(styleDim.Render(v))
+	}
 	header.WriteString("  ")
 	header.WriteString(styleDim.Render(m.st.project))
 	if m.st.anyDirty() {
