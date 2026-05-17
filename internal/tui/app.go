@@ -10,9 +10,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/updates"
 )
 
-// Version is the running ccmcp version, set by the cmd layer before Run/Dump.
-// Rendered in the TUI header. Empty string suppresses the version display
-// (e.g. unit tests that exercise the model directly).
+// Version is set by the cmd layer before Run/Dump; empty hides the header version (tests).
 var Version string
 
 // Run launches the bubbletea TUI.

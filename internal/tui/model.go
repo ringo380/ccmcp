@@ -410,7 +410,7 @@ func (m *model) View() string {
 	if Version != "" {
 		header.WriteString(" ")
 		v := Version
-		if len(v) > 0 && v[0] >= '0' && v[0] <= '9' {
+		if v[0] >= '0' && v[0] <= '9' {
 			v = "v" + v
 		}
 		header.WriteString(styleDim.Render(v))
