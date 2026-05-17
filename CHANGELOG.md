@@ -6,6 +6,17 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-05-16
+
+### Added
+
+- **Running version shown in the TUI header.** The header now renders
+  `ccmcp vX.Y.Z  <project>` (or `ccmcp dev  <project>` for local builds)
+  so you can confirm which release is driving the session without
+  dropping back to the shell. Plumbed via a new exported `tui.Version`
+  package var set from the cmd layer using the existing
+  `currentVersion()` helper.
+
 ## [0.12.0] — 2026-05-15
 
 ### Added (v0.12 cycle, part 2)
@@ -747,7 +758,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.12.1
 [0.12.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.12.0
 [0.11.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.11.1
 [0.11.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.11.0
