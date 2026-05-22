@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-05-22
+
 ### Added
 
 - **Discover tab is now install-capable and far more useful.** Previously
@@ -33,6 +35,21 @@ All notable changes to this project are documented here. Format based on
   and endpoint const remain for user-configured registry URLs.
 - Switching to the Marketplaces or Plugins tab now rebuilds its row set, so a
   marketplace/plugin added from the Discover tab shows up immediately.
+
+### Fixed
+
+- **Discover tab concurrent map read/write panic.** The marketplace list read
+  the shared settings map on every spinner-driven frame while the add/install
+  closures wrote it off-goroutine. The installed-marketplace set is now
+  snapshotted on the bubbletea goroutine, and `a`/`i` are mutually gated so two
+  settings-mutating closures can't run at once.
+- **Orphaned marketplace clone on failed install.** When installing a plugin
+  whose marketplace had to be cloned first, a subsequent install failure left
+  the clone on disk with no settings reference; it's now rolled back via
+  `install.RemoveMarketplace`.
+- **Discover cursor clamp.** `updateList`/`updatePlugins` now clamp the cursor
+  index against the filtered slice before indexing it, instead of relying on
+  `render()` to clamp.
 
 ## [0.12.1] — 2026-05-16
 
@@ -786,7 +803,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.13.0
 [0.12.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.12.1
 [0.12.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.12.0
 [0.11.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.11.1
