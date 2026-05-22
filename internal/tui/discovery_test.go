@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/ringo380/ccmcp/internal/discovery"
 	"github.com/ringo380/ccmcp/internal/install"
 )
+
+var errInstallFixture = errors.New("simulated install failure")
 
 // stripANSI is defined in doctor_test.go (same package).
 
@@ -162,6 +165,56 @@ func TestDiscoveryInstallReinstallNeedsConfirm(t *testing.T) {
 	}
 	if !strings.Contains(stripANSI(v.flash), "press i again") {
 		t.Fatalf("expected reinstall-confirm flash, got %q", stripANSI(v.flash))
+	}
+}
+
+func TestDiscoveryViewFilterThenEnterDoesNotPanic(t *testing.T) {
+	st, _ := buildState(t)
+	v := newDiscoveryView(st)
+	v.resize(120, 30)
+	v.update(discoveryFetchedMsg{res: &discovery.DiscoveryResult{
+		Marketplaces: []discovery.RemoteMarketplace{
+			{Name: "alpha", Source: "github", Repo: "o/alpha"},
+			{Name: "beta", Source: "github", Repo: "o/beta"},
+			{Name: "gamma", Source: "github", Repo: "o/gamma"},
+		},
+	}})
+	// Cursor on the last row, then narrow the filter to a single match so
+	// v.index (2) is now past the visible bound (1). Pressing enter must clamp
+	// instead of indexing visible[2] out of range.
+	v.index = 2
+	v.filter.SetValue("alpha")
+	cmd := v.update(key("enter")) // would panic pre-fix
+	if v.mode != modePlugins {
+		t.Fatalf("enter should drill into the single visible row; mode=%d", v.mode)
+	}
+	if v.curMP.Name != "alpha" {
+		t.Fatalf("expected to drill into alpha, got %q", v.curMP.Name)
+	}
+	_ = cmd
+}
+
+func TestDiscoveryInstallFailureRollsBackAddedMarketplace(t *testing.T) {
+	st, _ := buildState(t)
+	// Seed the marketplace as if install.AddMarketplace had already added it.
+	if err := st.settings.AddMarketplace(config.Marketplace{Name: "tmpmkt", SourceType: "github", Repo: "o/tmpmkt"}); err != nil {
+		t.Fatal(err)
+	}
+	v := newDiscoveryView(st)
+	v.resize(120, 30)
+	v.installBusy = true
+	v.update(discoveryInstallResultMsg{
+		name:             "tmpmkt",
+		addedMarketplace: true,
+		err:              errInstallFixture,
+	})
+	for _, mp := range st.settings.ExtraMarketplaces() {
+		if mp.Name == "tmpmkt" {
+			t.Fatalf("failed install should have rolled back the added marketplace")
+		}
+	}
+	if _, ok := v.installedNames["tmpmkt"]; ok {
+		t.Fatalf("installedNames snapshot should no longer contain rolled-back marketplace")
 	}
 }
 

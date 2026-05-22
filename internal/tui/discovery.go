@@ -65,6 +65,14 @@ type discoveryView struct {
 	installBusy    bool
 	pendingInstall string // plugin name awaiting a confirm second-press (PluginIDClash)
 
+	// installedNames is a snapshot of already-added marketplace names, refreshed
+	// only on the bubbletea goroutine (construction, fetch, post-mutation). render
+	// and key handlers read this instead of calling settings.ExtraMarketplaces()
+	// directly — the add/install closures mutate that map off-goroutine, and a
+	// live read during the spinner-driven render would be a concurrent map
+	// read/write panic.
+	installedNames map[string]struct{}
+
 	// last fetch metadata
 	fetchedAt time.Time
 	fromCache bool
@@ -122,7 +130,17 @@ func newDiscoveryView(st *state) *discoveryView {
 		ti.CharLimit = 64
 		return ti
 	}
-	return &discoveryView{st: st, filter: mk(), pFilter: mk()}
+	v := &discoveryView{st: st, filter: mk(), pFilter: mk()}
+	v.refreshInstalled()
+	return v
+}
+
+// refreshInstalled snapshots the set of already-added marketplace names. MUST be
+// called only on the bubbletea goroutine (it reads the settings map + scans the
+// clone dir), never from a context where an add/install closure could be
+// mutating settings concurrently.
+func (v *discoveryView) refreshInstalled() {
+	v.installedNames = installedMarketplaceNames(v.st)
 }
 
 func (v *discoveryView) resize(w, h int) { v.w, v.h = w, h }
@@ -201,6 +219,7 @@ func (v *discoveryView) update(msg tea.Msg) tea.Cmd {
 		}
 		v.rows = m.res.Marketplaces
 		v.sortRows()
+		v.refreshInstalled()
 		v.fetchedAt = m.res.FetchedAt
 		v.fromCache = m.res.FromCache
 		v.srcErrors = m.res.Errors
@@ -237,13 +256,22 @@ func (v *discoveryView) update(msg tea.Msg) tea.Cmd {
 			v.flash = styleErr.Render("save error: " + err.Error())
 			return nil
 		}
+		v.refreshInstalled()
 		v.flash = styleOK.Render("added marketplace " + m.name)
 		return nil
 	case discoveryInstallResultMsg:
 		v.installBusy = false
 		if m.err != nil {
 			if m.addedMarketplace {
-				v.st.settings.RemoveMarketplace(m.name)
+				// install.AddMarketplace had already cloned the marketplace to disk
+				// before install.Install failed. Roll back BOTH the settings entry
+				// and the clone dir so we don't strand an orphaned clone with no
+				// settings reference. RemoveMarketplace is safe here: the failed
+				// install registered no plugin against this marketplace.
+				if rerr := install.RemoveMarketplace(v.st.paths, v.st.settings, v.st.installed, m.name, true); rerr != nil {
+					v.st.settings.RemoveMarketplace(m.name)
+				}
+				v.refreshInstalled()
 			}
 			v.flash = styleErr.Render("install error: " + m.err.Error())
 			return nil
@@ -252,6 +280,7 @@ func (v *discoveryView) update(msg tea.Msg) tea.Cmd {
 		v.st.dirtySettings = true
 		v.st.dirtyPlugins = true
 		v.st.rescanPluginMCPs()
+		v.refreshInstalled()
 		// The marketplace clone already touched disk; persist settings now so a
 		// force-quit can't leave settings.json behind the on-disk state.
 		if m.addedMarketplace {
@@ -309,6 +338,10 @@ func (v *discoveryView) update(msg tea.Msg) tea.Cmd {
 
 func (v *discoveryView) updateList(key tea.KeyMsg) tea.Cmd {
 	visible := v.visibleRows()
+	// Clamp here as well as in render(): a filter change can leave v.index past
+	// the visible bound, and the key handlers below index visible[v.index]
+	// directly. Relying on render() alone leaves a window where update() panics.
+	v.index = clampIndex(v.index, len(visible))
 	switch key.String() {
 	case "up", "k":
 		if v.index > 0 {
@@ -339,11 +372,14 @@ func (v *discoveryView) updateList(key tea.KeyMsg) tea.Cmd {
 		v.flash = styleProgress.Render("refreshing discovery sources…")
 		return v.fetchCmd(true)
 	case "a":
-		if v.addBusy || len(visible) == 0 {
+		// Block while any mutation closure is in flight — both add and install
+		// call install.AddMarketplace off-goroutine, and two concurrent writers to
+		// the shared settings map would panic.
+		if v.addBusy || v.installBusy || len(visible) == 0 {
 			return nil
 		}
 		r := visible[v.index]
-		if _, ok := installedMarketplaceNames(v.st)[r.Name]; ok {
+		if _, ok := v.installedNames[r.Name]; ok {
 			v.flash = styleDim.Render(r.Name + " already added")
 			return nil
 		}
@@ -385,6 +421,7 @@ func (v *discoveryView) updateList(key tea.KeyMsg) tea.Cmd {
 
 func (v *discoveryView) updatePlugins(key tea.KeyMsg) tea.Cmd {
 	visible := v.visiblePlugins()
+	v.pIndex = clampIndex(v.pIndex, len(visible))
 	switch key.String() {
 	case "esc", "b":
 		v.mode = modeList
@@ -460,7 +497,9 @@ func (v *discoveryView) updateDetail(key tea.KeyMsg) tea.Cmd {
 // reinstall behind a double-press confirm when the plugin ID already collides
 // with an installed one.
 func (v *discoveryView) installPluginCmd(plugin discovery.RemotePlugin) tea.Cmd {
-	if v.installBusy {
+	// Block while any mutation closure is in flight (see the `a` handler) — a
+	// concurrent add and install would both write the shared settings map.
+	if v.installBusy || v.addBusy {
 		return nil
 	}
 	// Reinstall confirm: only meaningful in modeDetail where the conflict report
@@ -701,11 +740,10 @@ func (v *discoveryView) renderList() string {
 		end = len(visible)
 	}
 
-	installedNames := installedMarketplaceNames(v.st)
 	for i := v.top; i < end; i++ {
 		r := visible[i]
 		marker := styleDim.Render("[+]")
-		if _, ok := installedNames[r.Name]; ok {
+		if _, ok := v.installedNames[r.Name]; ok {
 			marker = styleWarn.Render("[=]")
 		}
 		src := r.Source
@@ -875,6 +913,17 @@ func truncateD(s string, n int) string {
 		return s[:n]
 	}
 	return s[:n-1] + "…"
+}
+
+// clampIndex keeps a cursor index within [0, n-1], or 0 when the list is empty.
+func clampIndex(i, n int) int {
+	if i >= n {
+		i = n - 1
+	}
+	if i < 0 {
+		i = 0
+	}
+	return i
 }
 
 // formatStars renders a GitHub star count compactly (1234 → "1.2k").
