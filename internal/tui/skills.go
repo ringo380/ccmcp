@@ -19,6 +19,11 @@ type skillView struct {
 	top   int
 	w, h  int
 
+	// allSkills caches the full Discover() result. Populated on first render
+	// and after any mutation. Filter keystrokes operate on this slice in memory
+	// rather than re-running the filesystem walk.
+	allSkills []skills.Skill
+
 	filter       textinput.Model
 	filterActive bool
 	filterText   string
@@ -52,14 +57,22 @@ func newSkillView(st *state) *skillView {
 	return v
 }
 
-func (v *skillView) rebuild() {
-	all := skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+// load runs skills.Discover to refresh allSkills, then applies the current
+// filter. Call after mutations. Filter keystrokes call applyFilter directly.
+func (v *skillView) load() {
+	v.allSkills = skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	v.applyFilter()
+}
+
+// applyFilter populates v.rows from allSkills without re-running Discover.
+// O(n) in-memory pass; safe to call on every filter keystroke.
+func (v *skillView) applyFilter() {
 	if v.filterText == "" {
-		v.rows = all
+		v.rows = v.allSkills
 	} else {
 		needle := strings.ToLower(v.filterText)
 		var filtered []skills.Skill
-		for _, s := range all {
+		for _, s := range v.allSkills {
 			if strings.Contains(strings.ToLower(s.Name), needle) {
 				filtered = append(filtered, s)
 			}
@@ -73,6 +86,8 @@ func (v *skillView) rebuild() {
 		v.index = 0
 	}
 }
+
+func (v *skillView) rebuild() { v.load() }
 
 func (v *skillView) update(msg tea.Msg) tea.Cmd {
 	// New skill name input mode.
@@ -121,7 +136,7 @@ func (v *skillView) update(msg tea.Msg) tea.Cmd {
 				v.filter.Blur()
 			default:
 				v.filterText = v.filter.Value()
-				v.rebuild()
+				v.applyFilter()
 			}
 		}
 		return cmd
@@ -288,6 +303,9 @@ func (v *skillView) toggle(s skills.Skill) {
 }
 
 func (v *skillView) render() string {
+	if v.allSkills == nil {
+		v.load()
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Skills (%d)", len(v.rows))
 	if v.filterText != "" {

@@ -7,10 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ringo380/ccmcp/internal/agents"
 	"github.com/ringo380/ccmcp/internal/commands"
+	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/discovery"
 	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/skills"
@@ -34,6 +36,10 @@ type discoveryView struct {
 	index int
 	top   int
 
+	// list filter (modeList)
+	filter       textinput.Model
+	filterActive bool
+
 	// plugin-list state (modePlugins)
 	curMP    discovery.RemoteMarketplace
 	plugins  []discovery.RemotePlugin
@@ -41,6 +47,10 @@ type discoveryView struct {
 	pTop     int
 	pErr     error
 	pLoading bool
+
+	// plugin filter (modePlugins)
+	pFilter       textinput.Model
+	pFilterActive bool
 
 	// detail state (modeDetail)
 	curPlugin   discovery.RemotePlugin
@@ -50,11 +60,16 @@ type discoveryView struct {
 	detailReady bool
 	detailBusy  bool
 
+	// install/add state (mutation guards + reinstall confirm)
+	addBusy        bool
+	installBusy    bool
+	pendingInstall string // plugin name awaiting a confirm second-press (PluginIDClash)
+
 	// last fetch metadata
-	fetchedAt   time.Time
-	fromCache   bool
-	srcErrors   map[string]string
-	fetchBusy   bool
+	fetchedAt time.Time
+	fromCache bool
+	srcErrors map[string]string
+	fetchBusy bool
 }
 
 type discoveryMode int
@@ -66,7 +81,10 @@ const (
 )
 
 // async messages
-type discoveryFetchedMsg struct{ res *discovery.DiscoveryResult; err error }
+type discoveryFetchedMsg struct {
+	res *discovery.DiscoveryResult
+	err error
+}
 type discoveryManifestMsg struct {
 	mp      discovery.RemoteMarketplace
 	plugins []discovery.RemotePlugin
@@ -79,19 +97,54 @@ type discoveryPreviewMsg struct {
 	err     error
 }
 
-func newDiscoveryView(st *state) *discoveryView { return &discoveryView{st: st} }
+// discoveryAddResultMsg is the result of adding a discovered marketplace to
+// settings + cloning it (the `a` key in modeList).
+type discoveryAddResultMsg struct {
+	name string
+	err  error
+}
 
-func (v *discoveryView) resize(w, h int)         { v.w, v.h = w, h }
-func (v *discoveryView) capturingInput() bool    { return false }
+// discoveryInstallResultMsg is the result of installing a plugin straight from
+// the Discover tab (the `i` key). addedMarketplace records whether the
+// marketplace had to be added+cloned as part of the install, so the handler
+// knows to persist settings synchronously.
+type discoveryInstallResultMsg struct {
+	name             string
+	addedMarketplace bool
+	result           *install.Result
+	err              error
+}
+
+func newDiscoveryView(st *state) *discoveryView {
+	mk := func() textinput.Model {
+		ti := textinput.New()
+		ti.Prompt = "/"
+		ti.CharLimit = 64
+		return ti
+	}
+	return &discoveryView{st: st, filter: mk(), pFilter: mk()}
+}
+
+func (v *discoveryView) resize(w, h int) { v.w, v.h = w, h }
+
+// capturingInput reports whether a filter textinput has focus, so the global
+// key handler in model.go stops stealing keystrokes (digits, q, etc.).
+func (v *discoveryView) capturingInput() bool { return v.filterActive || v.pFilterActive }
 
 func (v *discoveryView) helpText() string {
 	switch v.mode {
 	case modeList:
-		return "enter: drill in  r: refresh  j/k: nav  g/G: top/bottom"
+		if v.filterActive {
+			return "type to filter  enter/esc: done"
+		}
+		return "enter: drill in  a: add  r: refresh  /: filter  j/k: nav  g/G: top/bottom"
 	case modePlugins:
-		return "enter: preview plugin  b/esc: back  j/k: nav"
+		if v.pFilterActive {
+			return "type to filter  enter/esc: done"
+		}
+		return "enter: preview  i: install  /: filter  b/esc: back  j/k: nav"
 	case modeDetail:
-		return "b/esc: back"
+		return "i: install  b/esc: back"
 	}
 	return ""
 }
@@ -147,6 +200,7 @@ func (v *discoveryView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		v.rows = m.res.Marketplaces
+		v.sortRows()
 		v.fetchedAt = m.res.FetchedAt
 		v.fromCache = m.res.FromCache
 		v.srcErrors = m.res.Errors
@@ -170,6 +224,71 @@ func (v *discoveryView) update(msg tea.Msg) tea.Cmd {
 		v.curPlugin = m.plugin
 		v.detailReady = m.err == nil
 		return nil
+	case discoveryAddResultMsg:
+		v.addBusy = false
+		if m.err != nil {
+			// Roll back the in-memory settings entry left behind when the clone
+			// failed mid-AddMarketplace, so settings doesn't diverge from disk.
+			v.st.settings.RemoveMarketplace(m.name)
+			v.flash = styleErr.Render("add error: " + m.err.Error())
+			return nil
+		}
+		if err := v.persistSettings(); err != nil {
+			v.flash = styleErr.Render("save error: " + err.Error())
+			return nil
+		}
+		v.flash = styleOK.Render("added marketplace " + m.name)
+		return nil
+	case discoveryInstallResultMsg:
+		v.installBusy = false
+		if m.err != nil {
+			if m.addedMarketplace {
+				v.st.settings.RemoveMarketplace(m.name)
+			}
+			v.flash = styleErr.Render("install error: " + m.err.Error())
+			return nil
+		}
+		install.RegisterInstall(v.st.settings, v.st.installed, m.result)
+		v.st.dirtySettings = true
+		v.st.dirtyPlugins = true
+		v.st.rescanPluginMCPs()
+		// The marketplace clone already touched disk; persist settings now so a
+		// force-quit can't leave settings.json behind the on-disk state.
+		if m.addedMarketplace {
+			if err := v.persistSettings(); err != nil {
+				v.flash = styleErr.Render("save error: " + err.Error())
+				return nil
+			}
+		}
+		v.flash = styleOK.Render("installed " + m.result.QualifiedID)
+		return nil
+	}
+
+	// Filter input drainage — must come after the async-msg switch (so result
+	// messages aren't swallowed) but before key dispatch.
+	if v.filterActive {
+		var cmd tea.Cmd
+		v.filter, cmd = v.filter.Update(msg)
+		if k, ok := msg.(tea.KeyMsg); ok {
+			switch k.String() {
+			case "enter", "esc":
+				v.filterActive = false
+				v.filter.Blur()
+			}
+		}
+		return cmd
+	}
+	if v.pFilterActive {
+		var cmd tea.Cmd
+		v.pFilter, cmd = v.pFilter.Update(msg)
+		if k, ok := msg.(tea.KeyMsg); ok {
+			switch k.String() {
+			case "enter", "esc":
+				v.pFilterActive = false
+				v.pFilter.Blur()
+			}
+		}
+		return cmd
 	}
 
 	key, ok := msg.(tea.KeyMsg)
@@ -189,20 +308,29 @@ func (v *discoveryView) update(msg tea.Msg) tea.Cmd {
 }
 
 func (v *discoveryView) updateList(key tea.KeyMsg) tea.Cmd {
+	visible := v.visibleRows()
 	switch key.String() {
 	case "up", "k":
 		if v.index > 0 {
 			v.index--
 		}
 	case "down", "j":
-		if v.index < len(v.rows)-1 {
+		if v.index < len(visible)-1 {
 			v.index++
 		}
 	case "g":
 		v.index = 0
 		v.top = 0
 	case "G":
-		v.index = len(v.rows) - 1
+		v.index = len(visible) - 1
+	case "/":
+		v.filterActive = true
+		v.filter.Focus()
+		return textinput.Blink
+	case "c":
+		v.filter.SetValue("")
+		v.index = 0
+		v.top = 0
 	case "r":
 		if v.fetchBusy {
 			return nil
@@ -210,14 +338,38 @@ func (v *discoveryView) updateList(key tea.KeyMsg) tea.Cmd {
 		v.fetchBusy = true
 		v.flash = styleProgress.Render("refreshing discovery sources…")
 		return v.fetchCmd(true)
-	case "enter":
-		if len(v.rows) == 0 {
+	case "a":
+		if v.addBusy || len(visible) == 0 {
 			return nil
 		}
-		v.curMP = v.rows[v.index]
+		r := visible[v.index]
+		if _, ok := installedMarketplaceNames(v.st)[r.Name]; ok {
+			v.flash = styleDim.Render(r.Name + " already added")
+			return nil
+		}
+		mp, err := toConfigMarketplace(r)
+		if err != nil {
+			v.flash = styleErr.Render(err.Error())
+			return nil
+		}
+		v.addBusy = true
+		v.flash = styleProgress.Render("adding " + r.Name + "…")
+		p := v.st.paths
+		settings := v.st.settings
+		name := r.Name
+		return func() tea.Msg {
+			err := install.AddMarketplace(p, settings, mp)
+			return discoveryAddResultMsg{name: name, err: err}
+		}
+	case "enter":
+		if len(visible) == 0 {
+			return nil
+		}
+		v.curMP = visible[v.index]
 		v.plugins = nil
 		v.pErr = nil
 		v.pIndex = 0
+		v.pFilter.SetValue("")
 		v.mode = modePlugins
 		v.pLoading = true
 		mp := v.curMP
@@ -232,6 +384,7 @@ func (v *discoveryView) updateList(key tea.KeyMsg) tea.Cmd {
 }
 
 func (v *discoveryView) updatePlugins(key tea.KeyMsg) tea.Cmd {
+	visible := v.visiblePlugins()
 	switch key.String() {
 	case "esc", "b":
 		v.mode = modeList
@@ -240,14 +393,27 @@ func (v *discoveryView) updatePlugins(key tea.KeyMsg) tea.Cmd {
 			v.pIndex--
 		}
 	case "down", "j":
-		if v.pIndex < len(v.plugins)-1 {
+		if v.pIndex < len(visible)-1 {
 			v.pIndex++
 		}
-	case "enter":
-		if len(v.plugins) == 0 || v.detailBusy {
+	case "/":
+		v.pFilterActive = true
+		v.pFilter.Focus()
+		return textinput.Blink
+	case "c":
+		v.pFilter.SetValue("")
+		v.pIndex = 0
+		v.pTop = 0
+	case "i":
+		if len(visible) == 0 {
 			return nil
 		}
-		plugin := v.plugins[v.pIndex]
+		return v.installPluginCmd(visible[v.pIndex])
+	case "enter":
+		if len(visible) == 0 || v.detailBusy {
+			return nil
+		}
+		plugin := visible[v.pIndex]
 		v.detailBusy = true
 		v.detailReady = false
 		v.detailErr = nil
@@ -275,8 +441,77 @@ func (v *discoveryView) updateDetail(key tea.KeyMsg) tea.Cmd {
 	switch key.String() {
 	case "esc", "b":
 		v.mode = modePlugins
+		v.pendingInstall = ""
+	case "i":
+		if v.detailBusy || !v.detailReady {
+			return nil
+		}
+		return v.installPluginCmd(v.curPlugin)
+	default:
+		// Any other key dismisses a pending reinstall-confirm.
+		if v.pendingInstall != "" {
+			v.pendingInstall = ""
+		}
 	}
 	return nil
+}
+
+// installPluginCmd builds the async install command for a plugin, gating a
+// reinstall behind a double-press confirm when the plugin ID already collides
+// with an installed one.
+func (v *discoveryView) installPluginCmd(plugin discovery.RemotePlugin) tea.Cmd {
+	if v.installBusy {
+		return nil
+	}
+	// Reinstall confirm: only meaningful in modeDetail where the conflict report
+	// is computed. PluginIDClash means "<plugin>@<marketplace>" is already installed.
+	if v.mode == modeDetail && v.report.PluginIDClash {
+		if v.pendingInstall != plugin.Name {
+			v.pendingInstall = plugin.Name
+			v.flash = styleWarn.Render("already installed — press i again to reinstall")
+			return nil
+		}
+	}
+	v.pendingInstall = ""
+	mp := v.curMP
+	cfgMP, err := toConfigMarketplace(mp)
+	if err != nil {
+		v.flash = styleErr.Render(err.Error())
+		return nil
+	}
+	v.installBusy = true
+	v.flash = styleProgress.Render("installing " + plugin.Name + "…")
+	p := v.st.paths
+	settings := v.st.settings
+	pluginName := plugin.Name
+	mktName := mp.Name
+	alreadyInSettings := false
+	for _, e := range settings.ExtraMarketplaces() {
+		if e.Name == mktName {
+			alreadyInSettings = true
+			break
+		}
+	}
+	return func() tea.Msg {
+		addedMarketplace := false
+		if !install.IsMarketplaceCloned(p, mktName) {
+			// Ensure the marketplace is on disk before install.Install reads its
+			// manifest. If it's in settings already (but not cloned) just clone;
+			// otherwise add+clone.
+			var aerr error
+			if alreadyInSettings {
+				aerr = install.CloneMarketplace(p, cfgMP)
+			} else {
+				aerr = install.AddMarketplace(p, settings, cfgMP)
+				addedMarketplace = aerr == nil
+			}
+			if aerr != nil {
+				return discoveryInstallResultMsg{name: mktName, addedMarketplace: addedMarketplace, err: aerr}
+			}
+		}
+		res, err := install.Install(p, mktName, pluginName)
+		return discoveryInstallResultMsg{name: mktName, addedMarketplace: addedMarketplace, result: res, err: err}
+	}
 }
 
 // buildTUIConflictState assembles a discovery.ConflictState from the loaded
@@ -309,6 +544,100 @@ func buildTUIConflictState(st *state) discovery.ConflictState {
 	return discovery.BuildState(skillRows, agentRows, cmdRows, mcpKeys, nil, mktNames, ids)
 }
 
+// toConfigMarketplace converts a discovered RemoteMarketplace into the
+// config.Marketplace shape the install pipeline consumes. config.Marketplace
+// has no "url" source type (only github|git|local) and no branch field — a
+// "url" source maps to "git" (CloneMarketplace passes the URL verbatim to
+// git clone), and any pinned discovery Branch is dropped (clones HEAD).
+func toConfigMarketplace(r discovery.RemoteMarketplace) (config.Marketplace, error) {
+	srcType, ok := mapSource(r.Source)
+	if !ok {
+		return config.Marketplace{}, fmt.Errorf("unsupported source type %q for %s", r.Source, r.Name)
+	}
+	return config.Marketplace{
+		Name:       r.Name,
+		SourceType: srcType,
+		Repo:       r.Repo,
+		AutoUpdate: true,
+	}, nil
+}
+
+func mapSource(src string) (string, bool) {
+	switch src {
+	case "github":
+		return "github", true
+	case "git":
+		return "git", true
+	case "url":
+		return "git", true
+	default:
+		return "", false
+	}
+}
+
+// persistSettings flushes settings.json synchronously after a disk side-effect
+// (a marketplace clone) so on-disk state and settings.json don't diverge if the
+// user later force-quits. Mirrors marketplaceView.persistSettings.
+func (v *discoveryView) persistSettings() error {
+	if err := config.Backup(v.st.settings.Path, v.st.paths.BackupsDir); err != nil {
+		return err
+	}
+	return v.st.settings.Save()
+}
+
+// sortRows orders discovered marketplaces by star count (desc) then name (asc),
+// so the most-recognised marketplaces float to the top.
+func (v *discoveryView) sortRows() {
+	sort.SliceStable(v.rows, func(i, j int) bool {
+		if v.rows[i].Stars != v.rows[j].Stars {
+			return v.rows[i].Stars > v.rows[j].Stars
+		}
+		return strings.ToLower(v.rows[i].Name) < strings.ToLower(v.rows[j].Name)
+	})
+}
+
+// visibleRows applies the modeList filter (matches name, description, or tags).
+func (v *discoveryView) visibleRows() []discovery.RemoteMarketplace {
+	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
+	if q == "" {
+		return v.rows
+	}
+	out := make([]discovery.RemoteMarketplace, 0, len(v.rows))
+	for _, r := range v.rows {
+		if matchesQuery(q, r.Name, r.Description, r.Tags) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// visiblePlugins applies the modePlugins filter (matches name, description, tags).
+func (v *discoveryView) visiblePlugins() []discovery.RemotePlugin {
+	q := strings.ToLower(strings.TrimSpace(v.pFilter.Value()))
+	if q == "" {
+		return v.plugins
+	}
+	out := make([]discovery.RemotePlugin, 0, len(v.plugins))
+	for _, p := range v.plugins {
+		if matchesQuery(q, p.Name, p.Description, p.Tags) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func matchesQuery(q, name, desc string, tags []string) bool {
+	if strings.Contains(strings.ToLower(name), q) || strings.Contains(strings.ToLower(desc), q) {
+		return true
+	}
+	for _, t := range tags {
+		if strings.Contains(strings.ToLower(t), q) {
+			return true
+		}
+	}
+	return false
+}
+
 // ---- render ----------------------------------------------------------------
 
 func (v *discoveryView) render() string {
@@ -325,21 +654,41 @@ func (v *discoveryView) render() string {
 
 func (v *discoveryView) renderList() string {
 	var b strings.Builder
+	visible := v.visibleRows()
 	b.WriteString(fmt.Sprintf("Discover — %d marketplace(s)", len(v.rows)))
+	if v.filter.Value() != "" {
+		b.WriteString(styleDim.Render(fmt.Sprintf("  (%d shown)", len(visible))))
+	}
 	if v.fromCache {
 		b.WriteString("  " + styleDim.Render(fmt.Sprintf("(cached %s ago)", time.Since(v.fetchedAt).Round(time.Second))))
 	}
 	b.WriteString("\n")
+	if v.filterActive || v.filter.Value() != "" {
+		b.WriteString(v.filter.View() + "\n")
+	}
 	if v.fetchBusy {
 		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("fetching…") + "\n")
 	}
-	if len(v.rows) == 0 && !v.fetchBusy {
-		b.WriteString(styleDim.Render("  (no marketplaces — press r to retry)") + "\n")
+	if v.addBusy || v.installBusy {
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("working…") + "\n")
+	}
+	if len(visible) == 0 && !v.fetchBusy {
+		if v.filter.Value() != "" {
+			b.WriteString(styleDim.Render("  (no matches — press c to clear filter)") + "\n")
+		} else {
+			b.WriteString(styleDim.Render("  (no marketplaces — press r to retry)") + "\n")
+		}
 	}
 
 	listH := v.h - 6
 	if listH < 5 {
 		listH = 5
+	}
+	if v.index >= len(visible) {
+		v.index = len(visible) - 1
+	}
+	if v.index < 0 {
+		v.index = 0
 	}
 	if v.index < v.top {
 		v.top = v.index
@@ -348,13 +697,13 @@ func (v *discoveryView) renderList() string {
 		v.top = v.index - listH + 1
 	}
 	end := v.top + listH
-	if end > len(v.rows) {
-		end = len(v.rows)
+	if end > len(visible) {
+		end = len(visible)
 	}
 
 	installedNames := installedMarketplaceNames(v.st)
 	for i := v.top; i < end; i++ {
-		r := v.rows[i]
+		r := visible[i]
 		marker := styleDim.Render("[+]")
 		if _, ok := installedNames[r.Name]; ok {
 			marker = styleWarn.Render("[=]")
@@ -364,8 +713,8 @@ func (v *discoveryView) renderList() string {
 			src = r.Source + " " + r.Repo
 		}
 		line := fmt.Sprintf("%s %s  %s", marker, r.Name, styleDim.Render("("+src+")"))
-		if r.Description != "" {
-			line += "  " + styleDim.Render(truncateD(r.Description, 60))
+		if r.Stars > 0 {
+			line += "  " + styleDim.Render(fmt.Sprintf("★ %s", formatStars(r.Stars)))
 		}
 		if i == v.index {
 			b.WriteString(styleSelected.Render("  " + line))
@@ -373,6 +722,17 @@ func (v *discoveryView) renderList() string {
 			b.WriteString("  " + line)
 		}
 		b.WriteString("\n")
+		// Secondary line: description + tags, indented under the row.
+		var meta []string
+		if r.Description != "" {
+			meta = append(meta, truncateD(r.Description, 70))
+		}
+		if len(r.Tags) > 0 {
+			meta = append(meta, "["+strings.Join(r.Tags, ", ")+"]")
+		}
+		if len(meta) > 0 {
+			b.WriteString("      " + styleDim.Render(strings.Join(meta, "  ")) + "\n")
+		}
 	}
 
 	if len(v.srcErrors) > 0 {
@@ -391,18 +751,34 @@ func (v *discoveryView) renderList() string {
 
 func (v *discoveryView) renderPlugins() string {
 	var b strings.Builder
+	visible := v.visiblePlugins()
 	b.WriteString(fmt.Sprintf("Discover › %s — %d plugin(s)", v.curMP.Name, len(v.plugins)))
+	if v.pFilter.Value() != "" {
+		b.WriteString(styleDim.Render(fmt.Sprintf("  (%d shown)", len(visible))))
+	}
 	b.WriteString("\n")
+	if v.pFilterActive || v.pFilter.Value() != "" {
+		b.WriteString(v.pFilter.View() + "\n")
+	}
 	if v.pLoading {
 		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("fetching manifest…") + "\n")
+	}
+	if v.installBusy {
+		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("installing…") + "\n")
 	}
 	if v.pErr != nil {
 		b.WriteString(styleErr.Render("  error: "+v.pErr.Error()) + "\n")
 		return b.String()
 	}
-	listH := v.h - 4
+	listH := v.h - 5
 	if listH < 5 {
 		listH = 5
+	}
+	if v.pIndex >= len(visible) {
+		v.pIndex = len(visible) - 1
+	}
+	if v.pIndex < 0 {
+		v.pIndex = 0
 	}
 	if v.pIndex < v.pTop {
 		v.pTop = v.pIndex
@@ -411,16 +787,19 @@ func (v *discoveryView) renderPlugins() string {
 		v.pTop = v.pIndex - listH + 1
 	}
 	end := v.pTop + listH
-	if end > len(v.plugins) {
-		end = len(v.plugins)
+	if end > len(visible) {
+		end = len(visible)
 	}
 	for i := v.pTop; i < end; i++ {
-		p := v.plugins[i]
-		line := "  " + p.Name
+		p := visible[i]
+		line := p.Name
+		if p.Description != "" {
+			line += "  " + styleDim.Render(truncateD(p.Description, 60))
+		}
 		if i == v.pIndex {
 			b.WriteString(styleSelected.Render("  " + line))
 		} else {
-			b.WriteString(line)
+			b.WriteString("  " + line)
 		}
 		b.WriteString("\n")
 	}
@@ -441,6 +820,9 @@ func (v *discoveryView) renderDetail() string {
 	}
 	if !v.detailReady {
 		return b.String()
+	}
+	if v.curPlugin.Description != "" {
+		b.WriteString("  " + styleDim.Render(truncateD(v.curPlugin.Description, 76)) + "\n")
 	}
 	b.WriteString(styleDim.Render(fmt.Sprintf("  preview: %s @ %s", v.preview.Repo, shortShaTUI(v.preview.Sha))) + "\n")
 	b.WriteString(styleDim.Render("  cache:   "+v.preview.Dir) + "\n\n")
@@ -493,6 +875,18 @@ func truncateD(s string, n int) string {
 		return s[:n]
 	}
 	return s[:n-1] + "…"
+}
+
+// formatStars renders a GitHub star count compactly (1234 → "1.2k").
+func formatStars(n int) string {
+	switch {
+	case n >= 1000000:
+		return fmt.Sprintf("%.1fM", float64(n)/1000000)
+	case n >= 1000:
+		return fmt.Sprintf("%.1fk", float64(n)/1000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
 }
 
 func shortShaTUI(sha string) string {

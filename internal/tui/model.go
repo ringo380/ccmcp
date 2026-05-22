@@ -254,11 +254,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "2":
 			m.tab = tabPlugins
 			m.message = ""
-			return m, m.plugins.initialCheckCmd()
+			return m, m.tabEnterCmd()
 		case "3":
 			m.tab = tabMarketplaces
 			m.message = ""
-			return m, m.marketplaces.initialCheckCmd()
+			return m, m.tabEnterCmd()
 		case "4":
 			m.tab = tabDiscover
 			m.message = ""
@@ -454,10 +454,16 @@ func (m *model) footerHelp() string {
 func (m *model) tabEnterCmd() tea.Cmd {
 	switch m.tab {
 	case tabMarketplaces:
+		// Rebuild from shared state so a marketplace added from the Discover tab
+		// shows up here (these views cache v.rows and don't otherwise refresh on
+		// tab switch).
+		m.marketplaces.rebuild()
 		return m.marketplaces.initialCheckCmd()
 	case tabDiscover:
 		return m.discover.initialCheckCmd()
 	case tabPlugins:
+		// Rebuild so a plugin installed from the Discover tab appears here.
+		m.plugins.rebuild()
 		return m.plugins.initialCheckCmd()
 	case tabMCPs:
 		return m.mcps.initialCheckCmd()

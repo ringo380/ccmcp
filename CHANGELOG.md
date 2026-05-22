@@ -6,6 +6,34 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Discover tab is now install-capable and far more useful.** Previously
+  read-only, the Discover tab can now **add a marketplace** (`a` — clones it and
+  writes settings) and **install a plugin** straight from the drill-down (`i` —
+  adds the plugin's marketplace first if needed, then enables it; press `i`
+  twice to reinstall an already-installed plugin). Added a `/` filter (matches
+  name, description, tags), `c` to clear, and star-based sorting. Marketplace
+  rows now show GitHub stars, descriptions, and tags; plugin rows show their
+  descriptions. All mutations route through the existing `internal/install`
+  pipeline, so the discovery package stays read-only.
+- **Substantially larger curated registry.** The embedded marketplace registry
+  grew from 2 to ~48 verified entries (every repo confirmed to ship a valid
+  `.claude-plugin/marketplace.json`), covering official Anthropic plugin
+  directories, large community aggregators (DevsForge, buildwithclaude,
+  cc-marketplace, claude-code-plugins-plus), and vendor toolkits (ElevenLabs,
+  Perplexity, Sentry, BrightData, Fastly, Confluent, and more).
+
+### Changed
+
+- **Discovery default sources.** Dropped the dead Anthropic `.well-known` probe
+  (it served an HTML SPA, only ever producing a source error) from the default
+  set; the curated registry is now the always-works backbone, with the
+  awesome-list scraper as a best-effort supplement. The `AnthropicSource` type
+  and endpoint const remain for user-configured registry URLs.
+- Switching to the Marketplaces or Plugins tab now rebuilds its row set, so a
+  marketplace/plugin added from the Discover tab shows up immediately.
+
 ## [0.12.1] — 2026-05-16
 
 ### Added

@@ -14,7 +14,7 @@ func TestExtractGitHubReposFromBullets(t *testing.T) {
 		"- [davila7](https://github.com/davila7/claude-code-templates) — templates galore\n" +
 		"- wshobson/agents at https://github.com/wshobson/agents.git\n" +
 		"- duplicate: https://github.com/davila7/claude-code-templates/tree/main\n" +
-		"- 1. [stoplisted](https://github.com/anthropics/claude-code) — should be ignored\n" +
+		"- 1. [stoplisted](https://github.com/sindresorhus/awesome) — should be ignored\n" +
 		"text outside a list with https://github.com/should/skip — ignored.\n"
 	got := discovery.ExtractGitHubRepos(md)
 	wantRepos := map[string]bool{
