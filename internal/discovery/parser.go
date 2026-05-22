@@ -22,11 +22,13 @@ var repoLinkAnyRe = regexp.MustCompile(`(?i)github\.com/([\w.-]+)/([\w.-]+?)(?:\
 // stoplist drops common false-positives — these are repos that turn up in
 // almost every awesome-list as references but aren't ccmcp marketplaces.
 var stoplist = map[string]bool{
-	"anthropics/claude-code":    true,
-	"anthropic/claude-code":     true,
 	"github/awesome-claude":     true,
 	"sindresorhus/awesome":      true,
 	"matiassingers/awesome-rea": true,
+	// The awesome-list index repo itself — it's a curated list, not a marketplace.
+	"hesreallyhim/awesome-claude-code": true,
+	// Hooks examples repo; has no .claude-plugin/marketplace.json.
+	"disler/claude-code-hooks-mastery": true,
 }
 
 // ExtractGitHubRepos scans markdown for github.com/<owner>/<repo> links inside

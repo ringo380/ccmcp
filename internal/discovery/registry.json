@@ -2,36 +2,372 @@
   "version": 1,
   "marketplaces": [
     {
-      "name": "claude-code-templates",
-      "description": "1500+ ready-to-use components: agents, commands, skills, settings, hooks, MCPs.",
+      "name": "claude-plugins-official",
+      "description": "Official Anthropic-managed directory of high-quality plugins.",
       "source": "github",
-      "repo": "davila7/claude-code-templates",
-      "tags": ["agents", "commands", "skills", "hooks", "mcp"],
-      "manifestUrl": "https://raw.githubusercontent.com/davila7/claude-code-templates/HEAD/.claude-plugin/marketplace.json"
+      "repo": "anthropics/claude-plugins-official",
+      "tags": ["agents", "commands", "skills", "mcp", "productivity"],
+      "stars": 24335
+    },
+    {
+      "name": "anthropic-skills",
+      "description": "Official Anthropic skills: document-skills, example-skills, claude-api.",
+      "source": "github",
+      "repo": "anthropics/skills",
+      "tags": ["skills", "docs", "productivity"],
+      "stars": 139260
+    },
+    {
+      "name": "claude-code-bundled-plugins",
+      "description": "Plugins bundled with Claude Code itself: Agent SDK dev, PR review, commit.",
+      "source": "github",
+      "repo": "anthropics/claude-code",
+      "tags": ["agents", "commands", "productivity"],
+      "stars": 125750
+    },
+    {
+      "name": "knowledge-work-plugins",
+      "description": "Anthropic knowledge-work plugin suite — broad productivity set (49 plugins).",
+      "source": "github",
+      "repo": "anthropics/knowledge-work-plugins",
+      "tags": ["productivity", "docs", "skills"],
+      "stars": 12421
+    },
+    {
+      "name": "superpowers",
+      "description": "Core skills library for Claude Code — TDD, debugging, collaboration patterns.",
+      "source": "github",
+      "repo": "obra/superpowers",
+      "tags": ["skills", "testing", "productivity"],
+      "stars": 202698
     },
     {
       "name": "wshobson-agents",
-      "description": "Curated subagent library covering popular development workflows.",
+      "description": "Large workflow/agent collection across dev, infra, security, business.",
       "source": "github",
       "repo": "wshobson/agents",
-      "tags": ["agents"],
-      "manifestUrl": "https://raw.githubusercontent.com/wshobson/agents/HEAD/.claude-plugin/marketplace.json"
+      "tags": ["agents", "commands", "devops", "security", "testing"],
+      "stars": 35795
     },
     {
-      "name": "claude-code-hooks-mastery",
-      "description": "Hook examples and reference implementations from the community.",
+      "name": "obsidian-skills",
+      "description": "Claude skills for working with Obsidian vaults.",
       "source": "github",
-      "repo": "disler/claude-code-hooks-mastery",
-      "tags": ["hooks"],
-      "manifestUrl": "https://raw.githubusercontent.com/disler/claude-code-hooks-mastery/HEAD/.claude-plugin/marketplace.json"
+      "repo": "kepano/obsidian-skills",
+      "tags": ["skills", "productivity", "docs"],
+      "stars": 32500
     },
     {
-      "name": "awesome-claude-code",
-      "description": "Community-curated index of marketplaces, agents, and skills (registry of registries).",
+      "name": "compounding-engineering",
+      "description": "AI-powered dev tools that improve with use, plus a coding tutor.",
       "source": "github",
-      "repo": "hesreallyhim/awesome-claude-code",
-      "tags": ["index", "awesome-list"],
-      "manifestUrl": ""
+      "repo": "EveryInc/compounding-engineering-plugin",
+      "tags": ["agents", "productivity", "testing"],
+      "stars": 17086
+    },
+    {
+      "name": "claude-code-plugins-plus",
+      "description": "Very large aggregated plugin registry across many categories (425 plugins).",
+      "source": "github",
+      "repo": "jeremylongshore/claude-code-plugins-plus",
+      "tags": ["agents", "commands", "devops", "security", "testing", "data", "web"],
+      "stars": 2235
+    },
+    {
+      "name": "awesome-claude-code-plugins",
+      "description": "Curated registry of slash commands, subagents, MCP servers, and hooks.",
+      "source": "github",
+      "repo": "ccplugins/awesome-claude-code-plugins",
+      "tags": ["agents", "commands", "mcp", "hooks"],
+      "stars": 799
+    },
+    {
+      "name": "cc-marketplace",
+      "description": "Community Claude Code plugin marketplace (119 plugins).",
+      "source": "github",
+      "repo": "ananddtyagi/cc-marketplace",
+      "tags": ["agents", "commands", "productivity"],
+      "stars": 681
+    },
+    {
+      "name": "sentry-mcp",
+      "description": "Sentry MCP server and error-monitoring tooling.",
+      "source": "github",
+      "repo": "getsentry/sentry-mcp",
+      "tags": ["mcp", "devops"],
+      "stars": 697
+    },
+    {
+      "name": "astronomer-agents",
+      "description": "Astronomer / Airflow data-orchestration agents.",
+      "source": "github",
+      "repo": "astronomer/agents",
+      "tags": ["agents", "data", "devops"],
+      "stars": 368
+    },
+    {
+      "name": "claude-night-market",
+      "description": "Git workflows, code review, spec-driven dev, multi-LLM delegation.",
+      "source": "github",
+      "repo": "athola/claude-night-market",
+      "branch": "master",
+      "tags": ["commands", "agents", "productivity", "testing"],
+      "stars": 288
+    },
+    {
+      "name": "postiz-agent",
+      "description": "Social-media automation CLI: scheduling, integrations, analytics.",
+      "source": "github",
+      "repo": "gitroomhq/postiz-agent",
+      "tags": ["productivity", "mcp"],
+      "stars": 232
+    },
+    {
+      "name": "claude-marketplace-elixir",
+      "description": "Elixir tooling — Credo, Dialyzer, Sobelow, ExUnit, Ash, Phoenix.",
+      "source": "github",
+      "repo": "bradleygolden/claude-marketplace-elixir",
+      "tags": ["testing", "security", "data"],
+      "stars": 175
+    },
+    {
+      "name": "brightdata-skills",
+      "description": "Web scraping, Google search, structured data extraction (MCP).",
+      "source": "github",
+      "repo": "brightdata/skills",
+      "tags": ["skills", "data", "web", "mcp"],
+      "stars": 131
+    },
+    {
+      "name": "neon-ai-rules",
+      "description": "Neon Postgres AI rules and Claude integration.",
+      "source": "github",
+      "repo": "neondatabase/ai-rules",
+      "tags": ["data", "docs"],
+      "stars": 85
+    },
+    {
+      "name": "nx-plugin-for-aws",
+      "description": "AWS Labs Nx plugin tooling.",
+      "source": "github",
+      "repo": "awslabs/nx-plugin-for-aws",
+      "tags": ["devops", "data"],
+      "stars": 75
+    },
+    {
+      "name": "nimble-skills",
+      "description": "Real-time web search and data extraction for agents.",
+      "source": "github",
+      "repo": "Nimbleway/agent-skills",
+      "tags": ["skills", "web", "data"],
+      "stars": 46
+    },
+    {
+      "name": "xiaolai-marketplace",
+      "description": "Central marketplace for Claude Code (and Codex) plugins.",
+      "source": "github",
+      "repo": "xiaolai/claude-plugin-marketplace",
+      "tags": ["agents", "commands", "skills", "productivity"],
+      "stars": 41
+    },
+    {
+      "name": "atlan-toolkit",
+      "description": "Atlan data-catalog agent toolkit.",
+      "source": "github",
+      "repo": "atlanhq/agent-toolkit",
+      "tags": ["data", "mcp"],
+      "stars": 33
+    },
+    {
+      "name": "fiftyone-skills",
+      "description": "Voxel51 FiftyOne computer-vision workflow skills (16 plugins).",
+      "source": "github",
+      "repo": "voxel51/fiftyone-skills",
+      "tags": ["skills", "data"],
+      "stars": 29
+    },
+    {
+      "name": "confluent-agent-skills",
+      "description": "Confluent / Kafka agent skills.",
+      "source": "github",
+      "repo": "confluentinc/agent-skills",
+      "tags": ["skills", "data", "devops"],
+      "stars": 29
+    },
+    {
+      "name": "fastly-agent-toolkit",
+      "description": "Fastly edge / CDN agent toolkit.",
+      "source": "github",
+      "repo": "fastly/fastly-agent-toolkit",
+      "tags": ["devops", "web", "mcp"],
+      "stars": 22
+    },
+    {
+      "name": "claude-market",
+      "description": "Hand-curated community marketplace (plugin-builder, specforge).",
+      "source": "github",
+      "repo": "claude-market/marketplace",
+      "tags": ["agents", "productivity"],
+      "stars": 12
+    },
+    {
+      "name": "aikido-security",
+      "description": "Aikido security scanning plugin.",
+      "source": "github",
+      "repo": "AikidoSec/aikido-claude-plugin",
+      "tags": ["security"],
+      "stars": 10
+    },
+    {
+      "name": "endorlabs-ai-plugins",
+      "description": "Endor Labs supply-chain / security AI plugins.",
+      "source": "github",
+      "repo": "endorlabs/ai-plugins",
+      "tags": ["security", "devops"],
+      "stars": 3
+    },
+    {
+      "name": "feedmob-plugins",
+      "description": "FeedMob dev-team plugins: commit, test-gen, parsing, presentations.",
+      "source": "github",
+      "repo": "feed-mob/claude-code-marketplace",
+      "tags": ["commands", "productivity", "data"],
+      "stars": 2
+    },
+    {
+      "name": "klever-marketplace",
+      "description": "Klever blockchain plugin marketplace.",
+      "source": "github",
+      "repo": "klever-io/klever-marketplace",
+      "tags": ["data", "devops"],
+      "stars": 1
+    },
+    {
+      "name": "daviguides-marketplace",
+      "description": "Community marketplace by daviguides (8 plugins).",
+      "source": "github",
+      "repo": "daviguides/claude-marketplace",
+      "tags": ["agents", "productivity"],
+      "stars": 1
+    },
+    {
+      "name": "devsforge-marketplace",
+      "description": "DevsForge — very large plugin marketplace across many categories (161 plugins).",
+      "source": "github",
+      "repo": "claudeforge/marketplace",
+      "tags": ["agents", "commands", "skills", "devops", "testing", "data"]
+    },
+    {
+      "name": "buildwithclaude",
+      "description": "Curated build-with-Claude plugin collection (61 plugins).",
+      "source": "github",
+      "repo": "davepoon/buildwithclaude",
+      "tags": ["agents", "commands", "productivity", "web"]
+    },
+    {
+      "name": "softaworks-agent-toolkit",
+      "description": "Softaworks agent toolkit — broad dev workflow agents (56 plugins).",
+      "source": "github",
+      "repo": "softaworks/agent-toolkit",
+      "tags": ["agents", "commands", "devops", "testing"]
+    },
+    {
+      "name": "dev-gom-plugins",
+      "description": "Dev-GOM Claude Code marketplace (14 plugins).",
+      "source": "github",
+      "repo": "Dev-GOM/claude-code-marketplace",
+      "tags": ["agents", "commands", "productivity"]
+    },
+    {
+      "name": "claudesmith",
+      "description": "Claudesmith dev tooling — commit, review, test generation (12 plugins).",
+      "source": "github",
+      "repo": "JNLei/claude-tools",
+      "tags": ["commands", "testing", "productivity"]
+    },
+    {
+      "name": "ai-eng-system",
+      "description": "AI engineering system — agents and workflows for ML/AI dev (7 plugins).",
+      "source": "github",
+      "repo": "v1truv1us/ai-eng-system",
+      "tags": ["agents", "data", "productivity"]
+    },
+    {
+      "name": "dotai",
+      "description": "udecode dotai — AI-assisted development workflow toolkit (7 plugins).",
+      "source": "github",
+      "repo": "udecode/dotai",
+      "tags": ["agents", "commands", "productivity"]
+    },
+    {
+      "name": "elevenlabs-plugins",
+      "description": "ElevenLabs official Claude plugins — text-to-speech / audio (2 plugins).",
+      "source": "github",
+      "repo": "elevenlabs/claude-plugins",
+      "tags": ["mcp", "productivity"]
+    },
+    {
+      "name": "agentkits-marketing",
+      "description": "AityTech marketing automation agent kit.",
+      "source": "github",
+      "repo": "aitytech/agentkits-marketing",
+      "tags": ["agents", "productivity"]
+    },
+    {
+      "name": "perplexity-mcp",
+      "description": "Perplexity AI MCP server for web-grounded answers.",
+      "source": "github",
+      "repo": "perplexityai/modelcontextprotocol",
+      "tags": ["mcp", "web", "data"]
+    },
+    {
+      "name": "prompts-chat",
+      "description": "prompts.chat — the awesome-chatgpt-prompts collection as a plugin.",
+      "source": "github",
+      "repo": "f/awesome-chatgpt-prompts",
+      "tags": ["commands", "productivity"]
+    },
+    {
+      "name": "everything-claude-code",
+      "description": "affaan-m everything-claude-code plugin bundle.",
+      "source": "github",
+      "repo": "affaan-m/everything-claude-code",
+      "tags": ["agents", "commands", "productivity"]
+    },
+    {
+      "name": "rodin3d-skills",
+      "description": "Deemos Rodin 3D generation skills.",
+      "source": "github",
+      "repo": "DeemosTech/rodin3d-skills",
+      "tags": ["skills", "data"]
+    },
+    {
+      "name": "writing-xcuitests",
+      "description": "Skills for writing XCUITest UI tests for iOS.",
+      "source": "github",
+      "repo": "bradwindy/writing-xcuitests",
+      "tags": ["skills", "testing"]
+    },
+    {
+      "name": "xclaude-plugin",
+      "description": "conorluddy xclaude plugin marketplace.",
+      "source": "github",
+      "repo": "conorluddy/xclaude-plugin",
+      "tags": ["agents", "productivity"]
+    },
+    {
+      "name": "xcode-build-skill",
+      "description": "Xcode build automation skill for iOS/macOS projects.",
+      "source": "github",
+      "repo": "pzep1/xcode-build-skill",
+      "tags": ["skills", "devops"]
+    },
+    {
+      "name": "xcsift",
+      "description": "xcsift — Xcode build/test output parsing for agents.",
+      "source": "github",
+      "repo": "ldomaradzki/xcsift",
+      "tags": ["skills", "testing", "devops"]
     }
   ]
 }

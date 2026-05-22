@@ -19,6 +19,10 @@ type agentView struct {
 	top   int
 	w, h  int
 
+	// allAgents caches the full Discover() result. Populated on first render
+	// and after any mutation. Filter keystrokes operate on this slice in memory.
+	allAgents []agents.Agent
+
 	filter       textinput.Model
 	filterActive bool
 	filterText   string
@@ -52,14 +56,22 @@ func newAgentView(st *state) *agentView {
 	return v
 }
 
-func (v *agentView) rebuild() {
-	all := agents.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+// load runs agents.Discover to refresh allAgents, then applies the current
+// filter. Call after mutations. Filter keystrokes call applyFilter directly.
+func (v *agentView) load() {
+	v.allAgents = agents.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	v.applyFilter()
+}
+
+// applyFilter populates v.rows from allAgents without re-running Discover.
+// O(n) in-memory pass; safe to call on every filter keystroke.
+func (v *agentView) applyFilter() {
 	if v.filterText == "" {
-		v.rows = all
+		v.rows = v.allAgents
 	} else {
 		needle := strings.ToLower(v.filterText)
 		var filtered []agents.Agent
-		for _, a := range all {
+		for _, a := range v.allAgents {
 			if strings.Contains(strings.ToLower(a.Name), needle) {
 				filtered = append(filtered, a)
 			}
@@ -73,6 +85,8 @@ func (v *agentView) rebuild() {
 		v.index = 0
 	}
 }
+
+func (v *agentView) rebuild() { v.load() }
 
 func (v *agentView) update(msg tea.Msg) tea.Cmd {
 	// New agent name input mode.
@@ -121,7 +135,7 @@ func (v *agentView) update(msg tea.Msg) tea.Cmd {
 				v.filter.Blur()
 			default:
 				v.filterText = v.filter.Value()
-				v.rebuild()
+				v.applyFilter()
 			}
 		}
 		return cmd
@@ -250,6 +264,9 @@ func (v *agentView) doMove(to agents.Scope) {
 }
 
 func (v *agentView) render() string {
+	if v.allAgents == nil {
+		v.load()
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Agents (%d)", len(v.rows))
 	if v.filterText != "" {

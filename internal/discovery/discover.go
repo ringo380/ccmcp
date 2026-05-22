@@ -40,9 +40,14 @@ func DefaultSources() []Source {
 	if os.Getenv("CCMCP_DISCOVERY_OFFLINE") != "" {
 		return []Source{EmbeddedSource()}
 	}
+	// The embedded curated registry is the always-works backbone; the
+	// awesome-list scraper is a best-effort supplement. The Anthropic
+	// .well-known probe is intentionally omitted from the default set —
+	// docs.claude.com serves an HTML SPA (no JSON) at that path, so it only
+	// ever produced a source error. The AnthropicSource type + endpoint const
+	// remain for any user who points a UserURLSource at a real registry.
 	return []Source{
 		EmbeddedSource(),
-		AnthropicSource(AnthropicEndpoint),
 		AwesomeListSource("hesreallyhim", "awesome-claude-code", "", ""),
 	}
 }

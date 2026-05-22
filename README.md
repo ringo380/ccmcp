@@ -101,6 +101,20 @@ apart from genuinely absent sources.
 | `f` | cycle filter: all → enabled → disabled |
 | `/` | search |
 
+**Discover tab**
+
+| Key | Action |
+|---|---|
+| `enter` | drill in (marketplace → plugins → conflict preview) |
+| `a` | add the selected marketplace (clones it + writes settings) |
+| `i` | install the selected/previewed plugin (adds its marketplace first if needed; `i` twice to reinstall an existing one) |
+| `r` | refresh discovery sources (bypass cache) |
+| `/` | filter (matches name, description, tags) |
+| `c` | clear filter |
+| `j` / `k` / arrows | navigate · `g` / `G` top / bottom · `b` / `esc` back |
+
+Browse a substantial built-in registry of curated Claude Code marketplaces (plus the awesome-list scraper and any `discoverySources` URLs), sorted by GitHub stars. `a` adopts a marketplace without retyping it in the Marketplaces tab; `i` installs a plugin in one keystroke and enables it.
+
 **Profiles tab**
 
 | Key | Action |
@@ -256,7 +270,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-320 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+327 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 
@@ -269,8 +283,8 @@ internal/
   classify/       override-key classifier (7 buckets)
   commands/       command discovery, conflict detection, ignore list
   config/         readers + writers for every Claude Code config file
-  discovery/      remote marketplace discovery (4 sources merged, preview-clone
-                  + conflict detection)
+  discovery/      remote marketplace discovery (curated registry + awesome-list
+                  + user URLs merged, preview-clone + conflict detection)
   doctor/         CLAUDE.md + MEMORY.md structural linter
   install/        plugin marketplace installer (4 source formats)
   paths/          config path resolution ($CLAUDE_CONFIG_DIR aware)

@@ -22,6 +22,11 @@ type commandView struct {
 	top   int
 	w, h  int
 
+	// allCmds and allSkls cache the full Discover() results. Populated on
+	// first render and after mutations. Filter keystrokes operate in memory.
+	allCmds []commands.Command
+	allSkls []skills.Skill
+
 	filter       textinput.Model
 	filterActive bool
 	filterText   string
@@ -49,16 +54,25 @@ func newCommandView(st *state) *commandView {
 	return v
 }
 
-func (v *commandView) rebuild() {
-	all := commands.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
-	skls := skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
-	conflicts := commands.FindConflicts(all, skls)
+// load runs commands.Discover and skills.Discover to refresh allCmds and
+// allSkls, then applies the current filter. Call after mutations.
+// Filter keystrokes call applyFilter directly.
+func (v *commandView) load() {
+	v.allCmds = commands.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	v.allSkls = skills.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
+	v.applyFilter()
+}
+
+// applyFilter rebuilds conflictMap and populates v.rows from cached allCmds
+// without re-running Discover. Safe to call on every filter keystroke.
+func (v *commandView) applyFilter() {
+	conflicts := commands.FindConflicts(v.allCmds, v.allSkls)
 	v.conflictMap = map[string]commands.Conflict{}
 	for _, c := range conflicts {
 		v.conflictMap[c.Effective] = c
 	}
 	var filtered []commands.Command
-	for _, c := range all {
+	for _, c := range v.allCmds {
 		if v.conflictsOnly {
 			_, byEff := v.conflictMap[c.Effective]
 			_, bySlug := v.conflictMap[c.Slug]
@@ -82,6 +96,8 @@ func (v *commandView) rebuild() {
 		v.index = 0
 	}
 }
+
+func (v *commandView) rebuild() { v.load() }
 
 func (v *commandView) update(msg tea.Msg) tea.Cmd {
 	// Resolve picker mode (single or bulk).
@@ -132,7 +148,7 @@ func (v *commandView) update(msg tea.Msg) tea.Cmd {
 				v.filter.Blur()
 			default:
 				v.filterText = v.filter.Value()
-				v.rebuild()
+				v.applyFilter()
 			}
 		}
 		return cmd
@@ -353,6 +369,9 @@ func (v *commandView) applyBulkResolveIgnore() {
 }
 
 func (v *commandView) render() string {
+	if v.allCmds == nil {
+		v.load()
+	}
 	var b strings.Builder
 	mode := ""
 	if v.conflictsOnly {

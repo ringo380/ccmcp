@@ -332,7 +332,7 @@ var claudeReviewCmd = func(workdir, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(bin, "--print")
+	cmd := exec.Command(bin, "--print", "--model", doctor.DefaultAnthropicModel, "--max-turns", "4")
 	cmd.Dir = workdir
 	cmd.Stdin = strings.NewReader(prompt)
 	out, err := cmd.CombinedOutput()
