@@ -32,12 +32,22 @@ type cliStreamLineMsg struct {
 // when the user reveals the panel after the fact.
 const streamRingMax = 50
 
-// claudeFixModelArgs returns the model + max-turns flags appended to every
-// `claude --print` invocation that we expect to actually edit a file. Cheap
-// model (Haiku) + a turn cap prevent the prior behaviour where Sonnet/Opus
-// burned tokens producing prose responses that never invoked Edit.
+// claudeFixModelArgs returns the model + max-turns + MCP-isolation flags
+// appended to every `claude --print` invocation that we expect to actually edit
+// a file. Cheap model (Haiku) + a turn cap prevent the prior behaviour where
+// Sonnet/Opus burned tokens producing prose responses that never invoked Edit.
+//
+// --strict-mcp-config + an empty --mcp-config disable the user's configured MCP
+// servers for the duration of the fix. Without this, every headless invocation
+// loads the full set of MCP tool definitions into context — and ccmcp's exact
+// audience is people with many MCP servers configured, so the request overflows
+// the model's context window ("Prompt is too long" → exit 1, tokens charged, no
+// edit made). Fixes only ever need Edit/Write/Read, never an MCP server.
 func claudeFixModelArgs() []string {
-	return []string{"--model", doctor.DefaultAnthropicModel, "--max-turns", "4"}
+	return []string{
+		"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`,
+		"--model", doctor.DefaultAnthropicModel, "--max-turns", "4",
+	}
 }
 
 // wrapImperativeFixPrompt prepends a strict instruction that forces Claude to
@@ -77,10 +87,10 @@ const (
 // fixProposal carries everything needed to preview, apply, and revert a fix.
 // Used by both the Doctor and Summary tabs.
 type fixProposal struct {
-	summary   string
-	kind      fixKind
-	target    string   // primary file being modified (empty for fixInMemory)
-	proposed  []byte   // pre-computed post-state bytes (fixInTUI only); nil for CLI
+	summary      string
+	kind         fixKind
+	target       string   // primary file being modified (empty for fixInMemory)
+	proposed     []byte   // pre-computed post-state bytes (fixInTUI only); nil for CLI
 	cliArgs      []string // args for exec.Command("claude", cliArgs...)
 	cliPrompt    string   // full envelope-wrapped prompt text (CLI only) — shown verbatim in confirm panel and passed via cliArgs
 	cliPromptRaw string   // un-wrapped task body, used by bulk builders to concatenate multiple fixes under a single outer envelope without double-wrapping
@@ -332,7 +342,10 @@ var claudeReviewCmd = func(workdir, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(bin, "--print", "--model", doctor.DefaultAnthropicModel, "--max-turns", "4")
+	// Same MCP-isolation rationale as claudeFixModelArgs: the review prompt plus
+	// a machine full of MCP tool definitions overflows the context window.
+	args := append(claudeFixModelArgs(), "--print")
+	cmd := exec.Command(bin, args...)
 	cmd.Dir = workdir
 	cmd.Stdin = strings.NewReader(prompt)
 	out, err := cmd.CombinedOutput()

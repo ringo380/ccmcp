@@ -14,6 +14,17 @@ All notable changes to this project are documented here. Format based on
   value sets, and `mcp stash <name>` / `mcp restore <name>` dynamically complete
   from live user-scope MCP names and stash entries respectively.
 
+### Fixed
+
+- **Doctor/Summary LLM fixes failed with "claude CLI exit 1" while still
+  charging tokens.** Headless `claude --print` invocations inherited the user's
+  full MCP-server configuration, loading every server's tool definitions into
+  context. On a machine with many MCP servers (ccmcp's exact audience) this
+  overflowed the model's context window — the API returned "Prompt is too long",
+  the CLI exited 1, no edit was made, and tokens were still spent. All fix and
+  review invocations now pass `--strict-mcp-config --mcp-config '{"mcpServers":{}}'`
+  to run with no MCP servers loaded (fixes only ever need Edit/Write/Read).
+
 ## [0.13.0] — 2026-05-22
 
 ### Added
