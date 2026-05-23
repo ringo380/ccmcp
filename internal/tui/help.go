@@ -142,6 +142,7 @@ func renderHelp(width int) string {
 	section("Global")
 	kbd("tab / shift+tab", "cycle tabs")
 	kbd("1–9, 0", "jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands / Profiles / Summary / Doctor")
+	kbd("ctrl+g", "global search across all tabs (enter jumps to the row)")
 	kbd("w", "save staged changes (atomic + backup)")
 	kbd("q", "quit (warns if unsaved)")
 	kbd("Q", "force quit, discard pending changes")

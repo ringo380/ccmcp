@@ -198,6 +198,7 @@ Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pre
 |---|---|
 | `tab` / `shift+tab` | cycle tabs |
 | `1`–`9`, `0` | jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands / Profiles / Summary / Doctor |
+| `ctrl+g` | global search across all tabs (`enter` jumps to the row, `esc` closes) |
 | `w` | save all staged changes |
 | `q` | quit (warns if unsaved) |
 | `Q` | force quit, discard changes |
@@ -310,7 +311,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-331 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+337 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 
