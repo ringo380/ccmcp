@@ -115,12 +115,12 @@
   description: "1+ week"
 
 # --- Release target ---
-- name: "release:v0.10"
+- name: "release:v0.14"
   color: "0E8A16"
-  description: "Targeted for v0.10.x"
-- name: "release:v0.11"
+  description: "Targeted for v0.14.x"
+- name: "release:v0.15"
   color: "2EA44F"
-  description: "Targeted for v0.11.x"
+  description: "Targeted for v0.15.x"
 - name: "release:v1.0"
   color: "238636"
   description: "Targeted for v1.0 stability cut"
