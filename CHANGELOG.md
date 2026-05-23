@@ -6,6 +6,14 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Shell completions.** `ccmcp completion <bash|zsh|fish|powershell>` prints a
+  completion script (see the README "Shell completions" section for install
+  one-liners). The `--scope`/`--to`/`--source` flags tab-complete to their fixed
+  value sets, and `mcp stash <name>` / `mcp restore <name>` dynamically complete
+  from live user-scope MCP names and stash entries respectively.
+
 ## [0.13.0] — 2026-05-22
 
 ### Added

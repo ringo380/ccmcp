@@ -20,7 +20,6 @@ func resetCobraCompletion(t *testing.T) {
 	}
 }
 
-
 // TestCLICompletionGeneratesShellScripts exercises `completion <shell>` for
 // every supported shell to confirm cobra's built-in subcommand is wired and
 // each produced script references the ccmcp binary name.
