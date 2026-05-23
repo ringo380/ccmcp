@@ -772,16 +772,71 @@ func init() {
 	rootCmd.AddCommand(mcpCmd)
 	mcpCmd.AddCommand(mcpListCmd, mcpEnableCmd, mcpDisableCmd, mcpStashCmd, mcpRestoreCmd, mcpMoveCmd, mcpOverrideCmd)
 
+	scopeValues := []string{"user", "local", "project", "stash", "all"}
 	for _, c := range []*cobra.Command{mcpListCmd, mcpEnableCmd, mcpDisableCmd} {
 		c.Flags().StringVar(&mcpScope, "scope", "", "scope: user|local|project|stash|all  (aliases: project→local legacy, mcpjson→project)")
+		_ = c.RegisterFlagCompletionFunc("scope", cobra.FixedCompletions(scopeValues, cobra.ShellCompDirectiveNoFileComp))
 	}
 	mcpEnableCmd.Flags().BoolVar(&mcpFromStash, "from-stash", false, "require source is the stash (removes from stash on enable)")
 	mcpDisableCmd.Flags().BoolVar(&mcpToStash, "to-stash", false, "move the removed config into the stash instead of deleting it")
 	mcpDisableCmd.Flags().BoolVar(&mcpAll, "all", false, "disable every MCP in the chosen scope")
 	mcpMoveCmd.Flags().StringVar(&mcpMoveTo, "to", "", "target scope: user|local|stash")
 	_ = mcpMoveCmd.MarkFlagRequired("to")
+	_ = mcpMoveCmd.RegisterFlagCompletionFunc("to", cobra.FixedCompletions([]string{"user", "local", "stash"}, cobra.ShellCompDirectiveNoFileComp))
 
 	mcpOverrideCmd.Flags().BoolVar(&overrideUndo, "undo", false, "remove the override (re-enable for this project)")
 	mcpOverrideCmd.Flags().StringVar(&overrideSource, "source", "", "source hint: stdio|plugin|claudeai  (default: auto-resolve)")
+	_ = mcpOverrideCmd.RegisterFlagCompletionFunc("source", cobra.FixedCompletions([]string{"stdio", "plugin", "claudeai"}, cobra.ShellCompDirectiveNoFileComp))
 	mcpOverrideCmd.Flags().StringVar(&overridePluginOf, "plugin", "", "plugin name (required when --source plugin and name is ambiguous)")
+
+	mcpStashCmd.ValidArgsFunction = completeUserMCPNames
+	mcpRestoreCmd.ValidArgsFunction = completeStashNames
+}
+
+// completeUserMCPNames returns user-scope MCP server names for tab-completion
+// of `ccmcp mcp stash <name>...`. Errors short-circuit to no suggestions.
+func completeUserMCPNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	p, err := paths.Resolve()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	cj, err := config.LoadClaudeJSON(p.ClaudeJSON)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	all := cj.UserMCPNames()
+	var out []string
+	for _, n := range all {
+		if slices.Contains(args, n) {
+			continue
+		}
+		if toComplete == "" || strings.HasPrefix(n, toComplete) {
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
+	return out, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeStashNames returns stash entry names for tab-completion of
+// `ccmcp mcp restore <name>...`.
+func completeStashNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	p, err := paths.Resolve()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	stash, err := config.LoadStash(p.Stash)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var out []string
+	for _, n := range stash.Names() {
+		if slices.Contains(args, n) {
+			continue
+		}
+		if toComplete == "" || strings.HasPrefix(n, toComplete) {
+			out = append(out, n)
+		}
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
 }

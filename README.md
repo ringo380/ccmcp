@@ -30,6 +30,46 @@ cd ccmcp
 go build -ldflags='-s -w' -o ~/bin/ccmcp .
 ```
 
+### Shell completions
+
+`ccmcp completion <shell>` prints a completion script for `bash`, `zsh`, `fish`, or `powershell`. The static `--scope` flag and dynamic `mcp stash <name>` / `mcp restore <name>` arguments tab-complete to live values.
+
+**bash** (Linux):
+
+```sh
+ccmcp completion bash | sudo tee /etc/bash_completion.d/ccmcp
+```
+
+**bash** (Homebrew on macOS, after `brew install bash-completion`):
+
+```sh
+ccmcp completion bash > "$(brew --prefix)/etc/bash_completion.d/ccmcp"
+```
+
+**zsh** (one-shot, current shell):
+
+```sh
+source <(ccmcp completion zsh)
+```
+
+**zsh** (persistent, requires `compinit` enabled in `~/.zshrc`):
+
+```sh
+ccmcp completion zsh > "${fpath[1]}/_ccmcp"
+```
+
+**fish**:
+
+```sh
+ccmcp completion fish > ~/.config/fish/completions/ccmcp.fish
+```
+
+**powershell**:
+
+```powershell
+ccmcp completion powershell | Out-String | Invoke-Expression
+```
+
 ## Quick start
 
 ```sh
