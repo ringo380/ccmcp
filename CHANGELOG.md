@@ -15,6 +15,26 @@ All notable changes to this project are documented here. Format based on
   positions the cursor, `esc` closes. Discover is indexed only if its remote
   list was already fetched — the overlay never forces a network call. (#22)
 
+### Fixed
+
+- **TUI list views no longer overflow the terminal into native scrollback.**
+  The Discover tab (plus the Profiles tab and the plugin bulk-update failures
+  panel) sized their scroll window by row count, but each entry spans multiple
+  physical lines — so the body rendered taller than the viewport and excess rows
+  spilled into the terminal's own scrollback instead of scrolling inside the app.
+  These views now window by physical line count (shared `windowLines` helper),
+  keeping the selected row visible and the header/footer fixed. A model-level
+  safety clamp also trims any view body to the available height as a last resort.
+- **Summary/Doctor fix-preview panels no longer lose their confirm prompt on
+  short terminals.** The panel is now capped to a height budget (its diff body
+  scrolls with `j`/`k`) so the list + panel always fit the viewport — previously
+  a tall diff on a short terminal pushed the `Apply? / Cancel?` prompt past the
+  bottom where the safety clamp trimmed it, leaving no visible way to act.
+- **Profiles tab gained `g`/`G`/`pgup`/`pgdn`** for jump-to-top/bottom and paging,
+  matching the other list tabs now that the profile list scrolls.
+- The Discover and failures-panel scroll indicators now report item position with
+  up/down arrows (e.g. `▼ 12/47 marketplaces`) instead of a raw physical-line count.
+
 ## [0.13.1] — 2026-05-23
 
 ### Added

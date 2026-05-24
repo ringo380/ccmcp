@@ -206,28 +206,42 @@ func (v *pluginView) renderFailures() string {
 		b.WriteString(styleDim.Render("  (no failures)"))
 		b.WriteString("\n")
 	}
+	// Each failure spans 3+ physical lines (and more when expanded), so window by
+	// physical lines to keep the panel inside the terminal.
+	var lines []string
+	cursorLine := -1
 	for i, f := range v.lastFailures {
 		marker := "  "
 		if i == v.failuresIndex {
 			marker = styleSelected.Render("▶ ")
+			cursorLine = len(lines)
 		}
 		oneLine := firstLine(f.Err)
-		row := fmt.Sprintf("%s%s", marker, f.ID)
-		b.WriteString(row)
-		b.WriteString("\n    ")
-		b.WriteString(styleErr.Render(truncate(oneLine, 100)))
-		b.WriteString("\n    ")
-		b.WriteString(styleDim.Render("hint: " + f.Hint))
-		b.WriteString("\n")
+		lines = append(lines,
+			fmt.Sprintf("%s%s", marker, f.ID),
+			"    "+styleErr.Render(truncate(oneLine, 100)),
+			"    "+styleDim.Render("hint: "+f.Hint),
+		)
 		if i == v.failuresIndex && v.failuresExpanded {
-			b.WriteString("\n")
+			lines = append(lines, "")
 			for _, line := range strings.Split(f.Err, "\n") {
-				b.WriteString("      ")
-				b.WriteString(styleDim.Render(line))
-				b.WriteString("\n")
+				lines = append(lines, "      "+styleDim.Render(line))
 			}
-			b.WriteString("\n")
+			lines = append(lines, "")
 		}
+	}
+	// pageH = body height minus the header (title + blank) and the footer hint.
+	headerLines := strings.Count(b.String(), "\n")
+	pageH := v.h - headerLines - 2
+	if pageH < 3 {
+		pageH = 3
+	}
+	windowed, newTop := windowLines(lines, cursorLine, v.failuresTop, pageH)
+	v.failuresTop = newTop
+	b.WriteString(strings.Join(windowed, "\n"))
+	if len(lines) > pageH {
+		arrows := scrollArrows(newTop, len(windowed), len(lines))
+		b.WriteString("\n" + styleDim.Render(fmt.Sprintf("  %s%d/%d failures", arrows, v.failuresIndex+1, len(v.lastFailures))))
 	}
 	b.WriteString("\n")
 	b.WriteString(styleDim.Render("[enter] expand/collapse · [R] retry · [X] clear all · [esc/q] back"))

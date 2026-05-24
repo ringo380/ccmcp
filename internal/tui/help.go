@@ -113,7 +113,7 @@ func renderHelp(width int) string {
 	kbd("enter / space", "apply profile (replaces current project's MCPs)")
 	kbd("n", "create profile from current project")
 	kbd("d", "delete profile")
-	kbd("j/k or ↑/↓", "navigate")
+	kbd("j/k or ↑/↓", "navigate; g/G top/bottom; pgup/pgdn page")
 
 	section("Summary tab")
 	kbd("j/k or ↑/↓", "navigate fixable issues; ↑/↓ past the ends scrolls")

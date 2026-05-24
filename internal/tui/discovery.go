@@ -719,28 +719,20 @@ func (v *discoveryView) renderList() string {
 		}
 	}
 
-	listH := v.h - 6
-	if listH < 5 {
-		listH = 5
-	}
 	if v.index >= len(visible) {
 		v.index = len(visible) - 1
 	}
 	if v.index < 0 {
 		v.index = 0
 	}
-	if v.index < v.top {
-		v.top = v.index
-	}
-	if v.index >= v.top+listH {
-		v.top = v.index - listH + 1
-	}
-	end := v.top + listH
-	if end > len(visible) {
-		end = len(visible)
-	}
 
-	for i := v.top; i < end; i++ {
+	// Each marketplace row spans up to two physical lines (name + description/tags),
+	// so window by physical lines rather than row count — a row-count clamp would
+	// overflow the terminal. Build all body lines into a flat slice, tracking the
+	// physical line where the selected row begins.
+	var lines []string
+	cursorLine := -1
+	for i := 0; i < len(visible); i++ {
 		r := visible[i]
 		marker := styleDim.Render("[+]")
 		if _, ok := v.installedNames[r.Name]; ok {
@@ -755,11 +747,11 @@ func (v *discoveryView) renderList() string {
 			line += "  " + styleDim.Render(fmt.Sprintf("★ %s", formatStars(r.Stars)))
 		}
 		if i == v.index {
-			b.WriteString(styleSelected.Render("  " + line))
+			cursorLine = len(lines)
+			lines = append(lines, styleSelected.Render("  "+line))
 		} else {
-			b.WriteString("  " + line)
+			lines = append(lines, "  "+line)
 		}
-		b.WriteString("\n")
 		// Secondary line: description + tags, indented under the row.
 		var meta []string
 		if r.Description != "" {
@@ -769,20 +761,35 @@ func (v *discoveryView) renderList() string {
 			meta = append(meta, "["+strings.Join(r.Tags, ", ")+"]")
 		}
 		if len(meta) > 0 {
-			b.WriteString("      " + styleDim.Render(strings.Join(meta, "  ")) + "\n")
+			lines = append(lines, "      "+styleDim.Render(strings.Join(meta, "  ")))
 		}
 	}
 
 	if len(v.srcErrors) > 0 {
-		b.WriteString("\n" + styleDim.Render("source errors:") + "\n")
+		lines = append(lines, "", styleDim.Render("source errors:"))
 		ids := make([]string, 0, len(v.srcErrors))
 		for k := range v.srcErrors {
 			ids = append(ids, k)
 		}
 		sort.Strings(ids)
 		for _, id := range ids {
-			b.WriteString("  " + styleErr.Render(id+": "+truncateD(v.srcErrors[id], 80)) + "\n")
+			lines = append(lines, "  "+styleErr.Render(id+": "+truncateD(v.srcErrors[id], 80)))
 		}
+	}
+
+	// pageH = body height minus the lines already emitted as a header above, minus
+	// one for the scroll indicator. headerLines is derived from what was written.
+	headerLines := strings.Count(b.String(), "\n")
+	pageH := v.h - headerLines - 1
+	if pageH < 3 {
+		pageH = 3
+	}
+	windowed, newTop := windowLines(lines, cursorLine, v.top, pageH)
+	v.top = newTop
+	b.WriteString(strings.Join(windowed, "\n"))
+	if len(lines) > pageH {
+		arrows := scrollArrows(newTop, len(windowed), len(lines))
+		b.WriteString("\n" + styleDim.Render(fmt.Sprintf("  %s%d/%d marketplaces", arrows, v.index+1, len(visible))))
 	}
 	return b.String()
 }

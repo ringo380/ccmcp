@@ -456,6 +456,15 @@ func (m *model) View() string {
 		body = m.activeView().render()
 	}
 
+	// Safety net: never let a view's body overflow past the available height into
+	// the terminal's native scrollback. Per-view rendering keeps the cursor in
+	// view; this only trims excess from a miscounting (or future) view.
+	if avail := m.height - reservedHeight; avail > 0 {
+		if lines := strings.Split(body, "\n"); len(lines) > avail {
+			body = strings.Join(lines[:avail], "\n")
+		}
+	}
+
 	footer := styleFooter.Render(m.footerHelp())
 	if m.message != "" {
 		footer = styleFooter.Render(m.message) + "\n" + footer
