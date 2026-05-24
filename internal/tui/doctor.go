@@ -870,10 +870,23 @@ func (v *doctorView) render() string {
 
 	lines, issueLineIndices := v.buildLintLines()
 
+	// Build any sticky-below panel first so the list window reserves room for its
+	// actual height — otherwise list + panel together overflow the terminal body.
+	var panel string
+	if v.pendingFix != nil {
+		panel = v.renderPreviewPanel("Fix: "+v.pendingFix.summary, v.previewDiff, "Apply? y   Cancel? n / esc   j/k: scroll")
+	} else if v.postReview != nil {
+		panel = v.renderPreviewPanel(
+			"Applied: "+v.postReview.summary,
+			v.previewDiff,
+			"Keep? y   Revert? u / n / esc   j/k: scroll",
+		)
+	}
+
 	// Scroll to keep cursor visible.
 	pageH := v.pageHeight()
-	if v.pendingFix != nil {
-		pageH -= 4 // reserve space for confirm banner
+	if panel != "" {
+		pageH -= strings.Count(panel, "\n") + 1
 		if pageH < 1 {
 			pageH = 1
 		}
@@ -898,14 +911,8 @@ func (v *doctorView) render() string {
 		b.WriteString("\n")
 	}
 
-	if v.pendingFix != nil {
-		b.WriteString(v.renderPreviewPanel("Fix: "+v.pendingFix.summary, v.previewDiff, "Apply? y   Cancel? n / esc   j/k: scroll"))
-	} else if v.postReview != nil {
-		b.WriteString(v.renderPreviewPanel(
-			"Applied: "+v.postReview.summary,
-			v.previewDiff,
-			"Keep? y   Revert? u / n / esc   j/k: scroll",
-		))
+	if panel != "" {
+		b.WriteString(panel)
 	}
 
 	return b.String()

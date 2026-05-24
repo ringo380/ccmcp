@@ -602,9 +602,37 @@ func (v *summaryView) render() string {
 		b.WriteString("\n")
 	}
 
+	// Build any sticky-below panel first so the list window can reserve room for
+	// it — otherwise list + panel together overflow the terminal body.
+	var panel string
+	if v.pendingFix != nil {
+		panel = v.renderPreviewPanel("Fix: "+v.pendingFix.summary, v.previewBody,
+			"Apply? y   Cancel? n / esc   j/k: scroll")
+	} else if v.postReview != nil {
+		panel = v.renderPreviewPanel("Applied: "+v.postReview.summary, v.previewBody,
+			"Keep? y   Revert? u / n / esc   j/k: scroll")
+	} else if v.llmResult != "" {
+		// LLM review output renders sticky-below so it isn't lost off-screen
+		// when the body is taller than the viewport.
+		var rb strings.Builder
+		rb.WriteString(styleDim.Render(strings.Repeat("─", maxInt(44, v.w-2))))
+		rb.WriteString("\n")
+		rb.WriteString(styleTitle.Render("LLM review — "+summarizeRow(v.llmFor)) + "\n")
+		for _, ln := range strings.Split(strings.TrimRight(v.llmResult, "\n"), "\n") {
+			rb.WriteString("  " + ln + "\n")
+		}
+		rb.WriteString(styleDim.Render("(press any other key to dismiss)"))
+		panel = rb.String()
+	}
+
 	// scroll
 	lines := strings.Split(b.String(), "\n")
 	maxH := v.h - 2
+	if panel != "" {
+		// Reserve room for the panel (+1 for the joining newline) so the combined
+		// body fits the viewport instead of spilling into terminal scrollback.
+		maxH -= strings.Count(panel, "\n") + 2
+	}
 	if maxH < 5 {
 		maxH = 5
 	}
@@ -631,24 +659,8 @@ func (v *summaryView) render() string {
 	}
 	body := strings.Join(lines[v.top:end], "\n")
 
-	if v.pendingFix != nil {
-		body += "\n" + v.renderPreviewPanel("Fix: "+v.pendingFix.summary, v.previewBody,
-			"Apply? y   Cancel? n / esc   j/k: scroll")
-	} else if v.postReview != nil {
-		body += "\n" + v.renderPreviewPanel("Applied: "+v.postReview.summary, v.previewBody,
-			"Keep? y   Revert? u / n / esc   j/k: scroll")
-	} else if v.llmResult != "" {
-		// LLM review output renders sticky-below so it isn't lost off-screen
-		// when the body is taller than the viewport.
-		var rb strings.Builder
-		rb.WriteString(styleDim.Render(strings.Repeat("─", maxInt(44, v.w-2))))
-		rb.WriteString("\n")
-		rb.WriteString(styleTitle.Render("LLM review — "+summarizeRow(v.llmFor)) + "\n")
-		for _, ln := range strings.Split(strings.TrimRight(v.llmResult, "\n"), "\n") {
-			rb.WriteString("  " + ln + "\n")
-		}
-		rb.WriteString(styleDim.Render("(press any other key to dismiss)"))
-		body += "\n" + rb.String()
+	if panel != "" {
+		body += "\n" + panel
 	}
 	return body
 }

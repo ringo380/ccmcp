@@ -23,6 +23,7 @@ type profileView struct {
 
 	names []string
 	index int
+	top   int // scroll offset (first visible row)
 	w, h  int
 
 	input       textinput.Model
@@ -46,6 +47,7 @@ func (v *profileView) rebuild() {
 	if v.index >= len(v.names) {
 		v.index = 0
 	}
+	v.top = 0
 }
 
 func (v *profileView) update(msg tea.Msg) tea.Cmd {
@@ -215,7 +217,36 @@ func (v *profileView) render() string {
 		b.WriteString(styleDim.Render("  (no profiles; press 'n' to create one from the current project MCPs)"))
 		return b.String()
 	}
-	for i, name := range v.names {
+	if v.index >= len(v.names) {
+		v.index = len(v.names) - 1
+	}
+	if v.index < 0 {
+		v.index = 0
+	}
+	// Single line per row; clamp the scroll window so it never overflows the body.
+	headerLines := strings.Count(b.String(), "\n")
+	listHeight := v.h - headerLines - 1
+	if listHeight < 3 {
+		listHeight = 3
+	}
+	if v.index < v.top {
+		v.top = v.index
+	}
+	if v.index >= v.top+listHeight {
+		v.top = v.index - listHeight + 1
+	}
+	if v.top > len(v.names)-listHeight {
+		v.top = len(v.names) - listHeight
+	}
+	if v.top < 0 {
+		v.top = 0
+	}
+	end := v.top + listHeight
+	if end > len(v.names) {
+		end = len(v.names)
+	}
+	for i := v.top; i < end; i++ {
+		name := v.names[i]
 		mcps, _ := v.st.profiles.MCPs(name)
 		line := fmt.Sprintf("%-24s  %s", name, styleDim.Render(strings.Join(mcps, ", ")))
 		if i == v.index {
@@ -224,6 +255,9 @@ func (v *profileView) render() string {
 			b.WriteString("  " + line)
 		}
 		b.WriteString("\n")
+	}
+	if len(v.names) > listHeight {
+		b.WriteString(styleDim.Render(fmt.Sprintf("  [%d-%d of %d]", v.top+1, end, len(v.names))))
 	}
 	return b.String()
 }
