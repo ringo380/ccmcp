@@ -6,6 +6,17 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Launch update-check now surfaces same-day releases.** Previously a release
+  published within the 24h cache window stayed invisible until the cache expired,
+  because a "fresh" cache skipped the GitHub fetch entirely. The check now uses a
+  two-tier freshness model: under `SoftTTL` (1h) the cache is trusted as-is (no
+  network); between `SoftTTL` and `FreshTTL` (24h) the cache still decides the
+  current launch instantly but a non-blocking background refresh updates it so the
+  next launch reflects any new release; past `FreshTTL` it refreshes synchronously
+  as before. Launch is never blocked and the GitHub API is hit at most ~once/hour.
+
 ## [0.14.0] — 2026-05-24
 
 ### Added
