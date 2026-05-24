@@ -60,6 +60,36 @@ func TestStatusIsFresh(t *testing.T) {
 	}
 }
 
+func TestChooseRefresh(t *testing.T) {
+	now := time.Now().UTC()
+	cases := []struct {
+		name string
+		age  time.Duration
+		zero bool
+		want refreshMode
+	}{
+		{"no cache", 0, true, refreshSync},
+		{"just checked", 5 * time.Minute, false, refreshNone},
+		{"under soft ttl", SoftTTL - time.Minute, false, refreshNone},
+		{"at soft ttl", SoftTTL, false, refreshAsync},
+		{"between soft and fresh", 6 * time.Hour, false, refreshAsync},
+		{"just under fresh ttl", FreshTTL - time.Minute, false, refreshAsync},
+		{"at fresh ttl", FreshTTL, false, refreshSync},
+		{"well past fresh ttl", 48 * time.Hour, false, refreshSync},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := Status{CheckedAt: now.Add(-tc.age)}
+			if tc.zero {
+				s = Status{}
+			}
+			if got := chooseRefresh(s, now); got != tc.want {
+				t.Errorf("chooseRefresh(age=%s) = %d, want %d", tc.age, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStatusIsDismissed(t *testing.T) {
 	now := time.Now().UTC()
 	s := Status{LatestVersion: "0.8.0", DismissedVersion: "0.8.0", DismissedAt: now}
