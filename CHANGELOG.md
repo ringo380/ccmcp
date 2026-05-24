@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-05-24
+
 ### Added
 
 - **Global search across all tabs.** Press `ctrl+g` in the TUI to open a search
@@ -853,7 +855,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.14.0
 [0.13.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.13.1
 [0.13.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.13.0
 [0.12.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.12.1
