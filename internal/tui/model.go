@@ -62,6 +62,10 @@ type model struct {
 	// spinner drives the live in-progress indicator. Always-ticking; ~10 fps.
 	// Frame is republished to state.spinnerFrame on each tick so views can render it.
 	spinner spinner.Model
+
+	// globalSearch is the cross-tab search overlay (ctrl+g). When active it
+	// captures all input and renders in place of the active view's body.
+	globalSearch globalSearchState
 }
 
 func newModel(st *state) *model {
@@ -81,6 +85,7 @@ func newModel(st *state) *model {
 		summary:      newSummaryView(st),
 		doctor:       newDoctorView(st),
 		spinner:      sp,
+		globalSearch: newGlobalSearchState(),
 	}
 }
 
@@ -176,6 +181,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, line.next
 		}
 	}
+	// Global search overlay captures all input (and the textinput's blink
+	// ticks) while open. Window-size messages still flow to the resize handler
+	// below so the layout stays correct if the terminal is resized mid-search.
+	if m.globalSearch.active {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateGlobalSearch(msg)
+		}
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -214,6 +227,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			m.showHelp = true
 			return m, nil
+		case "ctrl+g":
+			return m, m.openGlobalSearch()
 		case "q", "esc":
 			if m.st.anyDirty() {
 				m.message = styleWarn.Render("unsaved changes — press Q again or `w` to save + quit, `D` to discard + quit")
@@ -434,7 +449,12 @@ func (m *model) View() string {
 	header.WriteString(tabLine.String())
 	header.WriteString("\n")
 
-	body := m.activeView().render()
+	var body string
+	if m.globalSearch.active {
+		body = m.renderGlobalSearch()
+	} else {
+		body = m.activeView().render()
+	}
 
 	footer := styleFooter.Render(m.footerHelp())
 	if m.message != "" {
@@ -445,7 +465,10 @@ func (m *model) View() string {
 }
 
 func (m *model) footerHelp() string {
-	common := "tab: next  w: save  ?: help  q: quit"
+	if m.globalSearch.active {
+		return "↑/↓: move  enter: go  esc: close"
+	}
+	common := "tab: next  ctrl+g: search  w: save  ?: help  q: quit"
 	return m.activeView().helpText() + "  │  " + common
 }
 

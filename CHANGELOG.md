@@ -6,6 +6,15 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Global search across all tabs.** Press `ctrl+g` in the TUI to open a search
+  overlay that indexes rows from every tab (MCPs, plugins, marketplaces,
+  discover, skills, agents, commands, profiles, summary, doctor). Type to
+  fuzzy-filter, `enter` jumps to the matching row in its native tab and
+  positions the cursor, `esc` closes. Discover is indexed only if its remote
+  list was already fetched — the overlay never forces a network call. (#22)
+
 ## [0.13.1] — 2026-05-23
 
 ### Added
