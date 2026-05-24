@@ -870,20 +870,29 @@ func (v *doctorView) render() string {
 
 	lines, issueLineIndices := v.buildLintLines()
 
-	// Build any sticky-below panel first so the list window reserves room for its
-	// actual height — otherwise list + panel together overflow the terminal body.
+	// Build any sticky-below panel first, capped to a budget so the panel — and
+	// crucially its action-prompt footer — always fits. The model-level clamp
+	// trims from the BOTTOM, so an un-capped panel would lose its confirm prompt
+	// on a short terminal. The budget leaves room for the header chrome that
+	// pageHeight() already accounts for plus a few list rows.
+	panelBudget := v.pageHeight() - 3
+	if panelBudget < 4 {
+		panelBudget = 4
+	}
 	var panel string
 	if v.pendingFix != nil {
-		panel = v.renderPreviewPanel("Fix: "+v.pendingFix.summary, v.previewDiff, "Apply? y   Cancel? n / esc   j/k: scroll")
+		panel = v.renderPreviewPanel("Fix: "+v.pendingFix.summary, v.previewDiff, "Apply? y   Cancel? n / esc   j/k: scroll", panelBudget)
 	} else if v.postReview != nil {
 		panel = v.renderPreviewPanel(
 			"Applied: "+v.postReview.summary,
 			v.previewDiff,
 			"Keep? y   Revert? u / n / esc   j/k: scroll",
+			panelBudget,
 		)
 	}
 
-	// Scroll to keep cursor visible.
+	// Scroll to keep cursor visible. Size the list window from the panel's ACTUAL
+	// height (already capped to panelBudget) so list + panel fit the body.
 	pageH := v.pageHeight()
 	if panel != "" {
 		pageH -= strings.Count(panel, "\n") + 1
@@ -921,15 +930,16 @@ func (v *doctorView) render() string {
 // renderPreviewPanel renders the bordered diff/prompt panel used by both pre-apply
 // (pendingFix) and post-apply (postReview) gates. body is a diff or prompt block;
 // it is split, scrolled by v.previewScroll, and colorized by leading char (+/-/@@).
-func (v *doctorView) renderPreviewPanel(title, body, footer string) string {
+func (v *doctorView) renderPreviewPanel(title, body, footer string, maxLines int) string {
 	var sb strings.Builder
 	sb.WriteString(styleDim.Render(strings.Repeat("─", maxInt(44, v.w-2))))
 	sb.WriteString("\n")
 	sb.WriteString(title + "\n")
 
-	maxPanel := v.h / 2
-	if maxPanel < 6 {
-		maxPanel = 6
+	// Reserve 4 lines of chrome: border, title, the "…N more" line, and footer.
+	maxPanel := maxLines - 4
+	if maxPanel < 1 {
+		maxPanel = 1
 	}
 	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
 	if v.previewScroll > len(lines)-1 {

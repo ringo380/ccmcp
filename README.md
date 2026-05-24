@@ -162,6 +162,7 @@ Browse a substantial built-in registry of curated Claude Code marketplaces (plus
 | `enter` | apply profile (replaces current project's MCPs) |
 | `n` | create profile from current state |
 | `d` | delete |
+| `j`/`k`, `g`/`G`, `pgup`/`pgdn` | navigate / jump / page |
 
 **Summary tab**
 
@@ -311,7 +312,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-342 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+345 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

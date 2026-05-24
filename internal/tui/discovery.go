@@ -788,7 +788,8 @@ func (v *discoveryView) renderList() string {
 	v.top = newTop
 	b.WriteString(strings.Join(windowed, "\n"))
 	if len(lines) > pageH {
-		b.WriteString("\n" + styleDim.Render(fmt.Sprintf("  [%d-%d of %d lines]", newTop+1, newTop+len(windowed), len(lines))))
+		arrows := scrollArrows(newTop, len(windowed), len(lines))
+		b.WriteString("\n" + styleDim.Render(fmt.Sprintf("  %s%d/%d marketplaces", arrows, v.index+1, len(visible))))
 	}
 	return b.String()
 }

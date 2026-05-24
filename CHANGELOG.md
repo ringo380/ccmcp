@@ -25,8 +25,15 @@ All notable changes to this project are documented here. Format based on
   These views now window by physical line count (shared `windowLines` helper),
   keeping the selected row visible and the header/footer fixed. A model-level
   safety clamp also trims any view body to the available height as a last resort.
-  The Summary and Doctor preview panels now reserve their actual height before
-  windowing the list, so a long diff no longer pushes the list off-screen.
+- **Summary/Doctor fix-preview panels no longer lose their confirm prompt on
+  short terminals.** The panel is now capped to a height budget (its diff body
+  scrolls with `j`/`k`) so the list + panel always fit the viewport — previously
+  a tall diff on a short terminal pushed the `Apply? / Cancel?` prompt past the
+  bottom where the safety clamp trimmed it, leaving no visible way to act.
+- **Profiles tab gained `g`/`G`/`pgup`/`pgdn`** for jump-to-top/bottom and paging,
+  matching the other list tabs now that the profile list scrolls.
+- The Discover and failures-panel scroll indicators now report item position with
+  up/down arrows (e.g. `▼ 12/47 marketplaces`) instead of a raw physical-line count.
 
 ## [0.13.1] — 2026-05-23
 

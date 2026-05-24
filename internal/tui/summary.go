@@ -602,39 +602,41 @@ func (v *summaryView) render() string {
 		b.WriteString("\n")
 	}
 
-	// Build any sticky-below panel first so the list window can reserve room for
-	// it — otherwise list + panel together overflow the terminal body.
+	// Build any sticky-below panel first, capped to a budget so the panel — and
+	// crucially its action-prompt footer — always fits. The model-level clamp
+	// trims from the BOTTOM, so an un-capped panel would lose its confirm prompt
+	// on a short terminal. panelBudget leaves at least a few list rows visible.
+	panelBudget := v.h - 3
+	if panelBudget < 4 {
+		panelBudget = 4
+	}
 	var panel string
 	if v.pendingFix != nil {
 		panel = v.renderPreviewPanel("Fix: "+v.pendingFix.summary, v.previewBody,
-			"Apply? y   Cancel? n / esc   j/k: scroll")
+			"Apply? y   Cancel? n / esc   j/k: scroll", panelBudget)
 	} else if v.postReview != nil {
 		panel = v.renderPreviewPanel("Applied: "+v.postReview.summary, v.previewBody,
-			"Keep? y   Revert? u / n / esc   j/k: scroll")
+			"Keep? y   Revert? u / n / esc   j/k: scroll", panelBudget)
 	} else if v.llmResult != "" {
 		// LLM review output renders sticky-below so it isn't lost off-screen
 		// when the body is taller than the viewport.
-		var rb strings.Builder
-		rb.WriteString(styleDim.Render(strings.Repeat("─", maxInt(44, v.w-2))))
-		rb.WriteString("\n")
-		rb.WriteString(styleTitle.Render("LLM review — "+summarizeRow(v.llmFor)) + "\n")
-		for _, ln := range strings.Split(strings.TrimRight(v.llmResult, "\n"), "\n") {
-			rb.WriteString("  " + ln + "\n")
-		}
-		rb.WriteString(styleDim.Render("(press any other key to dismiss)"))
-		panel = rb.String()
+		panel = v.renderLLMPanel(panelBudget)
 	}
 
 	// scroll
 	lines := strings.Split(b.String(), "\n")
 	maxH := v.h - 2
-	if panel != "" {
-		// Reserve room for the panel (+1 for the joining newline) so the combined
-		// body fits the viewport instead of spilling into terminal scrollback.
-		maxH -= strings.Count(panel, "\n") + 2
-	}
 	if maxH < 5 {
 		maxH = 5
+	}
+	if panel != "" {
+		// Size the list window from the panel's ACTUAL height (already capped to
+		// panelBudget) so list + panel never exceed the body height.
+		panelH := strings.Count(panel, "\n") + 1
+		maxH = v.h - panelH
+		if maxH < 0 {
+			maxH = 0
+		}
 	}
 	// Auto-scroll to keep cursor visible.
 	if cursorRowIdx >= 0 {
@@ -660,22 +662,57 @@ func (v *summaryView) render() string {
 	body := strings.Join(lines[v.top:end], "\n")
 
 	if panel != "" {
-		body += "\n" + panel
+		// Guard the joining newline so a zero-row list window doesn't prepend a
+		// blank line that pushes the total one over the body height.
+		if body != "" {
+			body += "\n"
+		}
+		body += panel
 	}
 	return body
 }
 
+// renderLLMPanel renders the sticky LLM-review output panel, capped to maxLines
+// physical lines (border + title + result + optional truncation note + dismiss
+// hint) so it never overflows the body when the model clamp trims the bottom.
+func (v *summaryView) renderLLMPanel(maxLines int) string {
+	var rb strings.Builder
+	rb.WriteString(styleDim.Render(strings.Repeat("─", maxInt(44, v.w-2))))
+	rb.WriteString("\n")
+	rb.WriteString(styleTitle.Render("LLM review — "+summarizeRow(v.llmFor)) + "\n")
+	result := strings.Split(strings.TrimRight(v.llmResult, "\n"), "\n")
+	budget := maxLines - 3 // border + title + dismiss hint
+	if budget < 1 {
+		budget = 1
+	}
+	truncated := len(result) > budget
+	if truncated {
+		result = result[:budget]
+	}
+	for _, ln := range result {
+		rb.WriteString("  " + ln + "\n")
+	}
+	if truncated {
+		rb.WriteString(styleDim.Render("  …response truncated") + "\n")
+	}
+	rb.WriteString(styleDim.Render("(press any other key to dismiss)"))
+	return rb.String()
+}
+
 // renderPreviewPanel mirrors doctorView.renderPreviewPanel but lives on the
-// summary view so it can size against summary's own w/h.
-func (v *summaryView) renderPreviewPanel(title, body, footer string) string {
+// summary view so it can size against summary's own w/h. The whole panel is
+// capped to maxLines physical lines (border + title + diff + optional more-line
+// + footer) so its action prompt is never trimmed by the model-level clamp.
+func (v *summaryView) renderPreviewPanel(title, body, footer string, maxLines int) string {
 	var sb strings.Builder
 	sb.WriteString(styleDim.Render(strings.Repeat("─", maxInt(44, v.w-2))))
 	sb.WriteString("\n")
 	sb.WriteString(title + "\n")
 
-	maxPanel := v.h / 2
-	if maxPanel < 6 {
-		maxPanel = 6
+	// Reserve 4 lines of chrome: border, title, the "…N more" line, and footer.
+	maxPanel := maxLines - 4
+	if maxPanel < 1 {
+		maxPanel = 1
 	}
 	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
 	if v.previewScroll > len(lines)-1 {

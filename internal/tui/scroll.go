@@ -16,6 +16,11 @@ func windowLines(lines []string, cursorLine, top, pageH int) (visible []string, 
 	if len(lines) <= pageH {
 		return lines, 0
 	}
+	// A stale cursor (list shrank since it was set) would otherwise scroll past
+	// the end; clamp it to the last line so the window still lands on content.
+	if cursorLine >= len(lines) {
+		cursorLine = len(lines) - 1
+	}
 	// Keep the cursor line inside [top, top+pageH).
 	if cursorLine >= 0 {
 		if cursorLine < top {
@@ -36,4 +41,17 @@ func windowLines(lines []string, cursorLine, top, pageH int) (visible []string, 
 		end = len(lines)
 	}
 	return lines[top:end], top
+}
+
+// scrollArrows returns a "▲ "/"▼ " prefix indicating whether content is scrolled
+// off above and/or below the visible window of `shown` lines starting at `top`.
+func scrollArrows(top, shown, total int) string {
+	var s string
+	if top > 0 {
+		s += "▲ "
+	}
+	if top+shown < total {
+		s += "▼ "
+	}
+	return s
 }

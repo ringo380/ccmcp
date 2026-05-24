@@ -126,6 +126,65 @@ func TestModelBodyNeverOverflows(t *testing.T) {
 	}
 }
 
+// TestSummaryPanelPromptSurvivesShortTerminal: a tall fix-preview panel on a
+// short terminal must not have its confirm prompt trimmed off by the model-level
+// height clamp — the panel is capped so list+panel always fit the body.
+func TestSummaryPanelPromptSurvivesShortTerminal(t *testing.T) {
+	st, _ := buildState(t)
+	longDiff := strings.Repeat("+ added line of a long diff\n", 40)
+	for _, h := range []int{8, 10, 14, 20, 35} {
+		v := newSummaryView(st)
+		v.resize(120, h)
+		v.pendingFix = &fixProposal{summary: "rewrite description"}
+		v.previewBody = longDiff
+		out := v.render()
+		if got := bodyLineCount(out); got > h {
+			t.Errorf("h=%d: render body %d lines exceeds height", h, got)
+		}
+		if !strings.Contains(stripANSI(out), "Apply?") {
+			t.Errorf("h=%d: confirm prompt 'Apply?' missing from panel:\n%s", h, stripANSI(out))
+		}
+	}
+}
+
+// TestDoctorPanelPromptSurvivesShortTerminal: same guarantee for the Doctor view.
+func TestDoctorPanelPromptSurvivesShortTerminal(t *testing.T) {
+	st, _ := buildState(t)
+	longDiff := strings.Repeat("- removed\n+ added\n", 30)
+	for _, h := range []int{10, 14, 20, 35} {
+		v := newDoctorView(st)
+		v.resize(120, h)
+		v.pendingFix = &fixProposal{summary: "fix issue"}
+		v.previewDiff = longDiff
+		out := v.render()
+		if got := bodyLineCount(out); got > h {
+			t.Errorf("h=%d: doctor render body %d lines exceeds height", h, got)
+		}
+		if !strings.Contains(stripANSI(out), "Apply?") {
+			t.Errorf("h=%d: confirm prompt 'Apply?' missing from doctor panel:\n%s", h, stripANSI(out))
+		}
+	}
+}
+
+// TestProfilesJumpKeys: g/G move the cursor to the first/last profile.
+func TestProfilesJumpKeys(t *testing.T) {
+	st, _ := buildState(t)
+	for i := 0; i < 40; i++ {
+		st.profiles.Set(fmt.Sprintf("profile-%02d", i), []string{"a"})
+	}
+	m := newModel(st) // constructor's rebuild() populates names from seeded profiles
+	_ = drive(m, "8", "G")
+	if m.profiles.index != len(m.profiles.names)-1 {
+		t.Fatalf("G should jump to last profile, got index %d", m.profiles.index)
+	}
+
+	m2 := newModel(st)
+	_ = drive(m2, "8", "G", "g")
+	if m2.profiles.index != 0 {
+		t.Fatalf("g should jump to first profile, got index %d", m2.profiles.index)
+	}
+}
+
 // TestWindowLines exercises the shared scroll helper directly.
 func TestWindowLines(t *testing.T) {
 	lines := make([]string, 20)

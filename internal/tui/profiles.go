@@ -103,6 +103,22 @@ func (v *profileView) update(msg tea.Msg) tea.Cmd {
 		if v.index < len(v.names)-1 {
 			v.index++
 		}
+	case "g":
+		v.index = 0
+	case "G":
+		if len(v.names) > 0 {
+			v.index = len(v.names) - 1
+		}
+	case "pgup":
+		v.index -= 10
+		if v.index < 0 {
+			v.index = 0
+		}
+	case "pgdn":
+		v.index += 10
+		if v.index > len(v.names)-1 {
+			v.index = len(v.names) - 1
+		}
 	case "n":
 		v.inputAction = "new"
 		v.input.Prompt = "profile name: "
@@ -265,7 +281,7 @@ func (v *profileView) render() string {
 func (v *profileView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *profileView) helpText() string {
-	return "enter: apply  n: new  e: export  i: import  d: delete"
+	return "enter: apply  n: new  e: export  i: import  d: delete  j/k: nav  g/G: top/bottom"
 }
 
 func (v *profileView) capturingInput() bool { return v.inputActive }

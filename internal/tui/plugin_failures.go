@@ -240,7 +240,8 @@ func (v *pluginView) renderFailures() string {
 	v.failuresTop = newTop
 	b.WriteString(strings.Join(windowed, "\n"))
 	if len(lines) > pageH {
-		b.WriteString("\n" + styleDim.Render(fmt.Sprintf("  [%d-%d of %d lines]", newTop+1, newTop+len(windowed), len(lines))))
+		arrows := scrollArrows(newTop, len(windowed), len(lines))
+		b.WriteString("\n" + styleDim.Render(fmt.Sprintf("  %s%d/%d failures", arrows, v.failuresIndex+1, len(v.lastFailures))))
 	}
 	b.WriteString("\n")
 	b.WriteString(styleDim.Render("[enter] expand/collapse · [R] retry · [X] clear all · [esc/q] back"))
