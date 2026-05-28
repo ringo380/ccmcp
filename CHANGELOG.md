@@ -6,6 +6,18 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Launch update-check now surfaces a release on the launch right after it
+  ships, closing the ≤1h blind spot.** The previous two-tier model trusted the
+  cache verbatim for a full hour (`SoftTTL`) with no network call, so a release
+  published within an hour of your last check stayed invisible — and even past
+  that, the background-refresh tier only surfaced it on the *next* launch. The
+  model is now single-tier: under a short `SoftTTL` (15m) the cache is trusted
+  as-is; at or past it, the check refreshes synchronously (≤2s `FetchTimeout`)
+  before deciding, so a newly-shipped release prompts on THIS launch. Routine
+  back-to-back launches within 15m still avoid hitting the GitHub API.
+
 ## [0.15.0] — 2026-05-28
 
 ### Added

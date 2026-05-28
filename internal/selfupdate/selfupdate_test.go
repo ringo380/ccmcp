@@ -69,13 +69,12 @@ func TestChooseRefresh(t *testing.T) {
 		want refreshMode
 	}{
 		{"no cache", 0, true, refreshSync},
-		{"just checked", 5 * time.Minute, false, refreshNone},
+		{"just checked", 1 * time.Minute, false, refreshNone},
 		{"under soft ttl", SoftTTL - time.Minute, false, refreshNone},
-		{"at soft ttl", SoftTTL, false, refreshAsync},
-		{"between soft and fresh", 6 * time.Hour, false, refreshAsync},
-		{"just under fresh ttl", FreshTTL - time.Minute, false, refreshAsync},
-		{"at fresh ttl", FreshTTL, false, refreshSync},
-		{"well past fresh ttl", 48 * time.Hour, false, refreshSync},
+		{"at soft ttl", SoftTTL, false, refreshSync},
+		{"past soft ttl", SoftTTL + time.Minute, false, refreshSync},
+		{"hours stale", 6 * time.Hour, false, refreshSync},
+		{"days stale", 48 * time.Hour, false, refreshSync},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

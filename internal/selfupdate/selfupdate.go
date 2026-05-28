@@ -8,9 +8,9 @@
 //   - $CCMCP_NO_UPDATE_CHECK is unset or empty
 //   - --no-update-check flag not passed (wired in cmd/root.go)
 //   - stdin AND stdout are TTYs (no point prompting in a pipe)
-//   - Cached result freshness: trusted as-is under SoftTTL (1h); refreshed in
-//     the background between SoftTTL and FreshTTL; refreshed synchronously past
-//     FreshTTL (24h) so a same-day release is still surfaced on the next launch
+//   - Cached result freshness: trusted as-is under SoftTTL (15m); past that a
+//     synchronous refresh (≤FetchTimeout) runs before deciding, so a release
+//     published since the last check is surfaced on THIS launch, not the next
 //   - Result has not been dismissed by the user in the dismiss-window
 //
 // All failures (network errors, malformed JSON, missing TTY) are silent —
@@ -37,14 +37,13 @@ import (
 )
 
 const (
-	// FreshTTL is the hard cap on cache age: once a cached result is older than
-	// this, CheckOnLaunch blocks and refreshes synchronously before deciding.
-	FreshTTL = 24 * time.Hour
-	// SoftTTL is the age past which a still-fresh cache triggers a NON-blocking
-	// background refresh. A release published within FreshTTL of the user's last
-	// check would otherwise stay invisible until the cache expired; refreshing in
-	// the background keeps this launch instant while making the next one current.
-	SoftTTL = 1 * time.Hour
+	// SoftTTL is the cache trust window. Under SoftTTL a cached result is used
+	// as-is with no network call; at or past it, CheckOnLaunch refreshes
+	// synchronously (capped at FetchTimeout) before deciding, so a release
+	// published since the last check is surfaced on THIS launch. Kept short so
+	// the post-release blind spot is small while routine back-to-back launches
+	// within the window still avoid hitting the GitHub API.
+	SoftTTL = 15 * time.Minute
 	// DismissTTL is how long after the user answers "n" before we prompt again
 	// for the same latest-version. Older than DismissTTL or a NEWER latest-version
 	// re-arms the prompt.
@@ -253,8 +252,9 @@ func MethodHint(m Method, htmlURL string) string {
 // CheckOnLaunch is the entry point called once before the TUI launches. It:
 //   - Returns immediately if the build is "dev" or $CCMCP_NO_UPDATE_CHECK is set
 //   - Returns immediately if stdin/stdout aren't both TTYs
-//   - Refreshes the cache when stale (blocking, 2s cap) or in the background
-//     when soft-stale (so a release shipped within FreshTTL surfaces next launch)
+//   - Refreshes the cache synchronously (blocking, 2s cap) when it's at/past
+//     SoftTTL or absent, so a release shipped since the last check is surfaced
+//     on this launch; under SoftTTL it trusts the cache with no network call
 //   - Prompts the user if an update is available and hasn't been recently dismissed
 //   - When the user answers "Y" and an automatic command exists, runs it (stdout/
 //     stderr inherited) and returns Decision{ExitAfter: true} so the caller can
@@ -329,26 +329,20 @@ func RefreshCache(ctx context.Context, cachePath, currentVersion string, prev St
 type refreshMode int
 
 const (
-	refreshNone  refreshMode = iota // cache is soft-fresh; trust it, no network
-	refreshAsync                    // soft-stale but within FreshTTL; refresh in background for next launch
-	refreshSync                     // stale (or no cache); block and refresh now
+	refreshNone refreshMode = iota // cache is within SoftTTL; trust it, no network
+	refreshSync                    // at/past SoftTTL (or no cache); block and refresh now
 )
 
 // chooseRefresh decides the refresh strategy from the cache's age. Pure so the
-// SoftTTL/FreshTTL windowing is unit-testable without touching the network.
+// SoftTTL windowing is unit-testable without touching the network.
 func chooseRefresh(s Status, now time.Time) refreshMode {
 	if s.CheckedAt.IsZero() {
 		return refreshSync
 	}
-	age := now.Sub(s.CheckedAt)
-	switch {
-	case age >= FreshTTL:
+	if now.Sub(s.CheckedAt) >= SoftTTL {
 		return refreshSync
-	case age >= SoftTTL:
-		return refreshAsync
-	default:
-		return refreshNone
 	}
+	return refreshNone
 }
 
 // CheckOnLaunch wires together the pieces above. Pure plumbing — no business
@@ -359,15 +353,10 @@ func CheckOnLaunch(ctx context.Context, p paths.Paths, currentVersion string) De
 	}
 	cachePath := CachePath(p)
 	status := LoadCache(cachePath)
-	switch chooseRefresh(status, time.Now()) {
-	case refreshSync:
-		// Stale (or first run): refresh synchronously so THIS launch is current.
+	if chooseRefresh(status, time.Now()) == refreshSync {
+		// At/past SoftTTL (or first run): refresh synchronously (FetchTimeout cap)
+		// so a release shipped since the last check is surfaced on THIS launch.
 		status = RefreshCache(ctx, cachePath, currentVersion, status)
-	case refreshAsync:
-		// Still fresh enough to decide instantly, but old enough that a release
-		// may have shipped since — refresh in the background (own timeout, atomic
-		// cache write) so the next launch reflects it without blocking this one.
-		go RefreshCache(context.Background(), cachePath, currentVersion, status)
 	}
 	if !status.HasUpdate(currentVersion) || status.IsDismissed() {
 		return Decision{}
