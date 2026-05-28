@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -27,6 +28,7 @@ type pluginRowView struct {
 	RemoteKey string // override key e.g. "claude.ai Stripe"
 	DisabledHere bool // per-project disabled (remote rows only)
 	Outdated  bool   // a newer upstream version is available
+	RemovedFromMkt bool // marketplace is cached locally but no longer lists this plugin
 }
 
 type availPluginRow struct {
@@ -158,6 +160,13 @@ type pluginView struct {
 	// two-step remove confirmation
 	pendingRemove string
 
+	// removed maps installed plugin id -> true when its marketplace is cached
+	// locally but no longer lists the plugin. nil means "not yet computed";
+	// render() lazily populates it and a successful recheck overwrites it.
+	// Cleared (set nil) after any state-changing op so it recomputes.
+	removed    map[string]bool
+	rechecking bool
+
 	flash string
 }
 
@@ -176,6 +185,20 @@ func (v *pluginView) rebuild() {
 		installedIdx[ip.ID] = ip
 	}
 
+	// Detect plugins whose marketplace is cached locally but no longer lists them.
+	// Computed once (cached) and consumed below to flag rows; recomputed after any
+	// state-changing op sets v.removed = nil. Local-cache read only — cheap disk
+	// I/O over a handful of marketplace.json files, and not on the per-frame path
+	// (rebuild runs on construction + mutations, not every render). A live remote
+	// recheck (R key) overwrites v.removed with a non-nil map, so this no-ops then.
+	if v.removed == nil {
+		var ids []string
+		for _, ip := range v.st.installed.List() {
+			ids = append(ids, ip.ID)
+		}
+		v.removed = install.RemovedFromMarketplace(v.st.paths, ids)
+	}
+
 	// Build regular plugin rows.
 	seen := map[string]bool{}
 	var rows []pluginRowView
@@ -186,6 +209,7 @@ func (v *pluginView) rebuild() {
 		if s, ok := v.st.updates.Plugin(e.ID); ok && s.Outdated {
 			row.Outdated = true
 		}
+		row.RemovedFromMkt = v.removed[e.ID]
 		rows = append(rows, row)
 	}
 	for _, ip := range v.st.installed.List() {
@@ -196,6 +220,7 @@ func (v *pluginView) rebuild() {
 		if s, ok := v.st.updates.Plugin(ip.ID); ok && s.Outdated {
 			row.Outdated = true
 		}
+		row.RemovedFromMkt = v.removed[ip.ID]
 		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
@@ -406,8 +431,20 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		v.st.dirtyPlugins = true
 		v.st.rescanPluginMCPs()
 		v.mode = ""
+		v.removed = nil
 		v.rebuild()
 		v.flash = styleOK.Render("installed " + m.result.QualifiedID)
+		return nil
+
+	case pluginRecheckMsg:
+		v.rechecking = false
+		if m.err != nil && len(m.removed) == 0 {
+			v.flash = styleErr.Render("recheck error: " + m.err.Error())
+			return nil
+		}
+		v.removed = m.removed
+		v.rebuild()
+		v.flash = styleOK.Render(fmt.Sprintf("rechecked marketplaces — %d removed", len(m.removed)))
 		return nil
 
 	case availLoadedMsg:
@@ -593,11 +630,20 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		if v.pendingRemove == r.ID {
 			// Confirmed: remove.
 			v.st.settings.RemovePluginEntry(r.ID)
-			v.st.installed.Remove(r.ID)
+			instPath, _ := v.st.installed.Remove(r.ID)
 			v.st.dirtySettings = true
 			v.st.dirtyPlugins = true
 			v.st.rescanPluginMCPs()
 			v.pendingRemove = ""
+			v.removed = nil
+			// Clean removal for plugins gone from their marketplace: also delete the
+			// on-disk cache — the marketplace can no longer re-provide it anyway.
+			if r.RemovedFromMkt && instPath != "" {
+				_ = os.RemoveAll(instPath)
+				v.rebuild()
+				v.flash = styleDim.Render("removed " + r.ID + " (cache deleted)")
+				return nil
+			}
 			v.rebuild()
 			v.flash = styleDim.Render("removed " + r.ID + " (cache preserved)")
 			return nil
@@ -678,7 +724,13 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		v.rebuild()
 
 	case "R":
-		return v.initialCheckCmdForce()
+		// Force-refresh update probes AND re-check marketplace membership live.
+		if v.rechecking {
+			return v.initialCheckCmdForce()
+		}
+		v.rechecking = true
+		v.flash = styleProgress.Render("refreshing updates + rechecking marketplaces…")
+		return tea.Batch(v.initialCheckCmdForce(), v.recheckRemovedCmd())
 
 	case "F":
 		// Lazy-load last-bulk-failures from disk if we haven't already this session.
@@ -1012,6 +1064,9 @@ func (v *pluginView) render() string {
 		}
 		if r.Outdated {
 			line += "  " + styleWarn.Render("↑ update available")
+		}
+		if r.RemovedFromMkt {
+			line += "  " + styleErr.Render("⚠ removed from marketplace")
 		}
 		if r.IsRemote && r.DisabledHere {
 			line += "  " + styleDim.Render("(disabled here)")

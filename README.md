@@ -138,6 +138,8 @@ apart from genuinely absent sources.
 | `A` / `N` | bulk enable/disable every visible plugin |
 | `B` | bulk update — re-fetch every installed plugin |
 | `F` | show last bulk-update failures (stderr + hint; `R` retries one) |
+| `x` | remove (two-step confirm); clean-removes plugins flagged `⚠ removed from marketplace`, including their cache dir |
+| `R` | refresh update probes + recheck marketplace membership (live) |
 | `f` | cycle filter: all → enabled → disabled |
 | `/` | search |
 
@@ -312,7 +314,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-346 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+350 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider fallback, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

@@ -16,6 +16,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/commands"
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/doctor"
+	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/skills"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 )
@@ -67,6 +68,7 @@ type summaryView struct {
 	cachedSkillIssues  []doctor.Issue
 	cachedAgentIssues  []doctor.Issue
 	cachedCmdIssues    []doctor.Issue
+	cachedRemovedMkt   map[string]bool // installed plugin ids no longer in their (locally-synced) marketplace
 
 	// LLM review state (per-row review; only the selected row is sent).
 	llmRunning bool
@@ -760,6 +762,11 @@ func (v *summaryView) ensureAssets() {
 	v.cachedSkillIssues = doctor.LintSkills(v.cachedSkills)
 	v.cachedAgentIssues = doctor.LintAgents(v.cachedAgents)
 	v.cachedCmdIssues = doctor.LintCommands(v.cachedCmds)
+	var installedIDs []string
+	for _, ip := range v.st.installed.List() {
+		installedIDs = append(installedIDs, ip.ID)
+	}
+	v.cachedRemovedMkt = install.RemovedFromMarketplace(v.st.paths, installedIDs)
 	v.assetsLoaded = true
 }
 
@@ -775,6 +782,7 @@ func (v *summaryView) invalidateAssets() {
 	v.cachedSkillIssues = nil
 	v.cachedAgentIssues = nil
 	v.cachedCmdIssues = nil
+	v.cachedRemovedMkt = nil
 }
 
 // buildRows assembles the full row list. Display rows (titles, plain stats,
@@ -926,6 +934,19 @@ func (v *summaryView) buildRows() []summaryRow {
 	for _, id := range installedOnlyIDs {
 		addFix(fmt.Sprintf("    %s  %s", styleWarn.Render("⚠"), id),
 			catPluginInstalledNotEnabled, id, "")
+	}
+	// Plugins whose marketplace is synced locally but no longer lists them.
+	// Read from the lazy-loaded asset cache (populated by ensureAssets) so the
+	// per-marketplace disk reads don't fire on every spinner-tick render.
+	var removedIDs []string
+	for id := range v.cachedRemovedMkt {
+		removedIDs = append(removedIDs, id)
+	}
+	sort.Strings(removedIDs)
+	add(fmt.Sprintf("  removed from marketplace      %s", warnNum(len(removedIDs))))
+	for _, id := range removedIDs {
+		addFix(fmt.Sprintf("    %s  %s", styleErr.Render("⚠"), id),
+			catPluginRemovedFromMarketplace, id, "")
 	}
 	add("")
 

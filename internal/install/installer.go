@@ -396,6 +396,41 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	return err
 }
 
+// RemovedFromMarketplace returns the set of installed plugin IDs whose originating
+// marketplace IS cached locally but no longer lists the plugin in its manifest.
+//
+// Marketplaces with no local manifest are skipped: their absence cannot prove the
+// plugin was removed (the marketplace may simply not be synced). Unqualified ids
+// (no "@marketplace") are also skipped. The result maps the full "name@marketplace"
+// id to true.
+func RemovedFromMarketplace(p paths.Paths, pluginIDs []string) map[string]bool {
+	type loaded struct {
+		m  *MarketplaceManifest
+		ok bool // manifest present + parsed
+	}
+	cache := map[string]loaded{}
+	removed := map[string]bool{}
+	for _, id := range pluginIDs {
+		name, mkt := config.ParsePluginID(id)
+		if mkt == "" {
+			continue
+		}
+		l, seen := cache[mkt]
+		if !seen {
+			m, _, err := LoadMarketplace(p, mkt)
+			l = loaded{m: m, ok: err == nil}
+			cache[mkt] = l
+		}
+		if !l.ok {
+			continue
+		}
+		if _, err := l.m.FindPlugin(name); err != nil {
+			removed[id] = true
+		}
+	}
+	return removed
+}
+
 // ListLocalMarketplaces returns the names of marketplace directories that have been
 // cloned (i.e. contain a .git subdirectory) under pluginsDir/marketplaces/.
 func ListLocalMarketplaces(p paths.Paths) ([]string, error) {
