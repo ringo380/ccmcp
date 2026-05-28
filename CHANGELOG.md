@@ -6,6 +6,20 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Warn when an installed plugin was removed from its marketplace.** If a
+  marketplace drops a plugin from its `marketplace.json`, the Plugins tab now
+  flags the affected row with `⚠ removed from marketplace` and the Summary tab
+  surfaces it as a fixable issue. Detection is local-cache first (compares the
+  installed plugin against the locally-synced marketplace manifest, so there are
+  no false positives when a marketplace simply isn't synced); press `R` on the
+  Plugins tab to additionally recheck membership live against the remote
+  manifest. Removing a flagged plugin (`x` on the Plugins tab, or the Summary
+  fix) is a clean removal — it drops the plugin from `enabledPlugins` and
+  `installed_plugins.json` and deletes its on-disk cache, since the marketplace
+  can no longer re-provide it. Both single and bulk (`F`) removal are supported.
+
 ## [0.14.1] — 2026-05-24
 
 ### Fixed

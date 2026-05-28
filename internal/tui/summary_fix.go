@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -25,6 +26,7 @@ const (
 	catDuplicateLoad
 	catPluginEnabledNotInstalled
 	catPluginInstalledNotEnabled
+	catPluginRemovedFromMarketplace
 	catSlashConflict
 	// Asset-lint categories (CC 2.1.141 compliance — see internal/doctor/asset_lint.go).
 	// All use fixClaudeCLI to let Claude rewrite content while preserving meaning.
@@ -215,6 +217,41 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			},
 		}, true
 
+	case catPluginRemovedFromMarketplace:
+		id := r.key
+		return &fixProposal{
+			summary: fmt.Sprintf("Remove obsolete plugin %q", id),
+			kind:    fixInMemory,
+			previewLines: []string{
+				"Remove " + id + " (no longer in its marketplace):",
+				"",
+				"  - drop from enabledPlugins in ~/.claude/settings.json",
+				"  - drop from ~/.claude/plugins/installed_plugins.json",
+				"  - delete its on-disk cache under ~/.claude/plugins/cache/",
+				"",
+				"The marketplace no longer lists this plugin, so it can't be",
+				"updated or reinstalled. Removing it cleans up the obsolete entry.",
+				"",
+				labelForCat(r.cat),
+				"",
+				"Press w to save, or Q to discard.",
+			},
+			applyFn: func(s *state) (string, error) {
+				s.settings.RemovePluginEntry(id)
+				instPath, removed := s.installed.Remove(id)
+				if !removed {
+					return "", fmt.Errorf("plugin %q already gone — refresh with r", id)
+				}
+				if instPath != "" {
+					_ = os.RemoveAll(instPath)
+				}
+				s.dirtySettings = true
+				s.dirtyPlugins = true
+				s.rescanPluginMCPs()
+				return "removed obsolete plugin " + id + " (press w to save)", nil
+			},
+		}, true
+
 	case catSlashConflict:
 		name := r.key
 		prompt := fmt.Sprintf(
@@ -394,6 +431,8 @@ func labelForCat(c summaryCat) string {
 		return "Reason: same name is active in user scope; stash copy is redundant."
 	case catStashGhostedByPlugin:
 		return "Reason: an enabled plugin provides this MCP; stash copy is redundant."
+	case catPluginRemovedFromMarketplace:
+		return "Reason: marketplace is synced but no longer lists this plugin."
 	}
 	return ""
 }
@@ -447,6 +486,8 @@ func summarizeRow(r summaryRow) string {
 		return "Plugin enabled in settings but not installed on disk"
 	case catPluginInstalledNotEnabled:
 		return "Plugin installed on disk but not registered in settings"
+	case catPluginRemovedFromMarketplace:
+		return "Plugin no longer offered by its originating marketplace"
 	case catSlashConflict:
 		return "Slash-command name collision across plugins/skills"
 	case catSkillNameInvalid:
@@ -471,6 +512,7 @@ func summarizeRow(r summaryRow) string {
 func bulkFixCategory(c summaryCat) bool {
 	switch c {
 	case catUserDupPlugin, catStaleMcpjson, catDuplicateLoad, catPluginInstalledNotEnabled,
+		catPluginRemovedFromMarketplace,
 		catSlashConflict, catSkillNameInvalid, catSkillNameTooLong, catSkillDescTooLong,
 		catAgentDescTooLong, catAgentBodyTooLong, catCommandDescTooLong:
 		return true
@@ -558,6 +600,56 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 			},
 		}, []string{st.paths.SettingsJSON}, true
 	}
+	// Special-case: catPluginRemovedFromMarketplace is a deterministic clean removal
+	// (drop from enabledPlugins + installed_plugins.json + delete cache). No LLM
+	// needed; build an in-memory bulk proposal.
+	if cursor.cat == catPluginRemovedFromMarketplace {
+		ids := make([]string, 0, len(targets))
+		for _, t := range targets {
+			ids = append(ids, t.key)
+		}
+		preview := []string{
+			fmt.Sprintf("Remove %d obsolete plugin(s) no longer in their marketplace:", len(ids)),
+			"",
+		}
+		for _, id := range ids {
+			preview = append(preview, "  "+id)
+		}
+		preview = append(preview,
+			"",
+			"For each: drop from enabledPlugins + installed_plugins.json and delete",
+			"its on-disk cache. The marketplace can no longer provide these plugins.",
+			"",
+			"Press w to save, or Q to discard.",
+		)
+		return &fixProposal{
+			summary:      fmt.Sprintf("Bulk-remove %d obsolete plugin(s)", len(ids)),
+			kind:         fixInMemory,
+			previewLines: preview,
+			cat:          cursor.cat,
+			applyFn: func(s *state) (string, error) {
+				var removed []string
+				for _, id := range ids {
+					instPath, ok := s.installed.Remove(id)
+					if !ok {
+						continue
+					}
+					s.settings.RemovePluginEntry(id)
+					if instPath != "" {
+						_ = os.RemoveAll(instPath)
+					}
+					removed = append(removed, id)
+				}
+				if len(removed) == 0 {
+					return "", fmt.Errorf("all %d plugin(s) already removed — refresh with r", len(ids))
+				}
+				s.dirtySettings = true
+				s.dirtyPlugins = true
+				s.rescanPluginMCPs()
+				return fmt.Sprintf("removed %d obsolete plugin(s) (press w to save)", len(removed)), nil
+			},
+		}, []string{st.paths.SettingsJSON, st.paths.InstalledPlugins}, true
+	}
 	// File path(s) Claude will touch — used for snapshot/revert and the
 	// confirmation modal preview. For categories whose `key` IS the file path
 	// (asset-lint findings) we use the keys directly; for config-edit categories
@@ -623,6 +715,7 @@ func categoryAffectsAssets(c summaryCat) bool {
 	switch c {
 	case catPluginEnabledNotInstalled,    // flips enabledPlugins → Discover plugin scope changes
 		catPluginInstalledNotEnabled,    // same
+		catPluginRemovedFromMarketplace, // removes plugin → Discover plugin scope changes
 		catSlashConflict,                // writes skillOverrides → skill enablement view changes
 		catSkillNameInvalid,             // renames skill dir → Discover output changes
 		catSkillNameTooLong,             // same

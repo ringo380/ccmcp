@@ -304,3 +304,39 @@ func TestCopyTreeOverwrites(t *testing.T) {
 		t.Errorf("a.txt: %q %v", b, err)
 	}
 }
+
+func writeMarketplaceManifest(t *testing.T, p paths.Paths, mkt string, pluginNames ...string) {
+	t.Helper()
+	dir := filepath.Join(p.PluginsDir, "marketplaces", mkt, ".claude-plugin")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plugins := make([]any, 0, len(pluginNames))
+	for _, n := range pluginNames {
+		plugins = append(plugins, map[string]any{"name": n, "source": "./plugins/" + n})
+	}
+	b, _ := json.Marshal(map[string]any{"name": mkt, "plugins": plugins})
+	if err := os.WriteFile(filepath.Join(dir, "marketplace.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemovedFromMarketplace(t *testing.T) {
+	dir := t.TempDir()
+	p := paths.Paths{PluginsDir: filepath.Join(dir, "plugins")}
+
+	// mktA still lists "stays" but no longer lists "gone".
+	writeMarketplaceManifest(t, p, "mktA", "stays")
+	// mktB has no local manifest at all — its plugins must NOT be flagged.
+
+	ids := []string{
+		"stays@mktA", // present → not removed
+		"gone@mktA",  // absent from synced manifest → removed
+		"x@mktB",     // marketplace not cached → skip (no false positive)
+		"unqualified", // no @marketplace → skip
+	}
+	got := RemovedFromMarketplace(p, ids)
+	if len(got) != 1 || !got["gone@mktA"] {
+		t.Errorf("RemovedFromMarketplace = %v, want {gone@mktA:true}", got)
+	}
+}
