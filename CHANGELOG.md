@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-05-28
+
 ### Fixed
 
 - **Launch update-check now surfaces a release on the launch right after it
@@ -896,7 +898,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.16.0
 [0.15.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.15.0
 [0.14.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.14.1
 [0.14.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.14.0
