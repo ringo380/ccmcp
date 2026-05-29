@@ -6,6 +6,21 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Plugin update now refreshes the backing marketplace clone first, fixing the
+  "perpetually outdated yet already up to date" loop.** Bare-string-source
+  plugins (those living in a subdirectory of a marketplace repo) copy their
+  files from the *local* marketplace clone, and no update path ever pulled that
+  clone. Meanwhile the staleness probe compares the recorded sha against the
+  *upstream* `git ls-remote` HEAD — so a plugin would show "needs update"
+  forever while an individual update reported "already up to date" (it re-copied
+  the same stale local files). All three update paths — `ccmcp plugin update`
+  (single and `--all`), the TUI single-plugin update (`u`), and the TUI bulk
+  update (`B`) — now `git pull --ff-only` each distinct backing marketplace once
+  before re-installing. New `install.PullMarketplacesForPlugins` helper;
+  best-effort (a pull failure falls back to the stale clone rather than aborting).
+
 ## [0.17.0] — 2026-05-29
 
 ### Changed

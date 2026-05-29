@@ -3,6 +3,7 @@ package install
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -330,13 +331,86 @@ func TestRemovedFromMarketplace(t *testing.T) {
 	// mktB has no local manifest at all — its plugins must NOT be flagged.
 
 	ids := []string{
-		"stays@mktA", // present → not removed
-		"gone@mktA",  // absent from synced manifest → removed
-		"x@mktB",     // marketplace not cached → skip (no false positive)
+		"stays@mktA",  // present → not removed
+		"gone@mktA",   // absent from synced manifest → removed
+		"x@mktB",      // marketplace not cached → skip (no false positive)
 		"unqualified", // no @marketplace → skip
 	}
 	got := RemovedFromMarketplace(p, ids)
 	if len(got) != 1 || !got["gone@mktA"] {
 		t.Errorf("RemovedFromMarketplace = %v, want {gone@mktA:true}", got)
+	}
+}
+
+// gitRun runs a git command in dir with a deterministic author/committer identity
+// so commits succeed regardless of the host's global git config (and CI).
+func gitRun(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func gitCommit(t *testing.T, repo, file, content string) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(repo, file), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, repo, "add", "-A")
+	gitRun(t, repo, "commit", "-q", "-m", "c")
+	return gitRun(t, repo, "rev-parse", "HEAD")
+}
+
+// TestPullMarketplacesForPlugins reproduces the stale-marketplace update loop:
+// a bare-string plugin's marketplace clone is never refreshed during plugin update,
+// so the recorded sha never advances to match the upstream HEAD the staleness probe
+// compares against. The helper must fast-forward the local clone so a subsequent
+// Install records the new sha.
+func TestPullMarketplacesForPlugins(t *testing.T) {
+	dir := t.TempDir()
+	p := paths.Paths{PluginsDir: filepath.Join(dir, "plugins")}
+	mktsDir := filepath.Join(p.PluginsDir, "marketplaces")
+
+	// Upstream working repo with commit A.
+	up := filepath.Join(dir, "upstream")
+	if err := os.MkdirAll(up, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, up, "init", "-q", "-b", "main")
+	shaA := gitCommit(t, up, "f.txt", "A")
+
+	// Clone upstream into the marketplace dir (local clone now at A).
+	mktDir := filepath.Join(mktsDir, "mktA")
+	gitRun(t, dir, "clone", "-q", up, mktDir)
+
+	// A non-git "local source" marketplace — must be skipped, not error.
+	if err := os.MkdirAll(filepath.Join(mktsDir, "local-copy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Upstream advances to commit B.
+	shaB := gitCommit(t, up, "f.txt", "B")
+	if shaA == shaB {
+		t.Fatal("setup: upstream sha did not advance")
+	}
+
+	errs := PullMarketplacesForPlugins(p, []string{
+		"foo@mktA", "bar@mktA", // same marketplace twice -> pulled once, no dup error
+		"baz@local-copy", // non-git -> skipped silently
+		"unqualified",    // no @marketplace -> skipped
+	})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+
+	if head := LocalMarketplaceHead(p, "mktA"); head != shaB {
+		t.Errorf("marketplace not fast-forwarded: local HEAD = %s, want upstream %s", head, shaB)
 	}
 }
