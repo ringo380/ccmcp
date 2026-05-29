@@ -6,6 +6,34 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-05-29
+
+### Changed
+
+- **LLM features now prefer the local `claude` CLI over an environment API
+  key.** `resolveProvider` previously routed to the Anthropic HTTP API whenever
+  `ANTHROPIC_API_KEY` was set, so the Doctor `l` review silently used the API
+  key while fixes used headless `claude --print`. Auto-resolution now prefers
+  the `claude` CLI when it's on `$PATH`; env keys are a fallback for when the
+  CLI isn't installed. Explicit `--provider` and `--api-key` still win. The
+  `doctor md` help text reflects the new precedence.
+
+### Fixed
+
+- **Doctor LLM review (`l`) and `doctor md --llm-review` no longer overflow the
+  model window on MCP-heavy machines.** The CLI review path (`callClaudeCLI`)
+  now passes `--strict-mcp-config --mcp-config '{}'` like the fix path, so it
+  doesn't load every configured MCP server's tool definitions into context
+  ("Prompt is too long"). This matters now that the CLI is the default backend.
+- **Failure messages are intelligible instead of a generic "claude CLI exit
+  1".** A new classifier maps captured `claude --print` output (and the review
+  path's error string) to a clear, actionable line — usage limit (with the
+  regain date), context overflow, auth, model, or rate-limit — surfaced
+  consistently across both the fix and review paths in the Doctor and Summary
+  tabs. Signatures are anchored (word-boundaried status codes, bounded
+  `model … not found` proximity, specific auth phrases) so incidental numbers
+  or quoted file content don't misclassify.
+
 ## [0.16.0] — 2026-05-28
 
 ### Fixed
@@ -898,7 +926,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.17.0
 [0.16.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.16.0
 [0.15.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.15.0
 [0.14.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.14.1
