@@ -53,6 +53,26 @@ func TestReviewAutoFallbackToClaudeCLI(t *testing.T) {
 	}
 }
 
+// TestReviewPrefersClaudeCLIOverEnvKey locks in the precedence rule: when the
+// claude CLI is on PATH AND ANTHROPIC_API_KEY is set, auto-resolution must pick
+// the CLI (headless `claude --print`), not the HTTP API. The fake claude shim
+// returns a sentinel; a real Anthropic HTTP call could not produce it.
+func TestReviewPrefersClaudeCLIOverEnvKey(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-should-be-ignored")
+	t.Setenv("OPENAI_API_KEY", "")
+	installFakeClaude(t, `cat > /dev/null; printf "CLI-WINS"`)
+	tmp := t.TempDir()
+	path := writeMD(t, tmp, "CLAUDE.md", "# hello\n")
+
+	out, err := doctor.Review(path, doctor.ReviewOptions{})
+	if err != nil {
+		t.Fatalf("Review error: %v", err)
+	}
+	if !strings.Contains(out, "CLI-WINS") {
+		t.Fatalf("expected the claude CLI to be used over the env key, got %q", out)
+	}
+}
+
 func TestReviewClaudeCLINotFoundExplicit(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")

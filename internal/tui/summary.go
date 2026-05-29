@@ -128,9 +128,13 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		v.fixCmd = nil
 		v.fixOutput = done.output
 		if done.err != nil {
-			v.flash = styleErr.Render("fix failed: " + enrichExitStatus(done.err.Error()))
-			if tail := tailOutput(done.output, 12); tail != "" {
-				v.flash += "\n" + styleDim.Render(tail)
+			if reason := classifyClaudeFailure(done.output, done.err); reason != "" {
+				v.flash = styleErr.Render("fix failed: " + reason)
+			} else {
+				v.flash = styleErr.Render("fix failed: " + enrichExitStatus(done.err.Error()))
+				if tail := tailOutput(done.output, 12); tail != "" {
+					v.flash += "\n" + styleDim.Render(tail)
+				}
 			}
 			return nil
 		}

@@ -162,9 +162,13 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		v.fixOutput = done.output
 		v.lastFixErr = done.err
 		if done.err != nil {
-			v.flash = styleErr.Render("fix failed: " + enrichExitStatus(done.err.Error()))
-			if tail := tailOutput(done.output, 12); tail != "" {
-				v.flash += "\n" + styleDim.Render(tail)
+			if reason := classifyClaudeFailure(done.output, done.err); reason != "" {
+				v.flash = styleErr.Render("fix failed: " + reason)
+			} else {
+				v.flash = styleErr.Render("fix failed: " + enrichExitStatus(done.err.Error()))
+				if tail := tailOutput(done.output, 12); tail != "" {
+					v.flash += "\n" + styleDim.Render(tail)
+				}
 			}
 			v.loaded = false // re-lint to show current state
 			return nil

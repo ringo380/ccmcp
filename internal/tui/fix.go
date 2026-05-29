@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +49,61 @@ func claudeFixModelArgs() []string {
 		"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`,
 		"--model", doctor.DefaultAnthropicModel, "--max-turns", "4",
 	}
+}
+
+// classifyClaudeFailure inspects the captured stdout/stderr of a failed
+// `claude --print` run for known, actionable signatures and returns a clear
+// single-line explanation. It returns "" when nothing recognisable is found,
+// so callers fall through to the generic enrichExitStatus path.
+//
+// The headless claude CLI writes API errors to stdout (which execFixCmd
+// captures), so by the time a fixDoneMsg carries done.err != nil the real
+// reason is usually sitting in `output`. Without this, every distinct failure
+// — usage limit, auth, context overflow — renders identically as
+// "claude CLI exit 1", making a transient account cap look like a broken tool.
+func classifyClaudeFailure(output []byte, err error) string {
+	out := strings.ToLower(string(output))
+	switch {
+	case strings.Contains(out, "usage limit"),
+		strings.Contains(out, "regain access"):
+		when := extractRegainDate(string(output))
+		msg := "Anthropic usage limit reached"
+		if when != "" {
+			msg += " — regains access " + when
+		}
+		return msg + ". The fix command is correct; retry after that, or use a provider with separate credit."
+	case strings.Contains(out, "prompt is too long"),
+		strings.Contains(out, "context window"),
+		strings.Contains(out, "too many tokens"):
+		return "context overflow — the headless claude run exceeded the model window. Try a smaller target or fewer bulk files."
+	case strings.Contains(out, "invalid bearer token"),
+		strings.Contains(out, "authentication"),
+		strings.Contains(out, "unauthorized"),
+		strings.Contains(out, "401"),
+		strings.Contains(out, "oauth"):
+		return "claude CLI not authenticated — run `claude` once to log in, then retry."
+	case strings.Contains(out, "model") && strings.Contains(out, "not found"),
+		strings.Contains(out, "unknown model"),
+		strings.Contains(out, "invalid model"):
+		return "model unavailable — the configured model was rejected by the API."
+	case strings.Contains(out, "rate limit"),
+		strings.Contains(out, "429"):
+		return "rate limited by the API — wait a moment and retry."
+	}
+	return ""
+}
+
+// regainDateRe captures the "<date> at <time> UTC" portion of an Anthropic
+// usage-limit error so we can echo when access returns.
+var regainDateRe = regexp.MustCompile(`(?i)regain access on ([0-9]{4}-[0-9]{2}-[0-9]{2}(?: at [0-9:]+ ?(?:UTC)?)?)`)
+
+// extractRegainDate pulls the reset timestamp out of a usage-limit error
+// message, or returns "" when the phrasing doesn't match.
+func extractRegainDate(s string) string {
+	if m := regainDateRe.FindStringSubmatch(s); m != nil {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
 }
 
 // wrapImperativeFixPrompt prepends a strict instruction that forces Claude to

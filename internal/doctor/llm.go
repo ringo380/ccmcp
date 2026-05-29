@@ -103,10 +103,13 @@ func (o *ReviewOptions) model() string {
 // the `--model` flag.
 const DefaultAnthropicModel = "claude-haiku-4-5"
 
-// resolveProvider applies the auto-fallback rule: when the caller passes a
-// zero-value Provider AND no API key is configured (env or explicit), fall
-// back to claude-cli iff the binary is on $PATH. Otherwise default to
-// anthropic to preserve existing behavior.
+// resolveProvider picks the LLM backend. Explicit caller opt-ins win first: a
+// set Provider, then an explicit APIKey (which forces the HTTP API). Absent
+// those, we prefer the local `claude` CLI when it's on $PATH — headless
+// `claude --print` over the user's OAuth subscription is the intended default,
+// not an env API key. Env keys (ANTHROPIC_API_KEY, then OPENAI_API_KEY) are a
+// fallback for when the CLI isn't installed; failing everything, default to
+// anthropic so the caller gets a friendly key-missing error.
 func (o *ReviewOptions) resolveProvider() Provider {
 	if o.Provider != "" {
 		return o.Provider
@@ -114,14 +117,14 @@ func (o *ReviewOptions) resolveProvider() Provider {
 	if o.APIKey != "" {
 		return ProviderAnthropic
 	}
+	if _, err := exec.LookPath("claude"); err == nil {
+		return ProviderClaudeCLI
+	}
 	if os.Getenv("ANTHROPIC_API_KEY") != "" {
 		return ProviderAnthropic
 	}
 	if os.Getenv("OPENAI_API_KEY") != "" {
 		return ProviderOpenAI
-	}
-	if _, err := exec.LookPath("claude"); err == nil {
-		return ProviderClaudeCLI
 	}
 	return ProviderAnthropic
 }
