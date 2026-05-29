@@ -46,10 +46,10 @@ Checks performed:
   MEM006 memory file has invalid type value
 
 Use --llm-review to additionally send the file to an LLM for quality feedback.
-The default provider auto-falls-back to the local 'claude' CLI when no API key
-is configured, so a working 'claude' install is enough for offline review.
-With --provider anthropic|openai, ANTHROPIC_API_KEY / OPENAI_API_KEY (or
---api-key) is required.`,
+The default provider prefers the local 'claude' CLI when it's on PATH (headless
+'claude --print' over your subscription); env API keys are only a fallback when
+the CLI isn't installed. With --provider anthropic|openai, ANTHROPIC_API_KEY /
+OPENAI_API_KEY (or --api-key) is required.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p, err := resolvePaths()
 		if err != nil {
@@ -204,7 +204,7 @@ func init() {
 	doctorCmd.AddCommand(doctorMDCmd)
 
 	doctorMDCmd.Flags().BoolVar(&doctorLLMReview, "llm-review", false, "send each file to an LLM for quality feedback")
-	doctorMDCmd.Flags().StringVar(&doctorProvider, "provider", "", "LLM provider: anthropic|openai|claude-cli (default: auto — claude-cli when no API key is set)")
+	doctorMDCmd.Flags().StringVar(&doctorProvider, "provider", "", "LLM provider: anthropic|openai|claude-cli (default: auto — prefers claude-cli when on PATH)")
 	doctorMDCmd.Flags().StringVar(&doctorModel, "model", "", "override model (default: claude-haiku-4-5 / gpt-4o)")
 	doctorMDCmd.Flags().StringVar(&doctorAPIKey, "api-key", "", "API key (defaults to ANTHROPIC_API_KEY or OPENAI_API_KEY env var)")
 	doctorMDCmd.Flags().StringVar(&doctorMemoryDir, "memory-dir", "", "explicit path to memory directory (auto-detected by default)")

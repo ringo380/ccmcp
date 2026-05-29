@@ -162,10 +162,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		v.fixOutput = done.output
 		v.lastFixErr = done.err
 		if done.err != nil {
-			v.flash = styleErr.Render("fix failed: " + enrichExitStatus(done.err.Error()))
-			if tail := tailOutput(done.output, 12); tail != "" {
-				v.flash += "\n" + styleDim.Render(tail)
-			}
+			v.flash = renderFixFailure(done.output, done.err)
 			v.loaded = false // re-lint to show current state
 			return nil
 		}
@@ -1040,7 +1037,11 @@ func (v *doctorView) renderLLM() string {
 		}
 		lines = append(lines, styleDim.Render(header))
 		if r.err != nil {
-			for _, wrapped := range wrapStyled("error: "+r.err.Error(), v.w-2, styleErr) {
+			errText := r.err.Error()
+			if reason := classifyClaudeFailure(nil, r.err); reason != "" {
+				errText = reason
+			}
+			for _, wrapped := range wrapStyled("error: "+errText, v.w-2, styleErr) {
 				lines = append(lines, "  "+wrapped)
 			}
 			if errors.Is(r.err, doctor.ErrClaudeCLINotFound) {
