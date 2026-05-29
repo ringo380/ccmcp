@@ -1,0 +1,59 @@
+name: dco
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check DCO sign-off
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Make sure both endpoints are present locally (fork PRs, shallow refs).
+          git fetch --quiet origin "$BASE_SHA" "$HEAD_SHA" 2>/dev/null || true
+
+          missing=0
+          for sha in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
+            subject=$(git log -1 --format='%s' "$sha")
+            author_email=$(git log -1 --format='%ae' "$sha" | tr 'A-Z' 'a-z')
+            signoffs=$(git log -1 --format='%B' "$sha" | grep -i '^Signed-off-by:' || true)
+
+            if [ -z "$signoffs" ]; then
+              echo "::error::Commit ${sha} (\"${subject}\") is missing a Signed-off-by line."
+              missing=1
+              continue
+            fi
+
+            # At least one Signed-off-by must carry the author's email.
+            if ! printf '%s\n' "$signoffs" | tr 'A-Z' 'a-z' | grep -qF "<${author_email}>"; then
+              echo "::error::Commit ${sha} (\"${subject}\") has a Signed-off-by, but none match the author <${author_email}>."
+              echo "  found: ${signoffs}"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo ""
+            echo "One or more commits are missing a valid DCO sign-off."
+            echo "Sign off every commit in your branch, then force-push:"
+            echo "    git rebase --signoff ${BASE_SHA}"
+            echo "    git push --force-with-lease"
+            echo "New commits: use 'git commit -s'. See CONTRIBUTING.md (Developer Certificate of Origin)."
+            exit 1
+          fi
+
+          echo "All commits carry a valid Signed-off-by. ✅"
