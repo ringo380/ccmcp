@@ -1,0 +1,20 @@
+ccmcp
+Copyright (c) 2026 Ryan Robson
+
+This software is licensed under the MIT License. See the LICENSE file for the
+full license text.
+
+Attribution
+-----------
+If you redistribute this software or a derivative work, you must retain the
+above copyright notice and the MIT license text in all copies or substantial
+portions of the software, as required by the MIT License.
+
+Name and branding
+-----------------
+"ccmcp" — the name, wordmark, and any associated logos — is NOT licensed under
+the MIT License. The MIT grant covers the source code only; it does not grant
+any right to use the "ccmcp" name or brand. Forks and derivative works must use
+a clearly distinct name. See TRADEMARK.md for the naming and branding policy.
+
+Upstream project: https://github.com/ringo380/ccmcp

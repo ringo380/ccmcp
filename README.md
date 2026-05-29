@@ -355,3 +355,21 @@ ccmcp uses Claude Code's native names:
 - **effective** — the union of what actually loads in the current project
 
 Legacy aliases `--scope project` → local and `--scope mcpjson` → project are still accepted so older scripts keep working.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for build/test
+instructions, coding guidelines, and the Developer Certificate of Origin
+sign-off requirement (`git commit -s`). For substantial features, open an issue
+first to align on the approach.
+
+## License & attribution
+
+ccmcp is open source under the [MIT License](LICENSE) — free to use, fork,
+modify, and redistribute, provided you retain the copyright notice and license
+text (see [NOTICE](NOTICE)).
+
+The **"ccmcp" name and brand are reserved** and are not covered by the MIT
+grant. Forks and derivative works must use a clearly distinct name and may not
+imply official status or endorsement — see [TRADEMARK.md](TRADEMARK.md). You're
+welcome to refer to the project by name accurately (e.g. "a fork of ccmcp").
