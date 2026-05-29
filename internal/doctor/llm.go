@@ -361,7 +361,13 @@ func callClaudeCLI(prompt, model string) (string, error) {
 		return "", ErrClaudeCLINotFound
 	}
 
-	args := []string{"--print"}
+	// Disable the user's configured MCP servers for the duration of the call.
+	// ccmcp's audience runs many MCP servers; without this the headless run
+	// loads every server's tool definitions into context and overflows the
+	// model window ("Prompt is too long"). Review only needs to read the
+	// bundled prompt — no MCP server is ever required. Mirrors the TUI fix
+	// path's claudeFixModelArgs().
+	args := []string{"--print", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
@@ -381,8 +387,15 @@ func callClaudeCLI(prompt, model string) (string, error) {
 		}
 		stderrTrimmed := strings.TrimSpace(stderr.String())
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			if stderrTrimmed != "" {
-				return "", fmt.Errorf("claude CLI exit %d: %s", exitErr.ExitCode(), stderrTrimmed)
+			// claude writes API errors (usage limit, auth, overflow) to
+			// STDOUT, not stderr — fall back to it so the reason reaches the
+			// error string and the caller's classifier can surface it.
+			detail := stderrTrimmed
+			if detail == "" {
+				detail = strings.TrimSpace(stdout.String())
+			}
+			if detail != "" {
+				return "", fmt.Errorf("claude CLI exit %d: %s", exitErr.ExitCode(), detail)
 			}
 			return "", fmt.Errorf("claude CLI exit %d", exitErr.ExitCode())
 		}

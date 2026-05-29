@@ -51,50 +51,59 @@ func claudeFixModelArgs() []string {
 	}
 }
 
-// classifyClaudeFailure inspects the captured stdout/stderr of a failed
+// Compiled failure signatures for classifyClaudeFailure. They are anchored
+// deliberately — word boundaries on the bare HTTP status codes (\b401\b /
+// \b429\b) and bounded same-line proximity for "model … not found" — so they
+// match the structured API-error text claude emits rather than incidental
+// numbers, dates, or quoted file content that can appear anywhere in the
+// captured buffer. Ordered most-specific-first; the switch below tries them
+// in turn, so usage/overflow win over the looser auth/rate signatures.
+var (
+	reUsageLimit  = regexp.MustCompile(`(?i)usage limit|regain access`)
+	reCtxOverflow = regexp.MustCompile(`(?i)prompt is too long|too many tokens|exceeds the (?:maximum )?context`)
+	reAuthFail    = regexp.MustCompile(`(?i)invalid bearer token|invalid (?:x-)?api[- ]?key|authentication_error|\bunauthorized\b|oauth token|\b401\b`)
+	reModelFail   = regexp.MustCompile(`(?i)\bmodel\b[^\n]{0,40}not found|model_not_found|not_found_error|unknown model|invalid model|no such model`)
+	reRateLimit   = regexp.MustCompile(`(?i)rate[ _]?limit|too many requests|\b429\b`)
+)
+
+// classifyClaudeFailure inspects the captured output AND error text of a failed
 // `claude --print` run for known, actionable signatures and returns a clear
 // single-line explanation. It returns "" when nothing recognisable is found,
 // so callers fall through to the generic enrichExitStatus path.
 //
-// The headless claude CLI writes API errors to stdout (which execFixCmd
-// captures), so by the time a fixDoneMsg carries done.err != nil the real
-// reason is usually sitting in `output`. Without this, every distinct failure
-// — usage limit, auth, context overflow — renders identically as
-// "claude CLI exit 1", making a transient account cap look like a broken tool.
+// The headless claude CLI writes API errors to stdout (captured in `output` by
+// execFixCmd for the fix path) or, on the doctor-review path, folded into the
+// returned error string by callClaudeCLI — so both are scanned. Without this,
+// every distinct failure (usage limit, auth, context overflow) renders
+// identically as "claude CLI exit 1", making a transient account cap look like
+// a broken tool.
 func classifyClaudeFailure(output []byte, err error) string {
-	out := strings.ToLower(string(output))
+	raw := string(output)
+	if err != nil {
+		raw += "\n" + err.Error()
+	}
 	switch {
-	case strings.Contains(out, "usage limit"),
-		strings.Contains(out, "regain access"):
-		when := extractRegainDate(string(output))
+	case reUsageLimit.MatchString(raw):
 		msg := "Anthropic usage limit reached"
-		if when != "" {
+		if when := extractRegainDate(raw); when != "" {
 			msg += " — regains access " + when
 		}
 		return msg + ". The fix command is correct; retry after that, or use a provider with separate credit."
-	case strings.Contains(out, "prompt is too long"),
-		strings.Contains(out, "context window"),
-		strings.Contains(out, "too many tokens"):
+	case reCtxOverflow.MatchString(raw):
 		return "context overflow — the headless claude run exceeded the model window. Try a smaller target or fewer bulk files."
-	case strings.Contains(out, "invalid bearer token"),
-		strings.Contains(out, "authentication"),
-		strings.Contains(out, "unauthorized"),
-		strings.Contains(out, "401"),
-		strings.Contains(out, "oauth"):
+	case reAuthFail.MatchString(raw):
 		return "claude CLI not authenticated — run `claude` once to log in, then retry."
-	case strings.Contains(out, "model") && strings.Contains(out, "not found"),
-		strings.Contains(out, "unknown model"),
-		strings.Contains(out, "invalid model"):
+	case reModelFail.MatchString(raw):
 		return "model unavailable — the configured model was rejected by the API."
-	case strings.Contains(out, "rate limit"),
-		strings.Contains(out, "429"):
+	case reRateLimit.MatchString(raw):
 		return "rate limited by the API — wait a moment and retry."
 	}
 	return ""
 }
 
 // regainDateRe captures the "<date> at <time> UTC" portion of an Anthropic
-// usage-limit error so we can echo when access returns.
+// usage-limit error so we can echo when access returns. Case-insensitive, so
+// callers can pass the original-case buffer.
 var regainDateRe = regexp.MustCompile(`(?i)regain access on ([0-9]{4}-[0-9]{2}-[0-9]{2}(?: at [0-9:]+ ?(?:UTC)?)?)`)
 
 // extractRegainDate pulls the reset timestamp out of a usage-limit error
@@ -104,6 +113,22 @@ func extractRegainDate(s string) string {
 		return strings.TrimSpace(m[1])
 	}
 	return ""
+}
+
+// renderFixFailure builds the styled flash for a failed `claude --print` fix:
+// the classified, actionable reason when classifyClaudeFailure recognises the
+// output, otherwise the generic exit-status line plus a dim tail of the raw
+// output. Shared by the Doctor and Summary fixDoneMsg handlers so the two tabs
+// can't drift.
+func renderFixFailure(output []byte, err error) string {
+	if reason := classifyClaudeFailure(output, err); reason != "" {
+		return styleErr.Render("fix failed: " + reason)
+	}
+	flash := styleErr.Render("fix failed: " + enrichExitStatus(err.Error()))
+	if tail := tailOutput(output, 12); tail != "" {
+		flash += "\n" + styleDim.Render(tail)
+	}
+	return flash
 }
 
 // wrapImperativeFixPrompt prepends a strict instruction that forces Claude to

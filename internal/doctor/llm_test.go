@@ -73,6 +73,29 @@ func TestReviewPrefersClaudeCLIOverEnvKey(t *testing.T) {
 	}
 }
 
+// TestReviewClaudeCLIIsolatesMCP guards against the MCP-overflow trap: every
+// headless `claude --print` the review path spawns must disable the user's
+// configured MCP servers, or an MCP-heavy machine overflows the model window.
+// The fake claude echoes its args so we can assert the flags are present.
+func TestReviewClaudeCLIIsolatesMCP(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	installFakeClaude(t, `cat > /dev/null; printf "%s" "$*"`)
+	tmp := t.TempDir()
+	path := writeMD(t, tmp, "CLAUDE.md", "# hi\n")
+
+	out, err := doctor.Review(path, doctor.ReviewOptions{})
+	if err != nil {
+		t.Fatalf("Review error: %v", err)
+	}
+	if !strings.Contains(out, "--strict-mcp-config") {
+		t.Fatalf("expected --strict-mcp-config in claude args, got %q", out)
+	}
+	if !strings.Contains(out, "mcpServers") {
+		t.Fatalf("expected an empty --mcp-config server set in claude args, got %q", out)
+	}
+}
+
 func TestReviewClaudeCLINotFoundExplicit(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")

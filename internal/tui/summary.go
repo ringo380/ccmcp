@@ -128,14 +128,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		v.fixCmd = nil
 		v.fixOutput = done.output
 		if done.err != nil {
-			if reason := classifyClaudeFailure(done.output, done.err); reason != "" {
-				v.flash = styleErr.Render("fix failed: " + reason)
-			} else {
-				v.flash = styleErr.Render("fix failed: " + enrichExitStatus(done.err.Error()))
-				if tail := tailOutput(done.output, 12); tail != "" {
-					v.flash += "\n" + styleDim.Render(tail)
-				}
-			}
+			v.flash = renderFixFailure(done.output, done.err)
 			return nil
 		}
 		if done.proposal != nil && done.proposal.kind == fixClaudeCLI {
@@ -179,7 +172,11 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 	if review, ok := msg.(summaryReviewMsg); ok {
 		v.llmRunning = false
 		if review.err != nil {
-			v.flash = styleErr.Render("LLM review failed: " + review.err.Error())
+			reason := classifyClaudeFailure(nil, review.err)
+			if reason == "" {
+				reason = review.err.Error()
+			}
+			v.flash = styleErr.Render("LLM review failed: " + reason)
 			return nil
 		}
 		v.llmResult = review.content
