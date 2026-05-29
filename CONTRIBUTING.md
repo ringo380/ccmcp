@@ -3,8 +3,8 @@
 Thanks for your interest in improving ccmcp! This document covers how to build,
 test, and submit changes.
 
-By participating you agree to interact respectfully and constructively. Be
-excellent to each other.
+By participating you agree to abide by the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Project scope
 
