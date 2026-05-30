@@ -377,6 +377,19 @@ For bare-string plugins (sourced from a marketplace repo) run
 			targets = []config.InstalledPlugin{found}
 		}
 
+		// Refresh the backing marketplace clones first. Bare-string plugins copy their
+		// files from the local clone, so without this a re-fetch reproduces the same sha
+		// and the plugin appears perpetually "outdated" yet "already up to date" on update.
+		if !flagDryRun {
+			ids := make([]string, 0, len(targets))
+			for _, ip := range targets {
+				ids = append(ids, ip.ID)
+			}
+			for mkt, perr := range install.PullMarketplacesForPlugins(p, ids) {
+				fmt.Fprintf(os.Stderr, "warn: could not refresh marketplace %s: %v\n", mkt, perr)
+			}
+		}
+
 		var anyChanged bool
 		for _, ip := range targets {
 			name, mkt := config.ParsePluginID(ip.ID)
@@ -385,7 +398,7 @@ For bare-string plugins (sourced from a marketplace repo) run
 				continue
 			}
 			if flagDryRun {
-				fmt.Printf("[dry-run] would re-fetch %s from %s\n", name, mkt)
+				fmt.Printf("[dry-run] would pull marketplace %s and re-fetch %s\n", mkt, name)
 				continue
 			}
 			result, err := install.Install(p, mkt, name)

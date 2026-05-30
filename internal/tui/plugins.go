@@ -147,6 +147,10 @@ type pluginView struct {
 	bulkApplied []bulkUpdateApplied
 	bulkSkipped []string
 	bulkFailed  []bulkUpdateFailure
+	// bulkPulledMkts tracks which backing marketplaces have already been git-pulled
+	// during the current bulk sweep, so each distinct marketplace is refreshed once.
+	// Mutated only on the bubbletea goroutine (in bulkRunNextItem).
+	bulkPulledMkts map[string]bool
 
 	// lastFailures survives past bulkUpdating=false. Loaded from disk on first
 	// render of this view; populated by bulk-update completion. `F` opens the
@@ -613,6 +617,9 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		v.flash = styleProgress.Render("updating " + r.ID + "…")
 		id, p := r.ID, v.st.paths
 		return func() tea.Msg {
+			// Refresh the marketplace clone first so bare-string plugins re-copy the
+			// latest files (best-effort: stale clone fallback on pull failure).
+			_ = install.UpdateMarketplace(p, mkt)
 			result, err := install.Install(p, mkt, name)
 			return pluginUpdateResultMsg{id: id, oldSha: oldSha, oldInstPath: oldInstPath, result: result, err: err}
 		}
@@ -778,6 +785,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		v.bulkApplied = nil
 		v.bulkSkipped = nil
 		v.bulkFailed = nil
+		v.bulkPulledMkts = map[string]bool{}
 		v.flash = styleProgress.Render(fmt.Sprintf("updating %d plugin(s)… (0/%d)", len(targets), len(targets)))
 		return v.bulkRunNextItem()
 	}
@@ -796,7 +804,21 @@ func (v *pluginView) bulkRunNextItem() tea.Cmd {
 	}
 	t := v.bulkTargets[v.bulkIndex]
 	p := v.st.paths
+	// Refresh each distinct backing marketplace once per sweep so bare-string plugins
+	// re-copy the latest files. Decided here on the bubbletea goroutine; the closure
+	// only reads the local pull bool, never the shared map.
+	if v.bulkPulledMkts == nil {
+		v.bulkPulledMkts = map[string]bool{}
+	}
+	pull := false
+	if t.mkt != "" && !v.bulkPulledMkts[t.mkt] {
+		v.bulkPulledMkts[t.mkt] = true
+		pull = true
+	}
 	return func() tea.Msg {
+		if pull {
+			_ = install.UpdateMarketplace(p, t.mkt)
+		}
 		result, err := install.Install(p, t.mkt, t.name)
 		return pluginBulkItemDoneMsg{target: t, result: result, err: err}
 	}

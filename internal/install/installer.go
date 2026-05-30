@@ -4,7 +4,7 @@
 // Four marketplace source types are supported:
 //
 //  1. bare string  — "./plugins/foo": path inside the marketplace repo itself.
-//                    Plugin files are already on disk at marketplaces/<mkt>/plugins/foo.
+//     Plugin files are already on disk at marketplaces/<mkt>/plugins/foo.
 //  2. "url"        — {source:"url", url, sha?}: full-repo clone; optional sha pin.
 //  3. "git-subdir" — {source:"git-subdir", url, path, ref?, sha?}: clone then copy subdir.
 //  4. "github"     — {source:"github", repo, ref?}: same as url but repo-shorthand.
@@ -637,6 +637,36 @@ func UpdateMarketplace(p paths.Paths, name string) error {
 		return fmt.Errorf("git pull for marketplace %q: %w", name, err)
 	}
 	return nil
+}
+
+// PullMarketplacesForPlugins runs UpdateMarketplace (git pull --ff-only) once for each
+// distinct marketplace backing the given plugin IDs. This is the missing half of plugin
+// update: bare-string-source plugins copy their files from the LOCAL marketplace clone, so
+// without refreshing that clone first, a re-install reproduces the same gitCommitSha and the
+// staleness probe (which compares against the upstream ls-remote HEAD) never clears.
+//
+// Best-effort: non-git ("local source") marketplaces are skipped silently; pull failures are
+// returned keyed by marketplace name so callers can surface them, but a failure does not stop
+// the caller from proceeding against the stale clone (preserving the prior behavior).
+func PullMarketplacesForPlugins(p paths.Paths, ids []string) map[string]error {
+	seen := map[string]bool{}
+	errs := map[string]error{}
+	for _, id := range ids {
+		_, mkt := config.ParsePluginID(id)
+		if mkt == "" || seen[mkt] {
+			continue
+		}
+		seen[mkt] = true
+		// Skip marketplaces that aren't git clones (local-source copies have nothing
+		// to pull and UpdateMarketplace would only return a noisy "not a git clone" error).
+		if _, err := os.Stat(filepath.Join(MarketplaceDir(p, mkt), ".git")); err != nil {
+			continue
+		}
+		if err := UpdateMarketplace(p, mkt); err != nil {
+			errs[mkt] = err
+		}
+	}
+	return errs
 }
 
 // UpdateInstall updates an existing installed_plugins.json entry after a re-fetch.
