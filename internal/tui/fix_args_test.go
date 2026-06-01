@@ -32,3 +32,24 @@ func TestClaudeFixArgsIsolateMCP(t *testing.T) {
 	assertMCPIsolated(t, claudeAssetFixArgs("do the thing", permDescription), "claudeAssetFixArgs(description)")
 	assertMCPIsolated(t, claudeAssetFixArgs("do the thing", permRename), "claudeAssetFixArgs(rename)")
 }
+
+// claudeFixModelArgs appends --fallback-model only when the detected Claude Code
+// version supports it (>= 2.1.152), so older versions never receive an unknown
+// flag. Caps is a package var; restore it after mutating.
+func TestClaudeFixModelArgsFallbackGate(t *testing.T) {
+	orig := Caps
+	t.Cleanup(func() { Caps = orig })
+
+	Caps.SupportsFallbackModel = false
+	if slices.Contains(claudeFixModelArgs(), "--fallback-model") {
+		t.Error("baseline (no fallback support) must not pass --fallback-model")
+	}
+
+	Caps.SupportsFallbackModel = true
+	Caps.FallbackModel = "claude-sonnet-4-6"
+	args := claudeFixModelArgs()
+	i := slices.Index(args, "--fallback-model")
+	if i < 0 || i+1 >= len(args) || args[i+1] != "claude-sonnet-4-6" {
+		t.Errorf("expected --fallback-model claude-sonnet-4-6; got %v", args)
+	}
+}

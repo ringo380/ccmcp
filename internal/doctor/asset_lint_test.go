@@ -86,6 +86,34 @@ func TestLintSkillsDescriptionTooLong(t *testing.T) {
 	}
 }
 
+// A user-tuned skillListingMaxDescChars (Claude Code 2.1.152+) must move the
+// SKILL003 boundary: raising the cap silences a description that would otherwise
+// error; lowering it flags one that would otherwise pass.
+func TestLintSkillsDescriptionRespectsCapOverride(t *testing.T) {
+	tmp := t.TempDir()
+	desc := strings.Repeat("x", 1700) // over baseline 1536, under a raised 2500
+	s := writeSkill(t, tmp, "good-name", desc)
+
+	hasSkill003 := func(cfg LintConfig) bool {
+		for _, iss := range LintSkillsWithConfig([]skills.Skill{s}, cfg) {
+			if iss.Code == "SKILL003" {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !hasSkill003(DefaultLintConfig) {
+		t.Error("1700-char description should trip SKILL003 at the baseline 1536 cap")
+	}
+	if hasSkill003(DefaultLintConfig.WithSkillDescCap(2500)) {
+		t.Error("raised cap (2500) should silence the 1700-char description")
+	}
+	if !hasSkill003(DefaultLintConfig.WithSkillDescCap(1000)) {
+		t.Error("lowered cap (1000) should flag the 1700-char description")
+	}
+}
+
 func TestLintSkillsDescriptionWarn(t *testing.T) {
 	tmp := t.TempDir()
 	medium := strings.Repeat("x", 1300)

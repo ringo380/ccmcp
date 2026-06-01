@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/ringo380/ccmcp/internal/claudecode"
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/paths"
 	"github.com/ringo380/ccmcp/internal/updates"
@@ -12,6 +13,16 @@ import (
 
 // Version is set by the cmd layer before Run/Dump; empty hides the header version (tests).
 var Version string
+
+// ClaudeVersion is the detected Claude Code CLI version, set by the cmd layer
+// before Run/Dump. Empty (the default, e.g. in headless tests or when undetected)
+// hides the "· CC <ver>" header chip.
+var ClaudeVersion string
+
+// Caps is the version-calibrated capability set the TUI's lint/fix paths read.
+// Defaults to the Baseline so headless tests that never set it keep prior
+// behavior; the cmd layer overrides it with CapabilitiesFor(detected version).
+var Caps = claudecode.Baseline()
 
 // Run launches the bubbletea TUI.
 func Run(p paths.Paths, projectPath string) error {

@@ -6,6 +6,36 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Claude Code version awareness.** ccmcp now detects the actively-installed
+  Claude Code version (`claude --version`, cached under
+  `~/.claude/plugins/cache/ccmcp-claude-version.json` and invalidated by the
+  binary's mtime so an upgrade is picked up immediately) and calibrates its
+  version-sensitive behavior to it. The detected version shows as a `· CC <ver>`
+  chip in the TUI header and as a one-line note on `ccmcp doctor`. All version
+  logic lives in one place — `internal/claudecode/CapabilitiesFor` — so absorbing
+  a future Claude Code release is a localized edit. Detection is best-effort:
+  when `claude` isn't on `PATH` or its output is unparseable, ccmcp falls back to
+  conservative baseline rules.
+- **Asset-lint skill-description cap honors `skillListingMaxDescChars`.** The
+  `SKILL003` limit (default 1536) now reads the user's `skillListingMaxDescChars`
+  setting (Claude Code 2.1.152+) instead of hardcoding it, so raising or lowering
+  the cap no longer produces false-positive/negative lint results.
+- **`CMD002` — shadowed-command lint.** `ccmcp doctor assets` now flags a
+  user/project command that a same-named skill silently shadows (Claude Code runs
+  the skill, so the command never executes) — the CI/lint surface for the
+  collision the TUI Commands tab already shows interactively.
+
+### Changed
+
+- **Headless fix/review model selection is now resilient.** The model is resolved
+  at runtime (was hardcoded `claude-haiku-4-5` in three places): a `--model` flag
+  or `CCMCP_CLAUDE_MODEL` env var (or an opt-in `ccmcpClaudeModel` settings key)
+  overrides the version-calibrated default, and on Claude Code ≥ 2.1.152 a
+  `--fallback-model` is passed so Claude Code recovers automatically if the
+  primary model ID is retired.
+
 ## [0.17.1] — 2026-05-29
 
 ### Fixed

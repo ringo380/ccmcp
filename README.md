@@ -193,7 +193,9 @@ Bird's-eye overview of every scope's counts, per-project overrides, and redundan
 | `y` / `n` | approve / reject the previewed fix (in confirm panel) |
 | `u` | revert a CLI fix from its on-disk snapshot (in post-review panel) |
 
-Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pressing `f` opens a preview panel: in-TUI fixes show a unified diff of the exact change before you approve; Claude-CLI fixes show the full prompt first, then after the CLI runs, show the resulting diff and let you keep (`y`) or revert (`u`). Every fix snapshots the original file to `~/.claude-mcp-backups/doctor/` (kept: 20 newest per file, max age 30 days). `F` bulk-fixes every issue that shares the cursor's lint code in a single keystroke — programmatic codes (broken index entries, missing frontmatter fields, standalone broken links, empty MEMORY.md) are applied directly with per-file snapshots; CLI codes (line-too-long, file-too-long, content rewrites) are bundled into one `claude --print --model claude-haiku-4-5 --max-turns 4` invocation with a strict-imperative envelope that forces Edit-tool calls instead of prose responses.
+Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pressing `f` opens a preview panel: in-TUI fixes show a unified diff of the exact change before you approve; Claude-CLI fixes show the full prompt first, then after the CLI runs, show the resulting diff and let you keep (`y`) or revert (`u`). Every fix snapshots the original file to `~/.claude-mcp-backups/doctor/` (kept: 20 newest per file, max age 30 days). `F` bulk-fixes every issue that shares the cursor's lint code in a single keystroke — programmatic codes (broken index entries, missing frontmatter fields, standalone broken links, empty MEMORY.md) are applied directly with per-file snapshots; CLI codes (line-too-long, file-too-long, content rewrites) are bundled into one `claude --print --max-turns 4` invocation with a strict-imperative envelope that forces Edit-tool calls instead of prose responses.
+
+ccmcp's doctor lints *content quality* (CLAUDE.md/MEMORY.md structure, skill/agent/command description and token-budget limits) — it **complements**, and does not duplicate, Claude Code's own built-in `/doctor`, which validates *config* (auto-updater health, settings/`.mcp.json` schema). The asset-lint limits calibrate to the installed Claude Code version (detected via `claude --version` and shown as `· CC <ver>` in the header); the per-skill description cap honors your `skillListingMaxDescChars` setting. To support a new Claude Code version, the version logic lives in one place — `internal/claudecode/CapabilitiesFor`.
 
 **Global**
 
@@ -314,7 +316,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-356 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+372 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 
@@ -325,11 +327,13 @@ cmd/              cobra subcommands (status, mcp, profile, plugin, marketplace,
 internal/
   agents/         agent CRUD + file-backed store
   classify/       override-key classifier (7 buckets)
+  claudecode/     installed Claude Code version probe + capability calibration
+                  (single place to update per CC release)
   commands/       command discovery, conflict detection, ignore list
   config/         readers + writers for every Claude Code config file
   discovery/      remote marketplace discovery (curated registry + awesome-list
                   + user URLs merged, preview-clone + conflict detection)
-  doctor/         CLAUDE.md + MEMORY.md structural linter
+  doctor/         CLAUDE.md + MEMORY.md structural linter + asset lint
   install/        plugin marketplace installer (4 source formats)
   paths/          config path resolution ($CLAUDE_CONFIG_DIR aware)
   report/         snapshot / sweep / drift / audit report generators

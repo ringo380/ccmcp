@@ -430,6 +430,10 @@ func (m *model) View() string {
 		}
 		header.WriteString(styleDim.Render(v))
 	}
+	if ClaudeVersion != "" {
+		header.WriteString(" ")
+		header.WriteString(styleDim.Render("· CC " + ClaudeVersion))
+	}
 	header.WriteString("  ")
 	header.WriteString(styleDim.Render(m.st.project))
 	if m.st.anyDirty() {
