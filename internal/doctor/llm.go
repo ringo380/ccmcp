@@ -87,11 +87,17 @@ func (o *ReviewOptions) model() string {
 		return o.Model
 	}
 	switch o.Provider {
-	case ProviderClaudeCLI:
-		return ""
 	case ProviderOpenAI:
 		return "gpt-4o"
 	default:
+		// Anthropic API and the local `claude --print` CLI both use the
+		// version-calibrated default (CCMCP_CLAUDE_MODEL > settings override >
+		// capability default). The CLI path used to return "" — which dropped
+		// the --model flag and silently ran the user's full-power default model,
+		// making SetDefaultModel dead work on the default (claude-CLI) review
+		// path and diverging from the TUI fix path (claudeFixModelArgs), which
+		// always pins ResolvedModel(). Honoring it here keeps the cheap,
+		// version-appropriate model (e.g. haiku) for these mechanical reviews.
 		return ResolvedModel()
 	}
 }

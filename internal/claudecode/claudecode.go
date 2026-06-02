@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -143,11 +144,15 @@ func saveInfo(path string, i Info) {
 	if err != nil {
 		return
 	}
-	tmp := path + ".tmp"
+	// Per-process tmp suffix so concurrent ccmcp processes can't clobber each
+	// other's write or rename a torn file into place.
+	tmp := path + "." + strconv.Itoa(os.Getpid()) + ".tmp"
 	if os.WriteFile(tmp, b, 0o600) != nil {
 		return
 	}
-	_ = os.Rename(tmp, path)
+	if os.Rename(tmp, path) != nil {
+		_ = os.Remove(tmp)
+	}
 }
 
 // Detect returns the installed Claude Code version. It reuses a cached probe
@@ -160,16 +165,27 @@ func Detect(p paths.Paths) Version {
 
 	binPath, modTime, err := lookupClaude()
 	if err != nil {
-		// `claude` not resolvable. Persist an unknown probe to throttle re-checks.
-		saveInfo(cachePath, Info{CheckedAt: time.Now().UTC()})
+		// `claude` not resolvable. Persist an unknown probe so we don't rewrite
+		// the cache on every call — but only when the existing marker is stale,
+		// otherwise this path would re-write on every Detect (no actual throttle).
+		if !(haveCache && cached.BinPath == "" && !cached.CheckedAt.IsZero() && time.Since(cached.CheckedAt) < SoftTTL) {
+			saveInfo(cachePath, Info{CheckedAt: time.Now().UTC()})
+		}
 		return Version{}
 	}
 
 	if haveCache && cached.BinPath == binPath {
 		switch {
 		case !modTime.IsZero() && cached.BinModTime.Equal(modTime):
-			// Binary unchanged since last probe — trust the cache, no spawn.
-			return versionFromInfo(cached)
+			// Binary unchanged since last probe. A KNOWN version is trusted until
+			// the mtime changes (a CC upgrade swaps the versioned install). An
+			// unknown cached.Version means the last probe FAILED transiently
+			// (spawn error / unparseable output) — never pin that until mtime
+			// changes; re-probe once the TTL backstop lapses so a recovered
+			// `claude --version` is picked up.
+			if cached.Version != "" || (!cached.CheckedAt.IsZero() && time.Since(cached.CheckedAt) < SoftTTL) {
+				return versionFromInfo(cached)
+			}
 		case modTime.IsZero() && !cached.CheckedAt.IsZero() && time.Since(cached.CheckedAt) < SoftTTL:
 			// mtime unavailable; fall back to the TTL backstop to avoid re-spawning.
 			return versionFromInfo(cached)

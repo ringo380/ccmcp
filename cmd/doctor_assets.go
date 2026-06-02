@@ -55,7 +55,7 @@ so this command is CI-friendly.`,
 
 		// Calibrate the lint limits to the installed Claude Code version, then
 		// fold in an explicit skillListingMaxDescChars override if the user set one.
-		ver, caps := calibrateClaudeVersion(p)
+		ver, caps := calibrateClaudeVersionWith(p, settings)
 		cfg := doctor.LintConfigFromCapabilities(caps)
 		if cap, ok := settings.SkillListingMaxDescChars(); ok {
 			cfg = cfg.WithSkillDescCap(cap)

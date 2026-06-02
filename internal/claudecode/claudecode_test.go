@@ -143,6 +143,51 @@ func TestDetectMissingBinary(t *testing.T) {
 	}
 }
 
+// TestDetectTransientFailureReprobes guards the fix for a stale-cache bug: a
+// transient `claude --version` failure must NOT be pinned as authoritative
+// "unknown" until the binary mtime changes. Once the spawn recovers (and the
+// failure marker is past SoftTTL), Detect must re-probe and pick up the real
+// version even though the binary's path+mtime are unchanged.
+func TestDetectTransientFailureReprobes(t *testing.T) {
+	p := testPaths(t)
+	mt := time.Now().Add(-time.Hour).Truncate(time.Second)
+	runs := 0
+
+	// First probe fails transiently (e.g. ctx timeout / fork EAGAIN).
+	withStubs(t,
+		func() (string, time.Time, error) { return "/bin/claude", mt, nil },
+		func(string) (string, error) { runs++; return "", errors.New("transient spawn failure") },
+	)
+	if v := Detect(p); v.Known() {
+		t.Fatalf("failed probe should yield unknown, got %+v", v)
+	}
+	if runs != 1 {
+		t.Fatalf("expected 1 probe, got %d", runs)
+	}
+
+	// Age the cached failure marker past SoftTTL so the backstop lapses while the
+	// binary identity (path+mtime) stays identical.
+	stale, ok := loadInfo(CachePath(p))
+	if !ok {
+		t.Fatal("expected a cached failure marker")
+	}
+	stale.CheckedAt = time.Now().Add(-2 * SoftTTL)
+	saveInfo(CachePath(p), stale)
+
+	// Spawn now recovers; same binary identity must NOT short-circuit to the
+	// pinned unknown — Detect must re-probe and surface the real version.
+	withStubs(t,
+		func() (string, time.Time, error) { return "/bin/claude", mt, nil },
+		func(string) (string, error) { runs++; return "2.1.158 (Claude Code)\n", nil },
+	)
+	if v := Detect(p); !v.Known() || v.Raw != "2.1.158" {
+		t.Fatalf("recovered probe Detect=%+v, want 2.1.158", v)
+	}
+	if runs != 2 {
+		t.Fatalf("expected a re-probe after the failure marker lapsed, runs=%d", runs)
+	}
+}
+
 func TestDetectUnparseableOutput(t *testing.T) {
 	p := testPaths(t)
 	withStubs(t,

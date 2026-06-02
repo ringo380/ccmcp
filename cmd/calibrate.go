@@ -15,10 +15,21 @@ import (
 // derived capabilities. Best-effort: an undetected version yields the
 // conservative baseline and the prior default model.
 func calibrateClaudeVersion(p paths.Paths) (claudecode.Version, claudecode.Capabilities) {
+	// Best-effort settings load: an unreadable/malformed settings.json simply
+	// drops the model override here (vs. fatal in `doctor assets`, which loads +
+	// validates settings itself and passes it to calibrateClaudeVersionWith).
+	s, _ := config.LoadSettings(p.SettingsJSON)
+	return calibrateClaudeVersionWith(p, s)
+}
+
+// calibrateClaudeVersionWith is calibrateClaudeVersion with the caller's
+// already-loaded settings, so commands that have parsed settings.json don't
+// re-read it. A nil s means "no override" (capability default model).
+func calibrateClaudeVersionWith(p paths.Paths, s *config.Settings) (claudecode.Version, claudecode.Capabilities) {
 	v := claudecode.Detect(p)
 	caps := claudecode.CapabilitiesFor(v)
 	model := caps.DefaultModel
-	if s, err := config.LoadSettings(p.SettingsJSON); err == nil {
+	if s != nil {
 		if m, ok := s.ClaudeFixModel(); ok {
 			model = m
 		}

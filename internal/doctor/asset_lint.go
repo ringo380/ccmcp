@@ -193,7 +193,7 @@ func LintAgentsWithConfig(ags []agents.Agent, cfg LintConfig) []Issue {
 					File:     a.File,
 					Severity: SeverityWarning,
 					Code:     "AGENT002",
-					Message:  fmt.Sprintf("agent body is %d tokens, approaching the %d-token Claude Code budget", bodyTokens, cfg.WarnAgentBodyTokens),
+					Message:  fmt.Sprintf("agent body is %d tokens, approaching the %d-token Claude Code budget", bodyTokens, cfg.MaxAgentBodyTokens),
 				})
 			}
 		}
