@@ -87,21 +87,54 @@ func (o *ReviewOptions) model() string {
 		return o.Model
 	}
 	switch o.Provider {
-	case ProviderClaudeCLI:
-		return ""
 	case ProviderOpenAI:
 		return "gpt-4o"
 	default:
-		return DefaultAnthropicModel
+		// Anthropic API and the local `claude --print` CLI both use the
+		// version-calibrated default (CCMCP_CLAUDE_MODEL > settings override >
+		// capability default). The CLI path used to return "" — which dropped
+		// the --model flag and silently ran the user's full-power default model,
+		// making SetDefaultModel dead work on the default (claude-CLI) review
+		// path and diverging from the TUI fix path (claudeFixModelArgs), which
+		// always pins ResolvedModel(). Honoring it here keeps the cheap,
+		// version-appropriate model (e.g. haiku) for these mechanical reviews.
+		return ResolvedModel()
 	}
 }
 
-// DefaultAnthropicModel is the cheap-but-capable model used for doctor review
-// and asset-lint fixes. Haiku is plenty for the mechanical edits these tasks
-// describe; Sonnet/Opus burned tokens on prose responses that often didn't
-// even invoke the Edit tool. Callers can override via ReviewOptions.Model or
-// the `--model` flag.
+// DefaultAnthropicModel is the compile-time baseline model for doctor review and
+// asset-lint fixes. Haiku is plenty for the mechanical edits these tasks
+// describe; Sonnet/Opus burned tokens on prose responses that often didn't even
+// invoke the Edit tool. The effective model is resolved at runtime via
+// ResolvedModel (which layers the CCMCP_CLAUDE_MODEL env var over the
+// version-calibrated default installed by SetDefaultModel); callers can still
+// override per-call via ReviewOptions.Model or the `--model` flag.
 const DefaultAnthropicModel = "claude-haiku-4-5"
+
+// defaultModel is the version-calibrated default, set once at startup via
+// SetDefaultModel (from claudecode.Capabilities, with an optional settings.json
+// override folded in). It starts at the compile-time baseline so tests and any
+// caller that never calls SetDefaultModel keep the prior behavior.
+var defaultModel = DefaultAnthropicModel
+
+// SetDefaultModel installs the version-calibrated default model. Empty input is
+// ignored so a failed detection can't blank out the model.
+func SetDefaultModel(m string) {
+	if m != "" {
+		defaultModel = m
+	}
+}
+
+// ResolvedModel returns the model to use for headless Anthropic/CLI fix and
+// review calls. The CCMCP_CLAUDE_MODEL env var wins over the configured default
+// so a retired model ID can be worked around without a release. A per-call
+// ReviewOptions.Model / `--model` flag still takes precedence over this.
+func ResolvedModel() string {
+	if m := strings.TrimSpace(os.Getenv("CCMCP_CLAUDE_MODEL")); m != "" {
+		return m
+	}
+	return defaultModel
+}
 
 // resolveProvider picks the LLM backend. Explicit caller opt-ins win first: a
 // set Provider, then an explicit APIKey (which forces the HTTP API). Absent

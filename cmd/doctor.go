@@ -60,6 +60,11 @@ OPENAI_API_KEY (or --api-key) is required.`,
 			return err
 		}
 
+		// Calibrate the review model default to the installed Claude Code version
+		// (and any settings/env override) before any LLM review fires.
+		ver, _ := calibrateClaudeVersion(p)
+		fmt.Fprintln(os.Stderr, calibrationBanner(ver))
+
 		var targets []lintTarget
 
 		// Project-level CLAUDE.md

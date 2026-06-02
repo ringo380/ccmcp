@@ -760,9 +760,13 @@ func (v *summaryView) ensureAssets() {
 	v.cachedAgents = agents.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
 	v.cachedCmds = commands.Discover(v.st.paths.ClaudeConfigDir, v.st.project, v.st.settings, v.st.installed, v.st.paths.PluginsDir)
 	v.cachedConflicts = commands.FindConflicts(v.cachedCmds, v.cachedSkills)
-	v.cachedSkillIssues = doctor.LintSkills(v.cachedSkills)
-	v.cachedAgentIssues = doctor.LintAgents(v.cachedAgents)
-	v.cachedCmdIssues = doctor.LintCommands(v.cachedCmds)
+	cfg := doctor.LintConfigFromCapabilities(Caps)
+	if cap, ok := v.st.settings.SkillListingMaxDescChars(); ok {
+		cfg = cfg.WithSkillDescCap(cap)
+	}
+	v.cachedSkillIssues = doctor.LintSkillsWithConfig(v.cachedSkills, cfg)
+	v.cachedAgentIssues = doctor.LintAgentsWithConfig(v.cachedAgents, cfg)
+	v.cachedCmdIssues = doctor.LintCommandsWithConfig(v.cachedCmds, cfg)
 	var installedIDs []string
 	for _, ip := range v.st.installed.List() {
 		installedIDs = append(installedIDs, ip.ID)

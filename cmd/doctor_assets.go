@@ -26,7 +26,11 @@ Claude Code 2.1.141 constraints:
             (warn at 1200, error at 1536 — content past the cap is silently dropped)
   AGENT001  agent description approaches/exceeds the 1536-char display limit
   CMD001    command description exceeds 500-char soft limit (palette readability)
+  CMD002    command is shadowed by a same-named skill (skill wins; command never runs)
   PLUGIN001 plugin manifest description exceeds 500-char soft limit
+
+Skill description limits honor the settings.json skillListingMaxDescChars key
+and calibrate to the installed Claude Code version (shown on stderr).
 
 Exit code 1 if any error-severity issues are found (warnings alone are exit 0),
 so this command is CI-friendly.`,
@@ -49,13 +53,25 @@ so this command is CI-friendly.`,
 		ags := agents.Discover(p.ClaudeConfigDir, proj, settings, installed, p.PluginsDir)
 		cmds := commands.Discover(p.ClaudeConfigDir, proj, settings, installed, p.PluginsDir)
 
+		// Calibrate the lint limits to the installed Claude Code version, then
+		// fold in an explicit skillListingMaxDescChars override if the user set one.
+		ver, caps := calibrateClaudeVersionWith(p, settings)
+		cfg := doctor.LintConfigFromCapabilities(caps)
+		if cap, ok := settings.SkillListingMaxDescChars(); ok {
+			cfg = cfg.WithSkillDescCap(cap)
+		}
+		if !flagJSON {
+			fmt.Fprintln(os.Stderr, calibrationBanner(ver))
+		}
+
 		// Non-nil initial value so the --json branch emits `[]` instead of
 		// `null` when every linter is clean — downstream JSON consumers expect
 		// an array.
 		issues := []doctor.Issue{}
-		issues = append(issues, doctor.LintSkills(sks)...)
-		issues = append(issues, doctor.LintAgents(ags)...)
-		issues = append(issues, doctor.LintCommands(cmds)...)
+		issues = append(issues, doctor.LintSkillsWithConfig(sks, cfg)...)
+		issues = append(issues, doctor.LintAgentsWithConfig(ags, cfg)...)
+		issues = append(issues, doctor.LintCommandsWithConfig(cmds, cfg)...)
+		issues = append(issues, doctor.LintCommandShadows(commands.FindConflicts(cmds, sks))...)
 
 		if flagJSON {
 			enc := json.NewEncoder(os.Stdout)

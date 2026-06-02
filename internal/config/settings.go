@@ -221,3 +221,40 @@ func (s *Settings) RemoveSkillOverride(skill string) bool {
 	}
 	return true
 }
+
+// --- ccmcp model override ---------------------------------------------------
+
+// ClaudeFixModel returns an optional user override for the model ccmcp uses in
+// its headless `claude --print` fix/review invocations, read from the
+// `ccmcpClaudeModel` key in settings.json. ccmcp only READS this key (never
+// writes it), so it exists solely when the user opts in. The CCMCP_CLAUDE_MODEL
+// environment variable takes precedence and avoids adding a key that Claude
+// Code's own /doctor may flag as an unknown setting.
+func (s *Settings) ClaudeFixModel() (string, bool) {
+	v, ok := s.Raw["ccmcpClaudeModel"].(string)
+	if !ok || v == "" {
+		return "", false
+	}
+	return v, true
+}
+
+// --- skill listing description cap (Claude Code 2.1.152+) -------------------
+
+// SkillListingMaxDescChars returns the user-configured per-skill description
+// character cap from settings.json (`skillListingMaxDescChars`, default 1536 in
+// Claude Code). Descriptions longer than this are truncated in the skill listing
+// sent to the model. Returns (0, false) when unset so callers keep the baseline
+// default. JSON numbers decode as float64.
+func (s *Settings) SkillListingMaxDescChars() (int, bool) {
+	switch v := s.Raw["skillListingMaxDescChars"].(type) {
+	case float64:
+		if v > 0 {
+			return int(v), true
+		}
+	case int:
+		if v > 0 {
+			return v, true
+		}
+	}
+	return 0, false
+}

@@ -172,6 +172,16 @@ func CompareSemver(a, b string) int {
 	return 0
 }
 
+// ParseSemver splits a version string into its (major, minor, patch) integer
+// components, tolerating a leading "v" and a pre-release/build suffix. Missing
+// or non-numeric components are 0. Exported so other packages (e.g.
+// internal/claudecode) reuse the single canonical parser instead of
+// re-implementing semver parsing.
+func ParseSemver(v string) (major, minor, patch int) {
+	p := parseSemver(v)
+	return p[0], p[1], p[2]
+}
+
 func parseSemver(v string) [3]int {
 	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
 	// Drop pre-release/build suffix.

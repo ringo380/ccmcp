@@ -96,6 +96,28 @@ func TestReviewClaudeCLIIsolatesMCP(t *testing.T) {
 	}
 }
 
+// TestReviewClaudeCLIPassesResolvedModel guards finding #2: the claude-CLI
+// review path must pin the version-calibrated/overridden model via --model,
+// not silently run the user's full-power default. Previously model() returned
+// "" for ProviderClaudeCLI, dropping the flag and making SetDefaultModel dead
+// work on the default review path.
+func TestReviewClaudeCLIPassesResolvedModel(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("CCMCP_CLAUDE_MODEL", "claude-test-model")
+	installFakeClaude(t, `cat > /dev/null; printf "%s" "$*"`)
+	tmp := t.TempDir()
+	path := writeMD(t, tmp, "CLAUDE.md", "# hi\n")
+
+	out, err := doctor.Review(path, doctor.ReviewOptions{})
+	if err != nil {
+		t.Fatalf("Review error: %v", err)
+	}
+	if !strings.Contains(out, "--model claude-test-model") {
+		t.Fatalf("expected resolved --model in claude args, got %q", out)
+	}
+}
+
 func TestReviewClaudeCLINotFoundExplicit(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")

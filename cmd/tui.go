@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ringo380/ccmcp/internal/paths"
 	"github.com/ringo380/ccmcp/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -32,6 +33,7 @@ func runTUI(_ context.Context) error {
 		return err
 	}
 	tui.Version = currentVersion()
+	wireClaudeVersion(p)
 	return tui.Run(p, proj)
 }
 
@@ -46,12 +48,25 @@ func runTUIDump(tab string) error {
 		return err
 	}
 	tui.Version = currentVersion()
+	wireClaudeVersion(p)
 	out, err := tui.Dump(p, proj, tab)
 	if err != nil {
 		return err
 	}
 	fmt.Print(out)
 	return nil
+}
+
+// wireClaudeVersion detects the installed Claude Code version and pushes the
+// derived display string + capabilities into the tui package before launch.
+func wireClaudeVersion(p paths.Paths) {
+	v, caps := calibrateClaudeVersion(p)
+	tui.Caps = caps
+	if v.Known() {
+		tui.ClaudeVersion = v.Raw
+	} else {
+		tui.ClaudeVersion = ""
+	}
 }
 
 func init() {

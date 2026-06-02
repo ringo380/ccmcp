@@ -45,10 +45,18 @@ const streamRingMax = 50
 // the model's context window ("Prompt is too long" → exit 1, tokens charged, no
 // edit made). Fixes only ever need Edit/Write/Read, never an MCP server.
 func claudeFixModelArgs() []string {
-	return []string{
+	args := []string{
 		"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`,
-		"--model", doctor.DefaultAnthropicModel, "--max-turns", "4",
+		"--model", doctor.ResolvedModel(), "--max-turns", "4",
 	}
+	// On Claude Code >= 2.1.152, --fallback-model lets CC recover automatically
+	// if the primary model ID has been retired. Gated by the detected version's
+	// capabilities (Caps), so older CC versions that don't support the flag don't
+	// receive it.
+	if Caps.SupportsFallbackModel && Caps.FallbackModel != "" {
+		args = append(args, "--fallback-model", Caps.FallbackModel)
+	}
+	return args
 }
 
 // Compiled failure signatures for classifyClaudeFailure. They are anchored
