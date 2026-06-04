@@ -502,6 +502,9 @@ func (m *model) tabEnterCmd() tea.Cmd {
 		m.plugins.rebuild()
 		return m.plugins.initialCheckCmd()
 	case tabMCPs:
+		// Rebuild so plugin enable/disable changes made on the Plugins tab (which
+		// re-scans state.pluginMCPs) are reflected in the effective list here.
+		m.mcps.rebuild()
 		return m.mcps.initialCheckCmd()
 	}
 	return nil
