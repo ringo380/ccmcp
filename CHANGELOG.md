@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.18.1] — 2026-06-05
+
 ### Fixed
 
 - **Effective MCP list now includes plugin servers declared in `plugin.json`.**
@@ -988,7 +990,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.18.1
 [0.18.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.18.0
 [0.17.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.17.1
 [0.17.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.17.0
