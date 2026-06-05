@@ -6,6 +6,19 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Effective MCP list now includes plugin servers declared in `plugin.json`.**
+  ccmcp previously discovered a plugin's MCP servers by reading only
+  `<installPath>/.mcp.json`, but Claude Code also loads servers from the
+  `mcpServers` field of `<installPath>/.claude-plugin/plugin.json` — so plugins
+  that declare their servers there (e.g. `xclaude-plugin`, which ships 8 servers
+  via `plugin.json` but only 2 via `.mcp.json`) showed up incomplete in the MCPs
+  tab and every CLI surface. `config.ScanAllInstalledPluginMCPs` now merges both
+  sources per plugin (deduped by name), handling the `mcpServers` field's inline-
+  object, string-path, and array-of-paths shapes. The MCPs tab also re-scans on
+  tab-enter so plugin enable/disable changes made elsewhere reflect immediately.
+
 ## [0.18.0] — 2026-06-02
 
 ### Added

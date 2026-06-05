@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // PluginMCPSource describes an MCP server registered by a plugin's bundled .mcp.json.
@@ -54,17 +55,29 @@ func ScanAllInstalledPluginMCPs(settings *Settings, installed *InstalledPlugins,
 				continue
 			}
 		}
-		mjson := filepath.Join(path, ".mcp.json")
-		mj, err := LoadMCPJson(mjson)
-		if err != nil {
-			continue
-		}
-		servers := mj.Servers()
-		if len(servers) == 0 {
-			raw, _ := RawJSON(mjson)
-			if looksLikeBareMCPMap(raw) {
-				servers = raw
+		// A plugin can declare MCP servers in two places, and Claude Code loads BOTH:
+		//   - <installPath>/.mcp.json (the legacy/auto-discovered file)
+		//   - the "mcpServers" field of <installPath>/.claude-plugin/plugin.json
+		// Many plugins (e.g. xclaude-plugin ships 8 servers via plugin.json but only 2 via
+		// .mcp.json) declare the full set only in the manifest. Merge both, deduped by name,
+		// so the emitted list mirrors what actually loads. plugin.json wins on collision
+		// (it's the canonical manifest); in practice the overlapping defs are identical.
+		servers := map[string]any{}
+		mj, err := LoadMCPJson(filepath.Join(path, ".mcp.json"))
+		if err == nil {
+			rootServers := mj.Servers()
+			if len(rootServers) == 0 {
+				raw, _ := RawJSON(filepath.Join(path, ".mcp.json"))
+				if looksLikeBareMCPMap(raw) {
+					rootServers = raw
+				}
 			}
+			for name, cfg := range rootServers {
+				servers[name] = cfg
+			}
+		}
+		for name, cfg := range pluginManifestMCPServers(path) {
+			servers[name] = cfg
 		}
 		for name, cfg := range servers {
 			out[name] = append(out[name], PluginMCPSource{
@@ -102,6 +115,63 @@ func ScanEnabledPluginMCPs(settings *Settings, installed *InstalledPlugins, plug
 		}
 	}
 	return out
+}
+
+// pluginManifestMCPServers reads the "mcpServers" field of <installPath>/.claude-plugin/plugin.json
+// and returns a name->rawConfig map (never nil). A missing manifest or absent field is normal and
+// yields an empty map rather than an error. The field comes in three shapes Claude Code accepts:
+//   - object: inline server definitions ({ "xc-all": {command: ...}, ... })
+//   - string: a path (relative to the plugin root) to a .mcp.json-style file
+//   - array of strings: several such paths, unioned
+func pluginManifestMCPServers(installPath string) map[string]any {
+	out := map[string]any{}
+	manifest, err := RawJSON(filepath.Join(installPath, ".claude-plugin", "plugin.json"))
+	if err != nil || manifest == nil {
+		return out
+	}
+	switch v := manifest["mcpServers"].(type) {
+	case map[string]any:
+		for name, cfg := range v {
+			out[name] = cfg
+		}
+	case string:
+		for name, cfg := range loadMCPServersFromPath(installPath, v) {
+			out[name] = cfg
+		}
+	case []any:
+		for _, item := range v {
+			if rel, ok := item.(string); ok {
+				for name, cfg := range loadMCPServersFromPath(installPath, rel) {
+					out[name] = cfg
+				}
+			}
+		}
+	}
+	return out
+}
+
+// loadMCPServersFromPath resolves a plugin.json mcpServers path (relative to the plugin root,
+// with a leading ${CLAUDE_PLUGIN_ROOT} or ./ stripped) and returns the servers it declares,
+// honoring both the {"mcpServers": {...}} wrapper and the bare-map fallback.
+func loadMCPServersFromPath(installPath, rel string) map[string]any {
+	rel = strings.TrimPrefix(rel, "${CLAUDE_PLUGIN_ROOT}")
+	rel = strings.TrimPrefix(rel, "/")
+	p := rel
+	if !filepath.IsAbs(rel) {
+		p = filepath.Join(installPath, rel)
+	}
+	mj, err := LoadMCPJson(p)
+	if err != nil {
+		return nil
+	}
+	servers := mj.Servers()
+	if len(servers) == 0 {
+		raw, _ := RawJSON(p)
+		if looksLikeBareMCPMap(raw) {
+			servers = raw
+		}
+	}
+	return servers
 }
 
 // looksLikeBareMCPMap recognizes { "name": { command: ..., args: ...} } at the top level.
