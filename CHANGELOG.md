@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-06-05
+
 ### Changed
 - Discover tab now lists only marketplaces you haven't installed yet, so it stays focused on
   finding new ones while the Marketplaces tab manages existing ones. Press `H` to reveal
@@ -996,7 +998,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.19.0
 [0.18.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.18.1
 [0.18.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.18.0
 [0.17.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.17.1
