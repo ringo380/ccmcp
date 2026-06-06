@@ -150,12 +150,13 @@ apart from genuinely absent sources.
 | `enter` | drill in (marketplace → plugins → conflict preview) |
 | `a` | add the selected marketplace (clones it + writes settings) |
 | `i` | install the selected/previewed plugin (adds its marketplace first if needed; `i` twice to reinstall an existing one) |
+| `H` | show/hide already-installed marketplaces (hidden by default) |
 | `r` | refresh discovery sources (bypass cache) |
 | `/` | filter (matches name, description, tags) |
 | `c` | clear filter |
 | `j` / `k` / arrows | navigate · `g` / `G` top / bottom · `b` / `esc` back |
 
-Browse a substantial built-in registry of curated Claude Code marketplaces (plus the awesome-list scraper and any `discoverySources` URLs), sorted by GitHub stars. `a` adopts a marketplace without retyping it in the Marketplaces tab; `i` installs a plugin in one keystroke and enables it.
+Browse a substantial built-in registry of curated Claude Code marketplaces (plus the awesome-list scraper and any `discoverySources` URLs), sorted by GitHub stars. By default the list shows only marketplaces you haven't installed yet — managing existing ones is the Marketplaces tab's job; press `H` to reveal installed entries (marked `[=]`). `a` adopts a marketplace without retyping it in the Marketplaces tab; `i` installs a plugin in one keystroke and enables it.
 
 **Profiles tab**
 
@@ -316,7 +317,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-375 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, plugin MCP scanning (.mcp.json + plugin.json manifest merge), doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+378 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, plugin MCP scanning (.mcp.json + plugin.json manifest merge), doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

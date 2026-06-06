@@ -108,6 +108,9 @@ func TestDiscoveryViewAddAlreadyInstalled(t *testing.T) {
 	}
 	v := newDiscoveryView(st)
 	v.resize(120, 30)
+	// Installed marketplaces are hidden by default; reveal them so the row is
+	// selectable and the "already added" guard is exercised.
+	v.showInstalled = true
 	v.update(discoveryFetchedMsg{res: &discovery.DiscoveryResult{
 		Marketplaces: []discovery.RemoteMarketplace{
 			{Name: "already-here", Source: "github", Repo: "o/already-here"},
@@ -229,5 +232,98 @@ func TestDiscoveryViewSourceErrorsRender(t *testing.T) {
 	out := stripANSI(v.render())
 	if !strings.Contains(out, "anthropic: timeout") {
 		t.Fatalf("expected source error rendered, got:\n%s", out)
+	}
+}
+
+// TestDiscoveryHidesInstalledByDefault: an already-installed marketplace is
+// filtered out of the default list; a not-yet-installed one is shown.
+func TestDiscoveryHidesInstalledByDefault(t *testing.T) {
+	st, _ := buildState(t)
+	if err := st.settings.AddMarketplace(config.Marketplace{Name: "installed-mp", SourceType: "github", Repo: "o/installed-mp"}); err != nil {
+		t.Fatal(err)
+	}
+	v := newDiscoveryView(st)
+	v.resize(120, 30)
+	v.update(discoveryFetchedMsg{res: &discovery.DiscoveryResult{
+		Marketplaces: []discovery.RemoteMarketplace{
+			{Name: "installed-mp", Source: "github", Repo: "o/installed-mp"},
+			{Name: "fresh-mp", Source: "github", Repo: "o/fresh-mp"},
+		},
+	}})
+
+	vis := v.visibleRows()
+	if len(vis) != 1 || vis[0].Name != "fresh-mp" {
+		t.Fatalf("default list should show only fresh-mp, got %+v", vis)
+	}
+	out := stripANSI(v.render())
+	if strings.Contains(out, "installed-mp") {
+		t.Fatalf("installed marketplace should be hidden by default; got:\n%s", out)
+	}
+	if !strings.Contains(out, "fresh-mp") {
+		t.Fatalf("new marketplace should be visible; got:\n%s", out)
+	}
+	if !strings.Contains(out, "1 installed hidden") {
+		t.Fatalf("expected installed-hidden hint; got:\n%s", out)
+	}
+}
+
+// TestDiscoveryToggleShowInstalled: `H` reveals installed marketplaces, marked [=].
+func TestDiscoveryToggleShowInstalled(t *testing.T) {
+	st, _ := buildState(t)
+	if err := st.settings.AddMarketplace(config.Marketplace{Name: "installed-mp", SourceType: "github", Repo: "o/installed-mp"}); err != nil {
+		t.Fatal(err)
+	}
+	v := newDiscoveryView(st)
+	v.resize(120, 30)
+	v.update(discoveryFetchedMsg{res: &discovery.DiscoveryResult{
+		Marketplaces: []discovery.RemoteMarketplace{
+			{Name: "installed-mp", Source: "github", Repo: "o/installed-mp"},
+			{Name: "fresh-mp", Source: "github", Repo: "o/fresh-mp"},
+		},
+	}})
+
+	v.update(key("H"))
+	if !v.showInstalled {
+		t.Fatalf("H should toggle showInstalled on")
+	}
+	if len(v.visibleRows()) != 2 {
+		t.Fatalf("after H both rows should be visible, got %d", len(v.visibleRows()))
+	}
+	out := stripANSI(v.render())
+	if !strings.Contains(out, "installed-mp") || !strings.Contains(out, "[=]") {
+		t.Fatalf("installed marketplace should show with [=] marker; got:\n%s", out)
+	}
+
+	// Toggling again hides it.
+	v.update(key("H"))
+	if v.showInstalled {
+		t.Fatalf("second H should toggle showInstalled off")
+	}
+	if len(v.visibleRows()) != 1 {
+		t.Fatalf("after second H only fresh-mp should be visible, got %d", len(v.visibleRows()))
+	}
+}
+
+// TestDiscoveryAllInstalledEmptyState: when every discovered marketplace is
+// installed, the empty state points to the Marketplaces tab.
+func TestDiscoveryAllInstalledEmptyState(t *testing.T) {
+	st, _ := buildState(t)
+	if err := st.settings.AddMarketplace(config.Marketplace{Name: "only-mp", SourceType: "github", Repo: "o/only-mp"}); err != nil {
+		t.Fatal(err)
+	}
+	v := newDiscoveryView(st)
+	v.resize(120, 30)
+	v.update(discoveryFetchedMsg{res: &discovery.DiscoveryResult{
+		Marketplaces: []discovery.RemoteMarketplace{
+			{Name: "only-mp", Source: "github", Repo: "o/only-mp"},
+		},
+	}})
+
+	if len(v.visibleRows()) != 0 {
+		t.Fatalf("expected empty default list, got %+v", v.visibleRows())
+	}
+	out := stripANSI(v.render())
+	if !strings.Contains(out, "Marketplaces tab") {
+		t.Fatalf("empty state should point to Marketplaces tab; got:\n%s", out)
 	}
 }
