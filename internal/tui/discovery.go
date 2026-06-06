@@ -36,6 +36,13 @@ type discoveryView struct {
 	index int
 	top   int
 
+	// showInstalled reveals already-installed marketplaces in the list (the `H`
+	// toggle). Default false: Discover focuses on new marketplaces and leaves
+	// managing existing ones to the Marketplaces tab. The predicate is
+	// installedNames; installed rows are filtered out of visibleRows() unless this
+	// is set.
+	showInstalled bool
+
 	// list filter (modeList)
 	filter       textinput.Model
 	filterActive bool
@@ -155,7 +162,7 @@ func (v *discoveryView) helpText() string {
 		if v.filterActive {
 			return "type to filter  enter/esc: done"
 		}
-		return "enter: drill in  a: add  r: refresh  /: filter  j/k: nav  g/G: top/bottom"
+		return "enter: drill in  a: add  H: show/hide installed  r: refresh  /: filter  j/k: nav  g/G: top/bottom"
 	case modePlugins:
 		if v.pFilterActive {
 			return "type to filter  enter/esc: done"
@@ -364,6 +371,15 @@ func (v *discoveryView) updateList(key tea.KeyMsg) tea.Cmd {
 		v.filter.SetValue("")
 		v.index = 0
 		v.top = 0
+	case "H":
+		v.showInstalled = !v.showInstalled
+		v.index = 0
+		v.top = 0
+		if v.showInstalled {
+			v.flash = styleDim.Render("showing installed marketplaces")
+		} else {
+			v.flash = styleDim.Render("hiding installed marketplaces")
+		}
 	case "r":
 		if v.fetchBusy {
 			return nil
@@ -638,16 +654,35 @@ func (v *discoveryView) sortRows() {
 // visibleRows applies the modeList filter (matches name, description, or tags).
 func (v *discoveryView) visibleRows() []discovery.RemoteMarketplace {
 	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
-	if q == "" {
-		return v.rows
-	}
 	out := make([]discovery.RemoteMarketplace, 0, len(v.rows))
 	for _, r := range v.rows {
-		if matchesQuery(q, r.Name, r.Description, r.Tags) {
-			out = append(out, r)
+		// Hide already-installed marketplaces by default — Discover surfaces new
+		// ones; the Marketplaces tab manages existing ones. `H` (showInstalled)
+		// reveals them. Same name-match convention as the [=] marker.
+		if !v.showInstalled {
+			if _, ok := v.installedNames[r.Name]; ok {
+				continue
+			}
 		}
+		if q != "" && !matchesQuery(q, r.Name, r.Description, r.Tags) {
+			continue
+		}
+		out = append(out, r)
 	}
 	return out
+}
+
+// installedCount reports how many discovered rows are already installed (and thus
+// hidden from the default list). Drives the "(N installed hidden)" hint + the
+// "all installed" empty state.
+func (v *discoveryView) installedCount() int {
+	n := 0
+	for _, r := range v.rows {
+		if _, ok := v.installedNames[r.Name]; ok {
+			n++
+		}
+	}
+	return n
 }
 
 // visiblePlugins applies the modePlugins filter (matches name, description, tags).
@@ -694,7 +729,15 @@ func (v *discoveryView) render() string {
 func (v *discoveryView) renderList() string {
 	var b strings.Builder
 	visible := v.visibleRows()
-	b.WriteString(fmt.Sprintf("Discover — %d marketplace(s)", len(v.rows)))
+	installed := v.installedCount()
+	if v.showInstalled {
+		b.WriteString(fmt.Sprintf("Discover — %d marketplace(s)", len(v.rows)))
+	} else {
+		b.WriteString(fmt.Sprintf("Discover — %d new marketplace(s)", len(visible)))
+		if installed > 0 {
+			b.WriteString(styleDim.Render(fmt.Sprintf("  (%d installed hidden — H to show)", installed)))
+		}
+	}
 	if v.filter.Value() != "" {
 		b.WriteString(styleDim.Render(fmt.Sprintf("  (%d shown)", len(visible))))
 	}
@@ -712,9 +755,14 @@ func (v *discoveryView) renderList() string {
 		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("working…") + "\n")
 	}
 	if len(visible) == 0 && !v.fetchBusy {
-		if v.filter.Value() != "" {
+		switch {
+		case v.filter.Value() != "":
 			b.WriteString(styleDim.Render("  (no matches — press c to clear filter)") + "\n")
-		} else {
+		case len(v.rows) == 0:
+			b.WriteString(styleDim.Render("  (no marketplaces — press r to retry)") + "\n")
+		case !v.showInstalled && installed > 0:
+			b.WriteString(styleDim.Render("  All discovered marketplaces already installed — manage them in the Marketplaces tab (3)") + "\n")
+		default:
 			b.WriteString(styleDim.Render("  (no marketplaces — press r to retry)") + "\n")
 		}
 	}

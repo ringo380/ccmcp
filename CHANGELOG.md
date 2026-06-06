@@ -6,6 +6,12 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Changed
+- Discover tab now lists only marketplaces you haven't installed yet, so it stays focused on
+  finding new ones while the Marketplaces tab manages existing ones. Press `H` to reveal
+  already-installed marketplaces (marked `[=]`); when every discovered marketplace is already
+  installed, the empty state points to the Marketplaces tab.
+
 ## [0.18.1] — 2026-06-05
 
 ### Fixed

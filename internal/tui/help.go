@@ -86,6 +86,8 @@ func renderHelp(width int) string {
 
 	section("Discover tab")
 	kbd("enter", "drill in: marketplace → plugin list → preview-clone + conflict report")
+	kbd("a", "add the selected marketplace")
+	kbd("H", "show/hide already-installed marketplaces (hidden by default)")
 	kbd("b / esc", "go back one level")
 	kbd("r", "force-refresh discovery cache")
 	kbd("/", "filter by substring; c clears")
