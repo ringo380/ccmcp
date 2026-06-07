@@ -330,7 +330,11 @@ var pluginUpdateCmd = &cobra.Command{
 	Short: "Re-fetch and update installed plugin(s) to their latest version",
 	Long: `Re-fetch each plugin's source and update installed_plugins.json.
 For bare-string plugins (sourced from a marketplace repo) run
-'ccmcp marketplace update' first so the catalog reflects upstream changes.`,
+'ccmcp marketplace update' first so the catalog reflects upstream changes.
+
+With --all, the backing marketplaces are refreshed and each plugin is probed;
+only plugins detected to have an update available are re-fetched. Pass an
+explicit id to force a re-fetch regardless of detected state.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !pluginUpdateAll && len(args) == 0 {
 			return fmt.Errorf("specify a plugin id or pass --all")
@@ -350,9 +354,51 @@ For bare-string plugins (sourced from a marketplace repo) run
 
 		var targets []config.InstalledPlugin
 		if pluginUpdateAll {
-			targets = installed.List()
-			if len(targets) == 0 {
+			all := installed.List()
+			if len(all) == 0 {
 				fmt.Println("no plugins installed")
+				return nil
+			}
+			// Refresh the backing marketplace clones BEFORE probing so outdated
+			// detection compares against fresh upstream heads (bare-string plugins
+			// track the marketplace HEAD). The shared pull block below is skipped
+			// for --all since we've already pulled here.
+			if !flagDryRun {
+				ids := make([]string, 0, len(all))
+				for _, ip := range all {
+					ids = append(ids, ip.ID)
+				}
+				for mkt, perr := range install.PullMarketplacesForPlugins(p, ids) {
+					fmt.Fprintf(os.Stderr, "warn: could not refresh marketplace %s: %v\n", mkt, perr)
+				}
+			}
+			// Only update plugins detected to have an update available.
+			var skipped int
+			for _, ip := range all {
+				_, mkt := config.ParsePluginID(ip.ID)
+				// Normal runs pulled the clone above, so the local head is fresh.
+				// Dry-run skips the pull, so consult the upstream head directly for
+				// bare-string plugins or detection would compare against a stale clone.
+				head := install.LocalMarketplaceHead(p, mkt)
+				if flagDryRun {
+					if rh, rerr := install.RemoteMarketplaceHead(p, mkt); rerr == nil && rh != "" {
+						head = rh
+					}
+				}
+				s := updates.CheckPlugin(p, ip, head)
+				switch {
+				case s.Err != nil:
+					skipped++
+					fmt.Fprintf(os.Stderr, "skip %s: %v\n", ip.ID, s.Err)
+				case s.Outdated:
+					targets = append(targets, ip)
+				}
+			}
+			if skipped > 0 {
+				fmt.Fprintf(os.Stderr, "skipped %d plugin(s) that could not be probed\n", skipped)
+			}
+			if len(targets) == 0 {
+				fmt.Println("all installed plugins are up to date")
 				return nil
 			}
 		} else {
@@ -380,7 +426,8 @@ For bare-string plugins (sourced from a marketplace repo) run
 		// Refresh the backing marketplace clones first. Bare-string plugins copy their
 		// files from the local clone, so without this a re-fetch reproduces the same sha
 		// and the plugin appears perpetually "outdated" yet "already up to date" on update.
-		if !flagDryRun {
+		// Skipped for --all, which already pulled (and probed) above.
+		if !flagDryRun && !pluginUpdateAll {
 			ids := make([]string, 0, len(targets))
 			for _, ip := range targets {
 				ids = append(ids, ip.ID)
@@ -456,7 +503,8 @@ var marketplaceUpdateCmd = &cobra.Command{
 	Short: "Refresh marketplace catalog(s) via git pull",
 	Long: `Run 'git pull --ff-only' in each locally-cloned marketplace directory so that
 subsequent 'ccmcp plugin update' or 'ccmcp plugin install' calls see the latest
-plugin list. With no arguments, updates every cloned marketplace.`,
+plugin list. With no arguments, probes every cloned marketplace and pulls only
+those whose upstream HEAD has advanced. Pass explicit names to force a pull.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p, err := resolvePaths()
 		if err != nil {
@@ -466,12 +514,31 @@ plugin list. With no arguments, updates every cloned marketplace.`,
 		if len(args) > 0 {
 			names = args
 		} else {
-			names, err = install.ListLocalMarketplaces(p)
+			all, err := install.ListLocalMarketplaces(p)
 			if err != nil {
 				return err
 			}
-			if len(names) == 0 {
+			if len(all) == 0 {
 				fmt.Println("no locally-cloned marketplaces found")
+				return nil
+			}
+			// Bulk (no-arg) form: only pull marketplaces detected to be outdated.
+			var skipped int
+			for _, n := range all {
+				s := updates.CheckMarketplace(p, n)
+				switch {
+				case s.Err != nil:
+					skipped++
+					fmt.Fprintf(os.Stderr, "skip %s: %v\n", n, s.Err)
+				case s.Outdated:
+					names = append(names, n)
+				}
+			}
+			if skipped > 0 {
+				fmt.Fprintf(os.Stderr, "skipped %d marketplace(s) that could not be probed\n", skipped)
+			}
+			if len(names) == 0 {
+				fmt.Println("all marketplaces are up to date")
 				return nil
 			}
 		}
@@ -723,7 +790,7 @@ func init() {
 	pluginListCmd.Flags().BoolVar(&pluginFilterDisabled, "disabled", false, "show only disabled plugins")
 	pluginRemoveCmd.Flags().BoolVar(&pluginPurge, "purge", false, "also delete the plugin's cache directory")
 	pluginInstallCmd.Flags().BoolVar(&pluginRegisterOnly, "register-only", false, "skip fetch, only register bookkeeping")
-	pluginUpdateCmd.Flags().BoolVar(&pluginUpdateAll, "all", false, "update all installed plugins")
+	pluginUpdateCmd.Flags().BoolVar(&pluginUpdateAll, "all", false, "update all outdated installed plugins")
 	for _, c := range []*cobra.Command{pluginEnableCmd, pluginDisableCmd, pluginInstallCmd, pluginRemoveCmd, pluginUpdateCmd} {
 		c.Flags().StringVar(&pluginMarketplace, "marketplace", "", "marketplace name (disambiguates bare plugin names)")
 	}

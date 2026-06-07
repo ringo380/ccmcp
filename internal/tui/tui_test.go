@@ -1090,6 +1090,86 @@ func TestTUIPluginBulkUpdateMessageHandlerSetsDirty(t *testing.T) {
 	}
 }
 
+// TestTUIPluginBulkUpdateOnlyTargetsOutdated verifies that pressing B queues only
+// plugins detected to have an update available, not every installed plugin.
+func TestTUIPluginBulkUpdateOnlyTargetsOutdated(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// Only plug-one has an update available; plug-two is current, plug-three unchecked.
+	st.updates.PutPlugin("plug-one@mkt", updates.Status{Local: "old", Remote: "new", Outdated: true})
+	st.updates.PutPlugin("plug-two@mkt", updates.Status{Local: "same", Remote: "same", Outdated: false})
+	m.plugins.rebuild()
+
+	_ = drive(m, "2") // plugins tab
+	_ = m.plugins.update(key("B"))
+
+	if !m.plugins.bulkUpdating {
+		t.Fatal("pressing B with an outdated plugin should start a bulk update")
+	}
+	if len(m.plugins.bulkTargets) != 1 || m.plugins.bulkTargets[0].id != "plug-one@mkt" {
+		t.Fatalf("bulk update should target only the outdated plugin; got %+v", m.plugins.bulkTargets)
+	}
+}
+
+// TestTUIPluginBulkUpdateSkipsWhenNoneOutdated verifies B is a no-op (with an
+// informative flash) when no plugin has a detected update.
+func TestTUIPluginBulkUpdateSkipsWhenNoneOutdated(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	// No update-check results cached → nothing known outdated.
+	_ = drive(m, "2")
+	_ = m.plugins.update(key("B"))
+
+	if m.plugins.bulkUpdating {
+		t.Fatal("B should be a no-op when no plugin has a detected update")
+	}
+	if !strings.Contains(m.plugins.flash, "no plugins with updates available") {
+		t.Fatalf("expected an informative flash; got %q", m.plugins.flash)
+	}
+}
+
+// TestTUIMarketplaceBulkUpdateOnlyTargetsOutdated verifies the marketplaces B
+// handler queues only cloned marketplaces detected to be outdated.
+func TestTUIMarketplaceBulkUpdateOnlyTargetsOutdated(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	m.marketplaces.rows = []marketplaceRowView{
+		{Name: "current", Cloned: true, UpdateChecked: true, UpdateStatus: updates.Status{Outdated: false}},
+		{Name: "stale", Cloned: true, UpdateChecked: true, UpdateStatus: updates.Status{Local: "a", Remote: "b", Outdated: true}},
+		{Name: "unchecked", Cloned: true, UpdateChecked: false},
+	}
+	_ = m.marketplaces.update(key("B"))
+
+	if !m.marketplaces.bulkUpdating {
+		t.Fatal("pressing B with an outdated marketplace should start a bulk update")
+	}
+	if len(m.marketplaces.bulkTargets) != 1 || m.marketplaces.bulkTargets[0] != "stale" {
+		t.Fatalf("bulk update should target only the outdated marketplace; got %v", m.marketplaces.bulkTargets)
+	}
+}
+
+// TestTUIMarketplaceBulkUpdateSkipsWhenNoneOutdated verifies the marketplaces B
+// handler is a no-op (with a flash) when nothing is detectably outdated.
+func TestTUIMarketplaceBulkUpdateSkipsWhenNoneOutdated(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+
+	m.marketplaces.rows = []marketplaceRowView{
+		{Name: "current", Cloned: true, UpdateChecked: true, UpdateStatus: updates.Status{Outdated: false}},
+	}
+	_ = m.marketplaces.update(key("B"))
+
+	if m.marketplaces.bulkUpdating {
+		t.Fatal("B should be a no-op when no marketplace has a detected update")
+	}
+	if !strings.Contains(m.marketplaces.flash, "no marketplaces with updates available") {
+		t.Fatalf("expected an informative flash; got %q", m.marketplaces.flash)
+	}
+}
+
 func TestTUIMarketplacesUpdateIndicator(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
