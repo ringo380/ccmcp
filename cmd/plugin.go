@@ -376,7 +376,15 @@ explicit id to force a re-fetch regardless of detected state.`,
 			var skipped int
 			for _, ip := range all {
 				_, mkt := config.ParsePluginID(ip.ID)
+				// Normal runs pulled the clone above, so the local head is fresh.
+				// Dry-run skips the pull, so consult the upstream head directly for
+				// bare-string plugins or detection would compare against a stale clone.
 				head := install.LocalMarketplaceHead(p, mkt)
+				if flagDryRun {
+					if rh, rerr := install.RemoteMarketplaceHead(p, mkt); rerr == nil && rh != "" {
+						head = rh
+					}
+				}
 				s := updates.CheckPlugin(p, ip, head)
 				switch {
 				case s.Err != nil:
@@ -385,6 +393,9 @@ explicit id to force a re-fetch regardless of detected state.`,
 				case s.Outdated:
 					targets = append(targets, ip)
 				}
+			}
+			if skipped > 0 {
+				fmt.Fprintf(os.Stderr, "skipped %d plugin(s) that could not be probed\n", skipped)
 			}
 			if len(targets) == 0 {
 				fmt.Println("all installed plugins are up to date")
@@ -522,6 +533,9 @@ those whose upstream HEAD has advanced. Pass explicit names to force a pull.`,
 				case s.Outdated:
 					names = append(names, n)
 				}
+			}
+			if skipped > 0 {
+				fmt.Fprintf(os.Stderr, "skipped %d marketplace(s) that could not be probed\n", skipped)
 			}
 			if len(names) == 0 {
 				fmt.Println("all marketplaces are up to date")
