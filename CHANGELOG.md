@@ -6,6 +6,21 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Changed
+
+- **Bulk "update all" now updates only items detected to have an update available.**
+  Previously the bulk-update surfaces re-fetched *every* installed plugin / cloned
+  marketplace regardless of state. They now probe first and act only on outdated
+  items:
+  - CLI `ccmcp plugin update --all` refreshes backing marketplaces, probes each
+    installed plugin, and re-fetches only those with a newer upstream (others are
+    reported as up to date; unreachable ones are skipped).
+  - CLI `ccmcp marketplace update` (no args) pulls only marketplaces whose upstream
+    HEAD has advanced. Passing explicit names still forces a pull.
+  - TUI Plugins `B` and Marketplaces `B` queue only rows flagged outdated by the
+    update probe; when nothing is outdated they no-op with a hint to press `R` to
+    refresh checks. Footers/help relabeled "update all" → "update outdated".
+
 ## [0.19.0] — 2026-06-05
 
 ### Changed

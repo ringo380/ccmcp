@@ -435,12 +435,13 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 		}
 		var targets []string
 		for _, r := range v.rows {
-			if r.Cloned {
+			// Only update marketplaces detected to have an update available.
+			if r.Cloned && r.UpdateChecked && r.UpdateStatus.Outdated {
 				targets = append(targets, r.Name)
 			}
 		}
 		if len(targets) == 0 {
-			v.flash = styleDim.Render("no cloned marketplaces to update")
+			v.flash = styleDim.Render("no marketplaces with updates available (press R to refresh checks)")
 			return nil
 		}
 		v.bulkUpdating = true
@@ -778,7 +779,7 @@ func (v *marketplaceView) helpText() string {
 	if v.addMode {
 		return "esc: cancel  enter: next/submit"
 	}
-	return "a: add  x: remove  u: update  B: update all  R: refresh check  /: filter  I: browse plugins"
+	return "a: add  x: remove  u: update  B: update outdated  R: refresh check  /: filter  I: browse plugins"
 }
 
 func (v *marketplaceView) capturingInput() bool { return v.filterActive || v.addMode }

@@ -767,6 +767,10 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			if mkt == "" {
 				continue
 			}
+			// Only update plugins detected to have an update available.
+			if s, ok := v.st.updates.Plugin(ip.ID); !ok || !s.Outdated {
+				continue
+			}
 			targets = append(targets, bulkUpdateTarget{
 				id:          ip.ID,
 				name:        name,
@@ -776,7 +780,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			})
 		}
 		if len(targets) == 0 {
-			v.flash = styleDim.Render("no installed plugins to update")
+			v.flash = styleDim.Render("no plugins with updates available (press R to refresh checks)")
 			return nil
 		}
 		v.bulkUpdating = true
@@ -1187,7 +1191,7 @@ func (v *pluginView) helpText() string {
 	if v.mode == "available" {
 		return "I: install selected  esc: back  j/k: navigate"
 	}
-	return "space: toggle  U: update  B: update all  x: remove  I: browse available  f: filter  A/N: all on/off  /: search"
+	return "space: toggle  U: update  B: update outdated  x: remove  I: browse available  f: filter  A/N: all on/off  /: search"
 }
 
 func (v *pluginView) capturingInput() bool {

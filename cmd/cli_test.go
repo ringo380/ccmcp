@@ -153,6 +153,39 @@ func TestCLIStatusReadsAllScopes(t *testing.T) {
 	}
 }
 
+// TestCLIPluginUpdateAllOnlyOutdated verifies that `plugin update --all` probes
+// installed plugins and only re-fetches those detected to have an update. With an
+// installed plugin whose marketplace isn't cloned, the probe errors and the plugin
+// is skipped, so --all reports nothing to do instead of blindly re-fetching.
+func TestCLIPluginUpdateAllOnlyOutdated(t *testing.T) {
+	home := setupSandbox(t)
+	b, _ := json.Marshal(map[string]any{
+		"version": float64(2),
+		"plugins": map[string]any{
+			"a@mkt": []any{map[string]any{
+				"scope":        "user",
+				"installPath":  filepath.Join(home, "a"),
+				"version":      "1.0",
+				"gitCommitSha": "abc1234",
+			}},
+		},
+	})
+	if err := os.WriteFile(filepath.Join(home, ".claude", "plugins", "installed_plugins.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCLI(t, home, "plugin", "update", "--all")
+	if err != nil {
+		t.Fatalf("update --all err: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "all installed plugins are up to date") {
+		t.Errorf("expected up-to-date message when nothing is detectably outdated; got:\n%s", out)
+	}
+	if strings.Contains(out, "updated a@mkt") {
+		t.Errorf("should not have re-fetched a plugin with no detected update; got:\n%s", out)
+	}
+}
+
 // TestCLIMarketplaceRemoveDryRunValidates ensures --dry-run surfaces the same
 // "not found" / "still referenced" errors the real path would, instead of falsely
 // reporting success.
