@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-06-09
+
 ### Changed
 
 - **Bulk "update all" now updates only items detected to have an update available.**
@@ -14,12 +16,16 @@ All notable changes to this project are documented here. Format based on
   items:
   - CLI `ccmcp plugin update --all` refreshes backing marketplaces, probes each
     installed plugin, and re-fetches only those with a newer upstream (others are
-    reported as up to date; unreachable ones are skipped).
+    reported as up to date; unreachable ones are skipped). In `--dry-run` (which
+    skips the pull) the upstream marketplace head is consulted directly so
+    bare-string plugins aren't falsely reported up to date.
   - CLI `ccmcp marketplace update` (no args) pulls only marketplaces whose upstream
     HEAD has advanced. Passing explicit names still forces a pull.
   - TUI Plugins `B` and Marketplaces `B` queue only rows flagged outdated by the
     update probe; when nothing is outdated they no-op with a hint to press `R` to
     refresh checks. Footers/help relabeled "update all" → "update outdated".
+  - Both bulk CLI paths now report the count of items skipped because they could
+    not be probed.
 
 ## [0.19.0] — 2026-06-05
 
@@ -1013,7 +1019,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.20.0
 [0.19.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.19.0
 [0.18.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.18.1
 [0.18.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.18.0
