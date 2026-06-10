@@ -14,6 +14,17 @@ Claude Code auto-loads MCP servers from at least **six** distinct places — use
 brew install robworks-code/tap/ccmcp
 ```
 
+> **Homebrew 5.x tap trust**: Homebrew 5.x requires third-party taps to be trusted before it
+> will load them, so on install or `brew upgrade` you may see
+> `Refusing to load formula robworks-code/tap/ccmcp from untrusted tap`. Trust the tap once with:
+>
+> ```sh
+> brew trust robworks-code/tap
+> ```
+>
+> This is a one-time, per-machine step recorded in `~/.homebrew/trust.json` and applies to every
+> non-official tap, not just this one.
+
 **`go install`** (needs Go 1.25+):
 
 ```sh
