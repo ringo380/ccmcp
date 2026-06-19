@@ -1186,7 +1186,7 @@ func buildFixProposal(issue doctor.Issue, projectPath string) (*fixProposal, boo
 			target:       target,
 			cliPrompt:    wrapped,
 			cliPromptRaw: prompt,
-			cliArgs:      claudeFixArgs(wrapped),
+			cliArgs:      claudeFixArgs(wrapped, 1),
 		}
 	}
 
@@ -1424,14 +1424,14 @@ func buildDoctorBulkFixProposal(cursor doctor.Issue, allIssues []doctor.Issue, p
 		for _, f := range files {
 			preview = append(preview, "  "+f)
 		}
-		preview = append(preview, "", fmt.Sprintf("Model: %s   Max-turns: 4", doctor.DefaultAnthropicModel), "", "Apply? y / n / esc")
+		preview = append(preview, "", fmt.Sprintf("Model: %s   Max-turns: %d", doctor.DefaultAnthropicModel, fixTurnsForItems(len(proposals))), "", "Apply? y / n / esc")
 		return &fixProposal{
 			summary:      fmt.Sprintf("Bulk-fix %d %s issues via Claude", len(proposals), cursor.Code),
 			kind:         fixClaudeCLI,
 			target:       files[0],
 			bulkTargets:  extras,
 			cliPrompt:    wrapped,
-			cliArgs:      claudeFixArgs(wrapped),
+			cliArgs:      claudeFixArgs(wrapped, len(proposals)),
 			previewLines: preview,
 		}, true
 	}
@@ -1525,13 +1525,16 @@ func buildReviewApplyProposal(r llmReviewResult) *fixProposal {
 		target:       r.path,
 		cliPrompt:    wrapped,
 		cliPromptRaw: prompt,
-		cliArgs:      claudeFixArgs(wrapped),
+		cliArgs:      claudeFixArgs(wrapped, 1),
 	}
 }
 
-func claudeFixArgs(prompt string) []string {
+// claudeFixArgs builds the CLI args for a headless fix. `items` is the number of
+// files the run will touch (1 for a single-row fix, len(bundle) for a category
+// bulk) and scales the turn cap so bulk runs aren't starved.
+func claudeFixArgs(prompt string, items int) []string {
 	args := []string{"--allowedTools", "Edit,Write,Read", "--permission-mode", "acceptEdits"}
-	args = append(args, claudeFixModelArgs()...)
+	args = append(args, claudeFixModelArgs(items)...)
 	args = append(args, "--print", prompt)
 	return args
 }

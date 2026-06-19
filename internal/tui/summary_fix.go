@@ -150,7 +150,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			kind:      fixClaudeCLI,
 			target:    st.paths.ClaudeJSON,
 			cliPrompt: wrapped,
-			cliArgs:   claudeFixArgs(wrapped),
+			cliArgs:   claudeFixArgs(wrapped, 1),
 		}, true
 
 	case catStaleMcpjson:
@@ -169,7 +169,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			kind:      fixClaudeCLI,
 			target:    settingsPath,
 			cliPrompt: wrapped,
-			cliArgs:   claudeFixArgs(wrapped),
+			cliArgs:   claudeFixArgs(wrapped, 1),
 		}, true
 
 	case catDuplicateLoad:
@@ -189,7 +189,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			kind:      fixClaudeCLI,
 			target:    st.paths.ClaudeJSON,
 			cliPrompt: wrapped,
-			cliArgs:   claudeFixArgs(wrapped),
+			cliArgs:   claudeFixArgs(wrapped, 1),
 		}, true
 
 	case catPluginInstalledNotEnabled:
@@ -269,7 +269,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			kind:      fixClaudeCLI,
 			target:    st.paths.SettingsJSON,
 			cliPrompt: wrapped,
-			cliArgs:   claudeFixArgs(wrapped),
+			cliArgs:   claudeFixArgs(wrapped, 1),
 		}, true
 
 	case catSkillNameInvalid, catSkillNameTooLong:
@@ -299,7 +299,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			kind:      fixClaudeCLI,
 			target:    file,
 			cliPrompt: wrapped,
-			cliArgs:   claudeAssetFixArgs(wrapped, permRename),
+			cliArgs:   claudeAssetFixArgs(wrapped, permRename, 1),
 		}, true
 
 	case catSkillDescTooLong:
@@ -323,7 +323,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			kind:      fixClaudeCLI,
 			target:    file,
 			cliPrompt: wrapped,
-			cliArgs:   claudeAssetFixArgs(wrapped, permDescription),
+			cliArgs:   claudeAssetFixArgs(wrapped, permDescription, 1),
 		}, true
 
 	case catAgentDescTooLong:
@@ -343,7 +343,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			target:       file,
 			cliPrompt:    wrapped,
 			cliPromptRaw: prompt,
-			cliArgs:      claudeAssetFixArgs(wrapped, permDescription),
+			cliArgs:      claudeAssetFixArgs(wrapped, permDescription, 1),
 		}, true
 
 	case catAgentBodyTooLong:
@@ -370,7 +370,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			target:       file,
 			cliPrompt:    wrapped,
 			cliPromptRaw: prompt,
-			cliArgs:      claudeAssetFixArgs(wrapped, permDescription),
+			cliArgs:      claudeAssetFixArgs(wrapped, permDescription, 1),
 		}, true
 
 	case catCommandDescTooLong:
@@ -388,7 +388,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			kind:      fixClaudeCLI,
 			target:    file,
 			cliPrompt: wrapped,
-			cliArgs:   claudeAssetFixArgs(wrapped, permDescription),
+			cliArgs:   claudeAssetFixArgs(wrapped, permDescription, 1),
 		}, true
 	}
 	return nil, false
@@ -407,14 +407,16 @@ const (
 
 // claudeAssetFixArgs returns the Claude CLI args for an asset-fix prompt. The
 // permission profile widens only when the task genuinely needs more — bulk-fix
-// reuses these via buildBulkFixPrompt so the same scoping rules apply.
-func claudeAssetFixArgs(prompt string, perm permKind) []string {
+// reuses these via buildBulkFixPrompt so the same scoping rules apply. `items`
+// is the count of files the run will touch (1 for a single-row fix, len(targets)
+// for a category bulk) and scales the turn cap so large bundles aren't starved.
+func claudeAssetFixArgs(prompt string, perm permKind, items int) []string {
 	tools := "Edit,Write,Read"
 	if perm == permRename {
 		tools = "Edit,Write,Read,Glob,Grep,Bash"
 	}
 	args := []string{"--allowedTools", tools, "--permission-mode", "acceptEdits"}
-	args = append(args, claudeFixModelArgs()...)
+	args = append(args, claudeFixModelArgs(items)...)
 	args = append(args, "--print", prompt)
 	return args
 }
@@ -691,6 +693,7 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 	preview = append(preview,
 		"",
 		fmt.Sprintf("Permissions: %s", permLabel(permForCategory(cursor.cat))),
+		fmt.Sprintf("Max-turns: %d (scaled to %d item(s))", fixTurnsForItems(len(targets)), len(targets)),
 		"",
 		"y to apply, n/esc to cancel.",
 	)
@@ -700,7 +703,7 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 		kind:         fixClaudeCLI,
 		target:       primary,
 		cliPrompt:    wrapped,
-		cliArgs:      claudeAssetFixArgs(wrapped, permForCategory(cursor.cat)),
+		cliArgs:      claudeAssetFixArgs(wrapped, permForCategory(cursor.cat), len(targets)),
 		previewLines: preview,
 		cat:          cursor.cat,
 	}, files, true

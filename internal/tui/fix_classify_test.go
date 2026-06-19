@@ -52,6 +52,11 @@ func TestClassifyClaudeFailure(t *testing.T) {
 			want:   "rate limited",
 		},
 		{
+			name:   "max turns exhausted",
+			output: "Error: Reached max turns (12)",
+			want:   "ran out of turns",
+		},
+		{
 			name:   "unrecognised -> empty",
 			output: "something went wrong in a way we don't classify",
 			want:   "",
