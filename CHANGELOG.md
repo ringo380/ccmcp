@@ -6,6 +6,21 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Headless TUI fixes no longer fail with "Reached max turns" on routine edits.**
+  The `claude --print` fix invocations (Summary + Doctor `f`/`a`/`F`) were hard-capped
+  at 4 model-tool turns - too few for a read-then-multi-edit change, which exhausted
+  the budget and surfaced as an opaque `fix failed: claude CLI exit 1`.
+  - Single-row fixes now get 12 turns of headroom.
+  - Bulk fixes scale the cap with the number of bundled files
+    (`8 + 4*items`, capped at 60) instead of reusing the single-fix value, so a
+    many-file bundle isn't starved partway through. The bulk confirm previews now
+    show the computed `Max-turns` value (the Doctor preview previously showed a
+    stale hard-coded `4`).
+  - Turn exhaustion is now classified and reported with an actionable message
+    instead of the generic exit-status flash.
+
 ## [0.20.0] — 2026-06-09
 
 ### Changed

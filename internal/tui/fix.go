@@ -6,6 +6,7 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,10 +34,46 @@ type cliStreamLineMsg struct {
 // when the user reveals the panel after the fact.
 const streamRingMax = 50
 
+// Turn-cap tuning for headless fixes. A single fix needs a few model⇄tool
+// round-trips — Read the target, reason, one or more Edits, then a confirming
+// turn — so the historical flat 4 left no headroom: read + a multi-edit change
+// exhausted the budget and exited "Reached max turns" as an opaque failure.
+//
+//   - fixTurnsBase    headroom shared across the run (envelope reasoning, the
+//                     final confirm turn) regardless of item count.
+//   - fixTurnsPerItem additional turns granted per file the run must touch
+//                     (~Read + Edit + verify). Bulk fixes bundle many files
+//                     into ONE invocation, so the budget must grow with them.
+//   - fixTurnsCap     upper bound so a runaway prose loop can't spin forever
+//                     and a 50-file bundle doesn't request an absurd cap.
+//
+// At n=1 the formula yields 12 (base 8 + 4), matching the single-fix headroom.
+const (
+	fixTurnsBase    = 8
+	fixTurnsPerItem = 4
+	fixTurnsCap     = 60
+)
+
+// fixTurnsForItems computes the --max-turns value for a headless fix that
+// addresses `items` files in one invocation. Single-row fixes pass 1; bulk
+// fixes pass the number of bundled targets so the cap scales with the work.
+func fixTurnsForItems(items int) int {
+	if items < 1 {
+		items = 1
+	}
+	turns := fixTurnsBase + fixTurnsPerItem*items
+	if turns > fixTurnsCap {
+		turns = fixTurnsCap
+	}
+	return turns
+}
+
 // claudeFixModelArgs returns the model + max-turns + MCP-isolation flags
 // appended to every `claude --print` invocation that we expect to actually edit
-// a file. Cheap model (Haiku) + a turn cap prevent the prior behaviour where
-// Sonnet/Opus burned tokens producing prose responses that never invoked Edit.
+// a file. `items` is the count of files the run will touch (1 for a single-row
+// fix) and scales the turn cap via fixTurnsForItems. Cheap model (Haiku) + a
+// turn cap prevent the prior behaviour where Sonnet/Opus burned tokens
+// producing prose responses that never invoked Edit.
 //
 // --strict-mcp-config + an empty --mcp-config disable the user's configured MCP
 // servers for the duration of the fix. Without this, every headless invocation
@@ -44,10 +81,11 @@ const streamRingMax = 50
 // audience is people with many MCP servers configured, so the request overflows
 // the model's context window ("Prompt is too long" → exit 1, tokens charged, no
 // edit made). Fixes only ever need Edit/Write/Read, never an MCP server.
-func claudeFixModelArgs() []string {
+func claudeFixModelArgs(items int) []string {
 	args := []string{
 		"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`,
-		"--model", doctor.ResolvedModel(), "--max-turns", "4",
+		"--model", doctor.ResolvedModel(),
+		"--max-turns", strconv.Itoa(fixTurnsForItems(items)),
 	}
 	// On Claude Code >= 2.1.152, --fallback-model lets CC recover automatically
 	// if the primary model ID has been retired. Gated by the detected version's
@@ -72,6 +110,7 @@ var (
 	reAuthFail    = regexp.MustCompile(`(?i)invalid bearer token|invalid (?:x-)?api[- ]?key|authentication_error|\bunauthorized\b|oauth token|\b401\b`)
 	reModelFail   = regexp.MustCompile(`(?i)\bmodel\b[^\n]{0,40}not found|model_not_found|not_found_error|unknown model|invalid model|no such model`)
 	reRateLimit   = regexp.MustCompile(`(?i)rate[ _]?limit|too many requests|\b429\b`)
+	reMaxTurns    = regexp.MustCompile(`(?i)reached max turns|max(?:imum)? turns`)
 )
 
 // classifyClaudeFailure inspects the captured output AND error text of a failed
@@ -105,6 +144,8 @@ func classifyClaudeFailure(output []byte, err error) string {
 		return "model unavailable — the configured model was rejected by the API."
 	case reRateLimit.MatchString(raw):
 		return "rate limited by the API — wait a moment and retry."
+	case reMaxTurns.MatchString(raw):
+		return "fix ran out of turns before finishing — the edit was too involved for one headless pass. Retry, narrow the target, or apply it in an interactive `claude` chat (Summary's `c`)."
 	}
 	return ""
 }
@@ -432,8 +473,9 @@ var claudeReviewCmd = func(workdir, prompt string) (string, error) {
 		return "", err
 	}
 	// Same MCP-isolation rationale as claudeFixModelArgs: the review prompt plus
-	// a machine full of MCP tool definitions overflows the context window.
-	args := append(claudeFixModelArgs(), "--print")
+	// a machine full of MCP tool definitions overflows the context window. Review
+	// is always single-target, so the single-fix turn budget applies.
+	args := append(claudeFixModelArgs(1), "--print")
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = workdir
 	cmd.Stdin = strings.NewReader(prompt)
