@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-06-19
+
 ### Fixed
 
 - **Headless TUI fixes no longer fail with "Reached max turns" on routine edits.**
@@ -1034,7 +1036,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.20.1
 [0.20.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.20.0
 [0.19.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.19.0
 [0.18.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.18.1
