@@ -31,4 +31,4 @@ be aware of:
   by a timestamped backup in `~/.claude-mcp-backups/`. If ccmcp corrupts
   your config, restore from the most recent backup.
 - **`--dry-run`** is contractually non-mutating (asserted in tests). If a
-  mutating command writes under `--dry-run`, that's a bug — please report.
+  mutating command writes under `--dry-run`, that's a bug - please report.

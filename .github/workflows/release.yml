@@ -27,7 +27,7 @@ jobs:
           version: '~> v2'
           args: release --clean
         env:
-          # GITHUB_TOKEN is scoped to this repo only — used for creating the release
+          # GITHUB_TOKEN is scoped to this repo only - used for creating the release
           # and uploading assets.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # HOMEBREW_TAP_TOKEN is a PAT with contents:write on robworks-code/homebrew-tap,
