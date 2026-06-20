@@ -257,6 +257,11 @@ func (v *mcpView) rebuild() {
 			UnknownReason: reason,
 			Description:   reason,
 		})
+		// Mark seen like every other section so a later section (e.g. the built-in loop
+		// below) can't re-emit a second row for the same plain name — a name present in
+		// BOTH disabledMcpServers and enabledMcpServers would otherwise produce two
+		// contradictory rows ([~] orphan here + [x] built-in).
+		seenKeys[k] = true
 	}
 
 	// 8) built-ins / externally-managed MCPs explicitly enabled for this project via
@@ -326,8 +331,9 @@ func isHiddenInEffective(r mcpRow) bool {
 
 // isEffective: would Claude Code actually load this row in the current project?
 // Sources that can be effective: user, local, project (.mcp.json unless denied),
-// enabled plugins (PluginEnabled=true), claude.ai. Disabled-but-installed plugin
-// rows and stash rows never load.
+// enabled plugins (PluginEnabled=true), claude.ai, and built-ins explicitly turned on
+// via enabledMcpServers (EnabledHere=true). Disabled-but-installed plugin rows and stash
+// rows never load.
 func isEffective(r mcpRow) bool {
 	if r.DisabledHere {
 		return false

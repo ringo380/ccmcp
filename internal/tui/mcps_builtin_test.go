@@ -84,3 +84,29 @@ func TestTUIEnabledMcpServersNoDuplicateForKnownSource(t *testing.T) {
 		t.Errorf("a name already enumerated as a user MCP must not also emit a built-in row (got %d)", builtinCount)
 	}
 }
+
+// A name present in BOTH enabledMcpServers and disabledMcpServers (contradictory config
+// with no enumerated source) must not produce two rows — the orphan/disabled-here row
+// already represents it, so the built-in loop must skip it.
+func TestTUIEnabledMcpServersNoDuplicateWhenAlsoDisabled(t *testing.T) {
+	st, _ := buildState(t)
+	st.cj.AddProjectEnabledMcpServer(st.project, "computer-use")
+	st.cj.AddProjectDisabledMcpServer(st.project, "computer-use")
+
+	m := newModel(st)
+	var total, builtin int
+	for _, r := range m.mcps.rows {
+		if r.Name == "computer-use" {
+			total++
+			if r.Source == config.SourceBuiltin {
+				builtin++
+			}
+		}
+	}
+	if total != 1 {
+		t.Errorf("a name in both enabled+disabled lists must yield exactly one row, got %d", total)
+	}
+	if builtin != 0 {
+		t.Error("the disabled/orphan row represents the name; no separate built-in row should be emitted")
+	}
+}
