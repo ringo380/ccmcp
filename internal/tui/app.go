@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ringo380/ccmcp/internal/claudecode"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/paths"
 	"github.com/ringo380/ccmcp/internal/updates"
 )
@@ -134,6 +135,12 @@ type state struct {
 	dirtySettings bool
 	dirtyPlugins  bool
 	dirtyProfiles bool
+
+	// pendingCacheGC holds superseded plugin cache dirs from in-memory UpdateInstall calls.
+	// They are deleted ONLY after installed_plugins.json saves successfully (see save()),
+	// so a discarded/failed apply never strands the on-disk registry pointing at a deleted
+	// directory — the "plugin cache does not exist" failure mode.
+	pendingCacheGC []string
 }
 
 // rescanPluginMCPs refreshes pluginMCPs from the current enabledPlugins + installed_plugins state.
@@ -205,6 +212,13 @@ func (s *state) save() (summary []string, err error) {
 		s.dirtySettings = false
 		s.dirtyPlugins = false
 		s.dirtyProfiles = false
+		// installed_plugins.json is now persisted pointing at the NEW cache dirs, so the
+		// superseded dirs are safe to delete. On a failed save we keep them queued (the
+		// registry still references them) and retry on the next save.
+		for _, sp := range s.pendingCacheGC {
+			_ = install.GCStaleCache(sp)
+		}
+		s.pendingCacheGC = nil
 	}
 	return
 }

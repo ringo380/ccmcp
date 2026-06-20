@@ -438,6 +438,7 @@ explicit id to force a re-fetch regardless of detected state.`,
 		}
 
 		var anyChanged bool
+		var staleCaches []string
 		for _, ip := range targets {
 			name, mkt := config.ParsePluginID(ip.ID)
 			if mkt == "" {
@@ -459,7 +460,9 @@ explicit id to force a re-fetch regardless of detected state.`,
 			}
 			oldSha := firstN(ip.GitCommitSha, 8)
 			newSha := firstN(result.GitCommitSha, 8)
-			install.UpdateInstall(installed, result, ip.InstallPath)
+			if stale := install.UpdateInstall(installed, result, ip.InstallPath); stale != "" {
+				staleCaches = append(staleCaches, stale)
+			}
 			anyChanged = true
 			fmt.Printf("updated %s: %s → %s\n", ip.ID, oldSha, newSha)
 		}
@@ -472,6 +475,12 @@ explicit id to force a re-fetch regardless of detected state.`,
 		}
 		if err := installed.Save(); err != nil {
 			return err
+		}
+		// Registry persisted — now it's safe to GC the superseded cache dirs. Doing this
+		// before Save() risked leaving installed_plugins.json pointing at a deleted dir
+		// (Claude Code: "plugin cache does not exist") if Save() failed.
+		for _, sp := range staleCaches {
+			_ = install.GCStaleCache(sp)
 		}
 		fmt.Println("restart Claude Code (or reload the window) to pick up updated plugins.")
 		return nil

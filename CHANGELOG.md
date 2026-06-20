@@ -6,6 +6,29 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Surface MCPs enabled per-project via `enabledMcpServers`.** Claude Code records the
+  positive counterpart to `disabledMcpServers` — the per-project allowlist that turns ON
+  an MCP that is off by default at a higher scope, most commonly a built-in like
+  `computer-use` (Claude-in-Chrome). ccmcp previously ignored this key, so the effective
+  MCPs view (which claims to mirror `/mcp`) silently omitted these servers. They now
+  appear as visible, effective `[x]` rows tagged `[b]` (built-in). Pressing `space`
+  removes the `enabledMcpServers` entry (the honest inverse of "enabled here") rather than
+  writing the name into `disabledMcpServers`. Validated against Claude Code 2.1.183.
+
+### Fixed
+
+- **Plugin updates no longer strand Claude Code with "plugin cache does not exist".**
+  `install.UpdateInstall` deleted the superseded cache directory immediately, but the
+  matching `installed_plugins.json` write is deferred (TUI `w`/Apply) or post-loop (CLI).
+  Updating a plugin and then discarding/quitting — or a failed save — left the on-disk
+  registry pointing at a directory that was already removed. The cache dir is now GC'd
+  only **after** the registry persists successfully (queued via `pendingCacheGC` in the
+  TUI, collected and swept post-`Save()` in the CLI), mirroring the already-safe ordering
+  of `plugin remove --purge`. A discarded update keeps the old cache intact, so the
+  registry reference stays valid.
+
 ## [0.20.1] — 2026-06-19
 
 ### Fixed

@@ -150,6 +150,47 @@ func TestClaudeJSONMcpjsonLists(t *testing.T) {
 	}
 }
 
+func TestClaudeJSONEnabledMcpServers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "claude.json")
+	mustWriteJSON(t, path, map[string]any{})
+	cj, _ := LoadClaudeJSON(path)
+
+	// Absent → empty.
+	if got := cj.ProjectEnabledMcpServers("/p"); len(got) != 0 {
+		t.Fatalf("expected empty, got %v", got)
+	}
+	// Add is idempotent.
+	if !cj.AddProjectEnabledMcpServer("/p", "computer-use") {
+		t.Fatal("first add should report a change")
+	}
+	if cj.AddProjectEnabledMcpServer("/p", "computer-use") {
+		t.Fatal("duplicate add should report no change")
+	}
+	cj.AddProjectEnabledMcpServer("/p", "other")
+	if got := cj.ProjectEnabledMcpServers("/p"); !reflect.DeepEqual(got, []string{"computer-use", "other"}) {
+		t.Fatalf("after adds: %v", got)
+	}
+	// Remove drops only the named entry.
+	if !cj.RemoveProjectEnabledMcpServer("/p", "computer-use") {
+		t.Fatal("remove should report a change")
+	}
+	if cj.RemoveProjectEnabledMcpServer("/p", "computer-use") {
+		t.Fatal("removing absent should report no change")
+	}
+	if got := cj.ProjectEnabledMcpServers("/p"); !reflect.DeepEqual(got, []string{"other"}) {
+		t.Fatalf("after remove: %v", got)
+	}
+	// Emptying the list deletes the key entirely (no empty array left behind).
+	cj.SetProjectEnabledMcpServers("/p", nil)
+	node := cj.projectNode("/p", false)
+	if node != nil {
+		if _, ok := node["enabledMcpServers"]; ok {
+			t.Fatal("empty list should remove the enabledMcpServers key")
+		}
+	}
+}
+
 func mustWriteJSON(t *testing.T, path string, v any) {
 	t.Helper()
 	b, _ := json.Marshal(v)

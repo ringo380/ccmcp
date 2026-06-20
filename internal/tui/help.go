@@ -41,6 +41,7 @@ func renderHelp(width int) string {
 	row("[P]", "plugin — bundled .mcp.json inside an enabled plugin")
 	row("[@]", "claude.ai — OAuth remote integration")
 	row("[s]", "stash — ~/.claude-mcp-stash.json (parked, not loaded anywhere)")
+	row("[b]", "built-in — off-by-default MCP turned on via enabledMcpServers (e.g. computer-use)")
 	row("[?]", "unknown — in disabledMcpServers but no known source provides it")
 
 	section("Row marks")

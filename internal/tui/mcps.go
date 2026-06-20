@@ -78,6 +78,7 @@ type mcpRow struct {
 	PluginIDs    []string         // qualified plugin IDs (e.g. "context7@claude-plugins-official")
 	PluginEnabled bool            // for SourcePlugin rows: true if the plugin is globally enabled; false means "installed but off — MCP won't load"
 	DisabledHere bool             // MatchKey appears in projects[cwd].disabledMcpServers
+	EnabledHere  bool             // Name appears in projects[cwd].enabledMcpServers (SourceBuiltin rows: this is the only reason they load)
 	McpjsonDeny  bool             // .mcp.json allow/deny list excludes this row (project-source only)
 	Description  string
 	UnknownReason string          // for bucket-3/4 orphan rows: a human-readable explanation shown instead of Description
@@ -123,6 +124,7 @@ func newMCPView(st *state) *mcpView {
 // row with a specific UnknownReason rather than a generic "unknown" placeholder.
 func (v *mcpView) rebuild() {
 	disabled := stringslice.Set(v.st.cj.ProjectDisabledMcpServers(v.st.project))
+	enabled := stringslice.Set(v.st.cj.ProjectEnabledMcpServers(v.st.project))
 	allow := stringslice.Set(v.st.cj.ProjectMcpjsonEnabled(v.st.project))
 	deny := stringslice.Set(v.st.cj.ProjectMcpjsonDisabled(v.st.project))
 
@@ -255,6 +257,31 @@ func (v *mcpView) rebuild() {
 			UnknownReason: reason,
 			Description:   reason,
 		})
+		// Mark seen like every other section so a later section (e.g. the built-in loop
+		// below) can't re-emit a second row for the same plain name — a name present in
+		// BOTH disabledMcpServers and enabledMcpServers would otherwise produce two
+		// contradictory rows ([~] orphan here + [x] built-in).
+		seenKeys[k] = true
+	}
+
+	// 8) built-ins / externally-managed MCPs explicitly enabled for this project via
+	// enabledMcpServers — the positive counterpart to disabledMcpServers. These have no
+	// source ccmcp enumerates (e.g. the "computer-use" Claude-in-Chrome built-in, which
+	// ships disabled). Surfacing them keeps the effective view honest: it claims to mirror
+	// /mcp, and /mcp counts these as loaded. A name already represented by an enumerated
+	// source (plain-key collision) is skipped — the enable entry is redundant there.
+	for name := range enabled {
+		if seenKeys[name] {
+			continue
+		}
+		rows = append(rows, mcpRow{
+			Name:        name,
+			Source:      config.SourceBuiltin,
+			MatchKey:    name,
+			EnabledHere: true,
+			Description: "enabled here (built-in or externally-managed — no local config)",
+		})
+		seenKeys[name] = true
 	}
 
 	sort.Slice(rows, func(i, j int) bool {
@@ -304,8 +331,9 @@ func isHiddenInEffective(r mcpRow) bool {
 
 // isEffective: would Claude Code actually load this row in the current project?
 // Sources that can be effective: user, local, project (.mcp.json unless denied),
-// enabled plugins (PluginEnabled=true), claude.ai. Disabled-but-installed plugin
-// rows and stash rows never load.
+// enabled plugins (PluginEnabled=true), claude.ai, and built-ins explicitly turned on
+// via enabledMcpServers (EnabledHere=true). Disabled-but-installed plugin rows and stash
+// rows never load.
 func isEffective(r mcpRow) bool {
 	if r.DisabledHere {
 		return false
@@ -318,6 +346,10 @@ func isEffective(r mcpRow) bool {
 		return r.PluginEnabled
 	case config.SourceProject:
 		return !r.McpjsonDeny
+	case config.SourceBuiltin:
+		// Off-by-default built-in/external MCP; loads only because it's listed in
+		// enabledMcpServers (EnabledHere). The DisabledHere check above already gates it.
+		return r.EnabledHere
 	default:
 		return false // stash, unknown
 	}
@@ -501,6 +533,15 @@ func (v *mcpView) bulkToggle(rows []mcpRow, on bool) {
 func (v *mcpView) bulkApplyRow(r mcpRow, on bool) bool {
 	switch v.scope {
 	case scopeEffective:
+		// Built-in rows toggle their enabledMcpServers membership, not disabledMcpServers.
+		// Only the "off" direction is meaningful (removing the enable entry); there's no
+		// way to synthesize a built-in back on without /mcp, so "on" is a no-op.
+		if r.Source == config.SourceBuiltin {
+			if !on && r.EnabledHere {
+				return v.st.cj.RemoveProjectEnabledMcpServer(v.st.project, r.Name) && markDirty(&v.st.dirtyClaude)
+			}
+			return false
+		}
 		if r.OverrideKey == "" || r.Source == config.SourceStash {
 			return false // stash can't be "effective"; unknown rows skipped
 		}
@@ -613,6 +654,8 @@ func (v *mcpView) stashToggle(row mcpRow) {
 		v.flash = styleWarn.Render("can't stash claude.ai integrations — they live in Claude.ai; override per-project with `space` instead")
 	case config.SourceProject:
 		v.flash = styleWarn.Render("can't stash .mcp.json entries — they're git-tracked; use the allow/deny list (cycle scope to project + space) instead")
+	case config.SourceBuiltin:
+		v.flash = styleWarn.Render("can't stash built-in MCPs — they have no local config; press space to turn off here, or manage via /mcp")
 	default:
 		v.flash = styleDim.Render("nothing to stash here — row source is unknown or orphaned")
 	}
@@ -653,6 +696,17 @@ func (v *mcpView) toggleEffective(row mcpRow) {
 	// Stash rows can't be toggled in effective view — they don't load anywhere by themselves.
 	if row.Source == config.SourceStash {
 		v.flash = styleDim.Render("stashed MCPs aren't loaded anywhere — press 'm' to move into user/local/project scope to activate")
+		return
+	}
+	// Built-in / externally-managed rows live only in enabledMcpServers. The honest inverse
+	// of "enabled here" is to remove that entry (re-hiding the built-in), NOT to write the
+	// name into disabledMcpServers. Once removed the row disappears; re-enable via /mcp.
+	if row.Source == config.SourceBuiltin {
+		if v.st.cj.RemoveProjectEnabledMcpServer(v.st.project, row.Name) {
+			v.st.dirtyClaude = true
+			v.flash = styleWarn.Render(row.Name + " → no longer enabled here (built-in; re-enable via /mcp)")
+		}
+		v.rebuild()
 		return
 	}
 	if row.OverrideKey == "" {
@@ -1089,6 +1143,8 @@ func badgeFor(s config.MCPSource) string {
 		return "@"
 	case config.SourceStash:
 		return "s"
+	case config.SourceBuiltin:
+		return "b"
 	case config.SourceUnknown:
 		return "?"
 	}

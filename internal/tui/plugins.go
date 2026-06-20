@@ -323,7 +323,9 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			// each plugin instead of all at once at the end of the batch. Set
 			// dirtyPlugins now so an in-flight Q quit-confirmation still prompts to
 			// save even if the result handler never runs (e.g. session torn down).
-			install.UpdateInstall(v.st.installed, m.result, t.oldInstPath)
+			if stale := install.UpdateInstall(v.st.installed, m.result, t.oldInstPath); stale != "" {
+				v.st.pendingCacheGC = append(v.st.pendingCacheGC, stale)
+			}
 			v.st.updates.InvalidatePlugin(t.id)
 			v.st.dirtyPlugins = true
 			v.bulkApplied = append(v.bulkApplied, bulkUpdateApplied{
@@ -351,11 +353,13 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		// Apply UpdateInstall on the main goroutine to avoid racing with rebuild()'s
 		// reads of v.st.installed. Skipped when streamed=true — the per-item handler
 		// already landed each entry, and re-applying would just churn timestamps and
-		// trigger redundant RemoveAll calls on already-deleted paths. Direct senders
+		// queue redundant cache GC for already-superseded paths. Direct senders
 		// (tests, future callers) leave streamed=false so this loop runs.
 		if !m.streamed {
 			for _, a := range m.applied {
-				install.UpdateInstall(v.st.installed, a.result, a.oldInstPath)
+				if stale := install.UpdateInstall(v.st.installed, a.result, a.oldInstPath); stale != "" {
+					v.st.pendingCacheGC = append(v.st.pendingCacheGC, stale)
+				}
 				v.st.updates.InvalidatePlugin(a.id)
 			}
 		}
@@ -396,7 +400,9 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			v.flash = styleDim.Render(m.id + " already up to date")
 			return nil
 		}
-		install.UpdateInstall(v.st.installed, m.result, m.oldInstPath)
+		if stale := install.UpdateInstall(v.st.installed, m.result, m.oldInstPath); stale != "" {
+			v.st.pendingCacheGC = append(v.st.pendingCacheGC, stale)
+		}
 		v.st.dirtyPlugins = true
 		v.st.rescanPluginMCPs()
 		v.st.updates.InvalidatePlugin(m.id)
