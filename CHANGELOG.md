@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-06-20
+
 ### Added
 
 - **Surface MCPs enabled per-project via `enabledMcpServers`.** Claude Code records the
@@ -1059,7 +1061,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.21.0
 [0.20.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.20.1
 [0.20.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.20.0
 [0.19.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.19.0
