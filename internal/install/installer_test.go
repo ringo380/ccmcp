@@ -263,10 +263,39 @@ func TestUpdateInstallGCsOldPath(t *testing.T) {
 
 	newPath := filepath.Join(dir, "new-version")
 	r := &Result{QualifiedID: "p@m", InstallPath: newPath, Version: "new"}
-	UpdateInstall(installed, r, oldDir)
+	stale := UpdateInstall(installed, r, oldDir)
 
+	// New contract: UpdateInstall reports the stale dir but must NOT delete it — the
+	// caller GCs it only after persisting installed_plugins.json, so a discarded/failed
+	// save never strands the registry pointing at a deleted cache dir.
+	if stale != oldDir {
+		t.Errorf("UpdateInstall should return the changed old path as stale; got %q", stale)
+	}
+	if _, err := os.Stat(oldDir); err != nil {
+		t.Error("old version directory must still exist immediately after UpdateInstall (GC is deferred)")
+	}
+
+	// GCStaleCache performs the actual deletion once it's safe.
+	if err := GCStaleCache(stale); err != nil {
+		t.Fatalf("GCStaleCache: %v", err)
+	}
 	if _, err := os.Stat(oldDir); err == nil {
-		t.Error("old version directory should have been removed by GC")
+		t.Error("GCStaleCache should remove the stale directory")
+	}
+}
+
+func TestUpdateInstallNoStaleWhenPathUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	installedPath := filepath.Join(dir, "installed.json")
+	same := filepath.Join(dir, "v1")
+	writeInstalledJSON(t, installedPath, "p@m", map[string]any{"scope": "user", "installPath": same})
+	installed, err := config.LoadInstalledPlugins(installedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &Result{QualifiedID: "p@m", InstallPath: same, Version: "v1"}
+	if stale := UpdateInstall(installed, r, same); stale != "" {
+		t.Errorf("unchanged installPath should yield no stale dir, got %q", stale)
 	}
 }
 

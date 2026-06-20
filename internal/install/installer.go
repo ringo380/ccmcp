@@ -673,10 +673,18 @@ func PullMarketplacesForPlugins(p paths.Paths, ids []string) map[string]error {
 // Unlike RegisterInstall it:
 //   - Preserves the original installedAt timestamp
 //   - Does NOT touch enabledPlugins (the user's enable/disable choice is unchanged)
-//   - Removes oldInstallPath from disk when it differs from r.InstallPath (GC)
+//   - Returns the now-stale oldInstallPath (when it differs from r.InstallPath) for the
+//     caller to GC, but does NOT delete it here.
+//
+// Why return-rather-than-delete: this function only mutates the IN-MEMORY registry. The
+// matching installed_plugins.json write is deferred — to the TUI's `w`/Apply step, or to
+// the CLI's post-loop Save(). Deleting the old cache dir here would leave a window where
+// the on-disk registry still points at a vanished directory if that save is discarded,
+// interrupted, or fails — which Claude Code reports as "plugin cache does not exist".
+// Callers MUST persist installed_plugins.json first, then GCStaleCache(staleInstallPath).
 //
 // Caller is responsible for Save() + Backup() afterwards.
-func UpdateInstall(installed *config.InstalledPlugins, r *Result, oldInstallPath string) {
+func UpdateInstall(installed *config.InstalledPlugins, r *Result, oldInstallPath string) (staleInstallPath string) {
 	plugins, _ := installed.Raw["plugins"].(map[string]any)
 	if plugins == nil {
 		plugins = map[string]any{}
@@ -704,10 +712,22 @@ func UpdateInstall(installed *config.InstalledPlugins, r *Result, oldInstallPath
 	plugins[r.QualifiedID] = []any{entry}
 	installed.Raw["plugins"] = plugins
 
-	// GC: remove the old versioned directory if it has changed.
+	// Report (don't delete) the old versioned dir if it changed. Caller GCs it AFTER save.
 	if oldInstallPath != "" && oldInstallPath != r.InstallPath {
-		_ = os.RemoveAll(oldInstallPath)
+		return oldInstallPath
 	}
+	return ""
+}
+
+// GCStaleCache removes a stale plugin cache directory returned by UpdateInstall. Call
+// this ONLY after the updated installed_plugins.json has been successfully persisted, so
+// a discarded/failed save can never strand the on-disk registry pointing at a deleted
+// directory (Claude Code: "plugin cache does not exist"). A no-op for the empty path.
+func GCStaleCache(path string) error {
+	if path == "" {
+		return nil
+	}
+	return os.RemoveAll(path)
 }
 
 // RegisterInstall patches installed_plugins.json with the new entry and flips
