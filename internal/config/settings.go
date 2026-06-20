@@ -6,7 +6,7 @@ import (
 )
 
 // Settings wraps ~/.claude/settings.json.
-// enabledPlugins has a quirky shape — it's an object like {"id@marketplace": bool}, where
+// enabledPlugins has a quirky shape - it's an object like {"id@marketplace": bool}, where
 // `false` means installed-but-disabled. We preserve that semantic.
 type Settings struct {
 	Path string

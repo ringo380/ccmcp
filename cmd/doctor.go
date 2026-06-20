@@ -98,7 +98,7 @@ OPENAI_API_KEY (or --api-key) is required.`,
 			}
 
 			if len(issues) == 0 {
-				fmt.Printf("✓  %s — no issues\n", t.kind)
+				fmt.Printf("✓  %s - no issues\n", t.kind)
 				continue
 			}
 
@@ -116,7 +116,7 @@ OPENAI_API_KEY (or --api-key) is required.`,
 				if iss.Line > 0 {
 					loc = fmt.Sprintf("%s:%d", iss.File, iss.Line)
 				}
-				fmt.Printf("  %s [%s] %s — %s\n", icon, iss.Code, loc, iss.Message)
+				fmt.Printf("  %s [%s] %s - %s\n", icon, iss.Code, loc, iss.Message)
 			}
 
 			// LLM review only for files that exist and are non-empty
@@ -164,7 +164,7 @@ OPENAI_API_KEY (or --api-key) is required.`,
 		}
 
 		if anyError {
-			return fmt.Errorf("lint errors found — see above")
+			return fmt.Errorf("lint errors found - see above")
 		}
 		return nil
 	},
@@ -192,7 +192,7 @@ func formatReviewError(err error) string {
 		return fmt.Sprintf("%s API %d", apiErr.Provider, apiErr.Status)
 	}
 	if errors.Is(err, doctor.ErrClaudeCLINotFound) {
-		return "claude CLI not found in PATH — install it or set ANTHROPIC_API_KEY"
+		return "claude CLI not found in PATH - install it or set ANTHROPIC_API_KEY"
 	}
 	return err.Error()
 }
@@ -209,7 +209,7 @@ func init() {
 	doctorCmd.AddCommand(doctorMDCmd)
 
 	doctorMDCmd.Flags().BoolVar(&doctorLLMReview, "llm-review", false, "send each file to an LLM for quality feedback")
-	doctorMDCmd.Flags().StringVar(&doctorProvider, "provider", "", "LLM provider: anthropic|openai|claude-cli (default: auto — prefers claude-cli when on PATH)")
+	doctorMDCmd.Flags().StringVar(&doctorProvider, "provider", "", "LLM provider: anthropic|openai|claude-cli (default: auto - prefers claude-cli when on PATH)")
 	doctorMDCmd.Flags().StringVar(&doctorModel, "model", "", "override model (default: claude-haiku-4-5 / gpt-4o)")
 	doctorMDCmd.Flags().StringVar(&doctorAPIKey, "api-key", "", "API key (defaults to ANTHROPIC_API_KEY or OPENAI_API_KEY env var)")
 	doctorMDCmd.Flags().StringVar(&doctorMemoryDir, "memory-dir", "", "explicit path to memory directory (auto-detected by default)")

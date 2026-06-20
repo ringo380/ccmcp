@@ -102,7 +102,7 @@ func TestCLIReportDrift(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot for drift baseline: %v", err)
 	}
-	// Drift against itself — should be clean
+	// Drift against itself - should be clean
 	out, err := runCLI(t, home, "report", "--format", "md", "drift", "--from", snapFile)
 	if err != nil {
 		t.Fatalf("report drift err: %v\n%s", err, out)

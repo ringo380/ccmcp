@@ -45,7 +45,7 @@ func Discover(claudeConfigDir, projectDir string, settings *config.Settings, ins
 		out = append(out, scanSkillDir(filepath.Join(projectDir, ".claude", "skills"), ScopeProject, "")...)
 	}
 	// Plugin scope: <installPath>/skills/<name>/SKILL.md for every REGISTERED plugin
-	// (enabled or not — we surface disabled plugins' skills so users can see them).
+	// (enabled or not - we surface disabled plugins' skills so users can see them).
 	if settings != nil && installed != nil {
 		paths := map[string]string{}
 		for _, p := range installed.List() {

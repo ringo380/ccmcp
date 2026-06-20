@@ -22,7 +22,7 @@ func TestCompareSemver(t *testing.T) {
 		{"v0.7.0", "v0.7.0", 0},
 		{"1.0.0", "0.9.99", 1},
 		{"0.7.1", "0.7.0", 1},
-		// pre-release suffix is stripped — equivalent to base
+		// pre-release suffix is stripped - equivalent to base
 		{"0.7.0-rc1", "0.7.0", 0},
 		// missing patch defaults to 0
 		{"0.7", "0.7.0", 0},
@@ -168,7 +168,7 @@ func TestSkipCheckEnvVar(t *testing.T) {
 	t.Setenv("CCMCP_NO_UPDATE_CHECK", "1")
 	// Note: SkipCheck also returns true when stdin/stdout aren't TTYs (always
 	// the case under `go test`), so this assertion mainly exercises the env-var
-	// branch — it'd skip anyway.
+	// branch - it'd skip anyway.
 	if !SkipCheck("0.7.0") {
 		t.Error("CCMCP_NO_UPDATE_CHECK=1 must skip update check")
 	}

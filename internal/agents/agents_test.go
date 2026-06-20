@@ -45,7 +45,7 @@ func TestDiscoverPluginAgents(t *testing.T) {
 
 	settings, _ := config.LoadSettings(filepath.Join(home, ".claude", "settings.json"))
 	installed, _ := config.LoadInstalledPlugins(filepath.Join(home, ".claude", "plugins", "installed_plugins.json"))
-	// Discovery surfaces disabled plugins' agents too — only Enabled reflects runtime state.
+	// Discovery surfaces disabled plugins' agents too - only Enabled reflects runtime state.
 	ags := Discover(filepath.Join(home, ".claude"), "", settings, installed, filepath.Join(home, ".claude", "plugins"))
 	if len(ags) != 1 {
 		t.Fatalf("want 1, got %d", len(ags))

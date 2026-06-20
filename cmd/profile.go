@@ -290,7 +290,7 @@ var profileImportCmd = &cobra.Command{
 		}
 
 		if _, exists := prof.MCPs(sp.Name); exists && !profileOverwrite {
-			return fmt.Errorf("profile %q already exists — use --overwrite to replace", sp.Name)
+			return fmt.Errorf("profile %q already exists - use --overwrite to replace", sp.Name)
 		}
 
 		if flagDryRun {

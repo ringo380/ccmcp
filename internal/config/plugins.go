@@ -74,7 +74,7 @@ func (p *InstalledPlugins) Has(id string) bool {
 
 // ByName returns every installed entry whose bare plugin name (without @marketplace)
 // equals `name`. Used to attribute `plugin:<name>:<server>` override keys back to a
-// concrete on-disk plugin — those keys don't include the marketplace, so a name-only
+// concrete on-disk plugin - those keys don't include the marketplace, so a name-only
 // lookup is the only option. May return 0, 1, or multiple hits (same plugin name in
 // two marketplaces is allowed).
 func (p *InstalledPlugins) ByName(name string) []InstalledPlugin {

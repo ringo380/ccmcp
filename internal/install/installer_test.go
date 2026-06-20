@@ -120,7 +120,7 @@ func TestWithinDirRejectsSiblingPrefix(t *testing.T) {
 		{"/a/b/foo", "/a/b/foo", true},
 		{"/a/b/foo/sub", "/a/b/foo", true},
 		{"/a/b/foo/x/y/z", "/a/b/foo", true},
-		// Sibling directory with common prefix — must be rejected
+		// Sibling directory with common prefix - must be rejected
 		{"/a/b/foo-evil", "/a/b/foo", false},
 		{"/a/b/foo-evil/x", "/a/b/foo", false},
 		// Traversal
@@ -159,7 +159,7 @@ func TestListLocalMarketplaces(t *testing.T) {
 func TestListLocalMarketplacesEmpty(t *testing.T) {
 	dir := t.TempDir()
 	p := paths.Paths{PluginsDir: filepath.Join(dir, "plugins")}
-	// marketplaces dir doesn't exist yet — should return nil, not error.
+	// marketplaces dir doesn't exist yet - should return nil, not error.
 	names, err := ListLocalMarketplaces(p)
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +238,7 @@ func TestUpdateInstallDoesNotTouchEnabledPlugins(t *testing.T) {
 	r := &Result{QualifiedID: "myplugin@mkt", InstallPath: "/new", Version: "new", GitCommitSha: "new"}
 	UpdateInstall(installed, r, "/old")
 
-	// enabledPlugins should still be false — UpdateInstall must not flip it.
+	// enabledPlugins should still be false - UpdateInstall must not flip it.
 	if enabled, _ := settings.PluginEnabled("myplugin@mkt"); enabled {
 		t.Error("UpdateInstall must not enable a deliberately-disabled plugin")
 	}
@@ -265,7 +265,7 @@ func TestUpdateInstallGCsOldPath(t *testing.T) {
 	r := &Result{QualifiedID: "p@m", InstallPath: newPath, Version: "new"}
 	stale := UpdateInstall(installed, r, oldDir)
 
-	// New contract: UpdateInstall reports the stale dir but must NOT delete it — the
+	// New contract: UpdateInstall reports the stale dir but must NOT delete it - the
 	// caller GCs it only after persisting installed_plugins.json, so a discarded/failed
 	// save never strands the registry pointing at a deleted cache dir.
 	if stale != oldDir {
@@ -357,7 +357,7 @@ func TestRemovedFromMarketplace(t *testing.T) {
 
 	// mktA still lists "stays" but no longer lists "gone".
 	writeMarketplaceManifest(t, p, "mktA", "stays")
-	// mktB has no local manifest at all — its plugins must NOT be flagged.
+	// mktB has no local manifest at all - its plugins must NOT be flagged.
 
 	ids := []string{
 		"stays@mktA",  // present → not removed
@@ -419,7 +419,7 @@ func TestPullMarketplacesForPlugins(t *testing.T) {
 	mktDir := filepath.Join(mktsDir, "mktA")
 	gitRun(t, dir, "clone", "-q", up, mktDir)
 
-	// A non-git "local source" marketplace — must be skipped, not error.
+	// A non-git "local source" marketplace - must be skipped, not error.
 	if err := os.MkdirAll(filepath.Join(mktsDir, "local-copy"), 0o755); err != nil {
 		t.Fatal(err)
 	}

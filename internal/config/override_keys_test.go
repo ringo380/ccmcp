@@ -44,7 +44,7 @@ func TestOverrideKeyRoundtrip(t *testing.T) {
 }
 
 func TestOverrideKeyStashIsEmpty(t *testing.T) {
-	// Stash isn't reflected in disabledMcpServers — it's a ccmcp-local concept.
+	// Stash isn't reflected in disabledMcpServers - it's a ccmcp-local concept.
 	if got := OverrideKey(SourceStash, "foo", ""); got != "" {
 		t.Errorf("stash should have empty override key, got %q", got)
 	}

@@ -219,7 +219,7 @@ func (v *agentView) update(msg tea.Msg) tea.Cmd {
 		v.moveName = cur.Name
 		v.moveFrom = cur.Scope
 		v.moveActive = true
-		v.flash = styleDim.Render(fmt.Sprintf("move %q — target scope: [u]ser / [p]roject / esc: cancel", cur.Name))
+		v.flash = styleDim.Render(fmt.Sprintf("move %q - target scope: [u]ser / [p]roject / esc: cancel", cur.Name))
 	case "d":
 		if len(v.rows) == 0 {
 			return nil
@@ -279,7 +279,7 @@ func (v *agentView) render() string {
 		b.WriteString(v.filter.View() + "\n")
 	}
 	if len(v.rows) == 0 {
-		b.WriteString(styleDim.Render("  (no agents match — press 'n' to create one)"))
+		b.WriteString(styleDim.Render("  (no agents match - press 'n' to create one)"))
 		return b.String()
 	}
 	pageH := v.h - 4

@@ -45,5 +45,5 @@ func calibrationBanner(v claudecode.Version) string {
 	if v.Known() {
 		return fmt.Sprintf("Claude Code %s detected", v)
 	}
-	return "Claude Code version not detected — using baseline rules"
+	return "Claude Code version not detected - using baseline rules"
 }

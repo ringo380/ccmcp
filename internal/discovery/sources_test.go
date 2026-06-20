@@ -120,7 +120,7 @@ func TestAwesomeListSourceParsesReadme(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Awesome list source uses raw.githubusercontent.com URL — we can't
+	// Awesome list source uses raw.githubusercontent.com URL - we can't
 	// override that path through public API, so we cover the core via
 	// ExtractGitHubRepos in parser_test.go and a minimal smoke against the
 	// constructor to catch refactor breakage.

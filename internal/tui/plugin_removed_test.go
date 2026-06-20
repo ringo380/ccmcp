@@ -11,7 +11,7 @@ import (
 )
 
 // buildStateRemovedFromMkt seeds a sandboxed home where the marketplace "mkt" is
-// cached locally but lists only "keep" — so "gone@mkt" is an obsolete plugin.
+// cached locally but lists only "keep" - so "gone@mkt" is an obsolete plugin.
 // Both plugins have real on-disk cache dirs so the clean-removal path can be
 // asserted to delete the obsolete one and preserve the kept one.
 func buildStateRemovedFromMkt(t *testing.T) (*state, paths.Paths) {

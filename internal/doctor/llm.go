@@ -92,7 +92,7 @@ func (o *ReviewOptions) model() string {
 	default:
 		// Anthropic API and the local `claude --print` CLI both use the
 		// version-calibrated default (CCMCP_CLAUDE_MODEL > settings override >
-		// capability default). The CLI path used to return "" — which dropped
+		// capability default). The CLI path used to return "" - which dropped
 		// the --model flag and silently ran the user's full-power default model,
 		// making SetDefaultModel dead work on the default (claude-CLI) review
 		// path and diverging from the TUI fix path (claudeFixModelArgs), which
@@ -138,7 +138,7 @@ func ResolvedModel() string {
 
 // resolveProvider picks the LLM backend. Explicit caller opt-ins win first: a
 // set Provider, then an explicit APIKey (which forces the HTTP API). Absent
-// those, we prefer the local `claude` CLI when it's on $PATH — headless
+// those, we prefer the local `claude` CLI when it's on $PATH - headless
 // `claude --print` over the user's OAuth subscription is the intended default,
 // not an env API key. Env keys (ANTHROPIC_API_KEY, then OPENAI_API_KEY) are a
 // fallback for when the CLI isn't installed; failing everything, default to
@@ -202,7 +202,7 @@ type BundleEntry struct {
 // single combined response. Per-file iteration in Review() was costly: with
 // Sonnet/Opus defaults a multi-file project paid for N independent prompts
 // when one bundled call would have produced equivalent guidance. Errors from a
-// single missing file are non-fatal — the call proceeds with the remaining
+// single missing file are non-fatal - the call proceeds with the remaining
 // entries and the response notes the omission.
 func ReviewBundle(files []BundleEntry, opts ReviewOptions) (string, error) {
 	if len(files) == 0 {
@@ -234,11 +234,11 @@ func buildBundlePrompt(files []BundleEntry) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are reviewing %d documentation file(s) used by Claude Code, Anthropic's AI coding assistant. Produce a single combined review covering all of them.\n\n", len(files))
 	b.WriteString(`For each file, evaluate:
-1. Clarity — unambiguous and actionable instructions?
-2. Completeness — obvious gaps for a development project?
-3. Redundancy — duplicated content, or content that belongs in code/git?
-4. Formatting — structure easy to scan?
-5. Staleness — outdated tool versions, deprecated workflows?
+1. Clarity - unambiguous and actionable instructions?
+2. Completeness - obvious gaps for a development project?
+3. Redundancy - duplicated content, or content that belongs in code/git?
+4. Formatting - structure easy to scan?
+5. Staleness - outdated tool versions, deprecated workflows?
 
 Respond with one section per file. Use bullet points; skip categories with no issues. End each section with a 1-sentence verdict. After the last file, give a 1-sentence cross-file summary.
 
@@ -261,11 +261,11 @@ func buildPrompt(path, content string) string {
 	return fmt.Sprintf(`You are reviewing a %s file used by Claude Code, Anthropic's AI coding assistant.
 
 Analyse the following file for:
-1. Clarity — are the instructions unambiguous and actionable?
-2. Completeness — are there obvious gaps for a development project?
-3. Redundancy — any information duplicated or that belongs in code/git instead?
-4. Formatting — is the structure easy to scan quickly?
-5. Staleness — any clearly outdated content (old tool versions, deprecated workflows)?
+1. Clarity - are the instructions unambiguous and actionable?
+2. Completeness - are there obvious gaps for a development project?
+3. Redundancy - any information duplicated or that belongs in code/git instead?
+4. Formatting - is the structure easy to scan quickly?
+5. Staleness - any clearly outdated content (old tool versions, deprecated workflows)?
 
 File path: %s
 
@@ -370,7 +370,7 @@ func callOpenAI(prompt, model, apiKey string) (string, error) {
 func buildAPIError(provider string, status int, raw []byte) *APIError {
 	msg := parseAPIError(raw)
 	if status == 401 {
-		hint := "key rejected — run /login or use --provider claude-cli"
+		hint := "key rejected - run /login or use --provider claude-cli"
 		if msg == "" {
 			msg = hint
 		} else {
@@ -398,7 +398,7 @@ func callClaudeCLI(prompt, model string) (string, error) {
 	// ccmcp's audience runs many MCP servers; without this the headless run
 	// loads every server's tool definitions into context and overflows the
 	// model window ("Prompt is too long"). Review only needs to read the
-	// bundled prompt — no MCP server is ever required. Mirrors the TUI fix
+	// bundled prompt - no MCP server is ever required. Mirrors the TUI fix
 	// path's claudeFixModelArgs().
 	args := []string{"--print", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`}
 	if model != "" {
@@ -421,7 +421,7 @@ func callClaudeCLI(prompt, model string) (string, error) {
 		stderrTrimmed := strings.TrimSpace(stderr.String())
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			// claude writes API errors (usage limit, auth, overflow) to
-			// STDOUT, not stderr — fall back to it so the reason reaches the
+			// STDOUT, not stderr - fall back to it so the reason reaches the
 			// error string and the caller's classifier can surface it.
 			detail := stderrTrimmed
 			if detail == "" {

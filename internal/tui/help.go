@@ -6,7 +6,7 @@ import (
 )
 
 // helpView renders a full-screen legend explaining every badge, mark, and key
-// binding. It's purely read-only — toggled on/off by the `?` key handled in
+// binding. It's purely read-only - toggled on/off by the `?` key handled in
 // the parent model. Content is hand-rolled (rather than using bubbles/help)
 // because the legend's main value is the badge-and-mark table, which doesn't
 // fit the bubbles/help one-key-one-description model.
@@ -29,20 +29,20 @@ func renderHelp(width int) string {
 		b.WriteString(fmt.Sprintf("  %-18s  %s\n", styleBadge.Render(key), styleDim.Render(desc)))
 	}
 
-	b.WriteString(styleTitle.Render("ccmcp — Help"))
+	b.WriteString(styleTitle.Render("ccmcp - Help"))
 	b.WriteString("  ")
 	b.WriteString(styleDim.Render("(press ? or esc to close)"))
 	b.WriteString("\n")
 
 	section("Source badges")
-	row("[u]", "user scope — ~/.claude.json#/mcpServers (loads in every project)")
-	row("[l]", "local scope — ~/.claude.json#/projects[<cwd>]/mcpServers (this dir only)")
-	row("[p]", "project — ./.mcp.json (shared, git-tracked)")
-	row("[P]", "plugin — bundled .mcp.json inside an enabled plugin")
-	row("[@]", "claude.ai — OAuth remote integration")
-	row("[s]", "stash — ~/.claude-mcp-stash.json (parked, not loaded anywhere)")
-	row("[b]", "built-in — off-by-default MCP turned on via enabledMcpServers (e.g. computer-use)")
-	row("[?]", "unknown — in disabledMcpServers but no known source provides it")
+	row("[u]", "user scope - ~/.claude.json#/mcpServers (loads in every project)")
+	row("[l]", "local scope - ~/.claude.json#/projects[<cwd>]/mcpServers (this dir only)")
+	row("[p]", "project - ./.mcp.json (shared, git-tracked)")
+	row("[P]", "plugin - bundled .mcp.json inside an enabled plugin")
+	row("[@]", "claude.ai - OAuth remote integration")
+	row("[s]", "stash - ~/.claude-mcp-stash.json (parked, not loaded anywhere)")
+	row("[b]", "built-in - off-by-default MCP turned on via enabledMcpServers (e.g. computer-use)")
+	row("[?]", "unknown - in disabledMcpServers but no known source provides it")
 
 	section("Row marks")
 	row("[x]", "effective: will load in this project (any enabling source)")
@@ -54,7 +54,7 @@ func renderHelp(width int) string {
 	kbd("space", "toggle current row in the active scope")
 	kbd("A / N", "bulk enable / disable every visible row (respects filter)")
 	kbd("S", "stash current row (or unstash if already in stash)")
-	kbd("m", "move MCP config between scopes — opens a picker:")
+	kbd("m", "move MCP config between scopes - opens a picker:")
 	kbd("  └ u / l / s", "  pick target user / local / stash (esc to cancel)")
 	kbd("s", "cycle scope: effective → local → user → project → stash")
 	kbd("/", "filter by substring (enter to lock, esc to cancel)")
@@ -65,7 +65,7 @@ func renderHelp(width int) string {
 	kbd("space", "toggle plugin enabled/disabled")
 	kbd("A / N", "bulk enable / disable every visible plugin")
 	kbd("U", "update current plugin (re-fetch source)")
-	kbd("B", "bulk update — re-fetch every outdated plugin")
+	kbd("B", "bulk update - re-fetch every outdated plugin")
 	kbd("F", "show last bulk-update failures (stderr + hint; R retries one)")
 	kbd("I", "browse marketplace plugins (sub-view; I again to install)")
 	kbd("x", "remove (two-step confirm; clean-removes obsolete plugins incl. cache)")
@@ -78,7 +78,7 @@ func renderHelp(width int) string {
 	section("Marketplaces tab")
 	kbd("a", "add marketplace (multi-step prompt: name → source → repo/path)")
 	kbd("u", "git pull current marketplace")
-	kbd("B", "bulk update — git pull every outdated marketplace")
+	kbd("B", "bulk update - git pull every outdated marketplace")
 	kbd("x", "remove (two-step confirm; also deletes the clone dir)")
 	kbd("I", "browse plugins in current marketplace (hint to Plugins tab)")
 	kbd("R", "refresh update-available probe")
@@ -144,7 +144,7 @@ func renderHelp(width int) string {
 
 	section("Global")
 	kbd("tab / shift+tab", "cycle tabs")
-	kbd("1–9, 0", "jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands / Profiles / Summary / Doctor")
+	kbd("1-9, 0", "jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands / Profiles / Summary / Doctor")
 	kbd("ctrl+g", "global search across all tabs (enter jumps to the row)")
 	kbd("w", "save staged changes (atomic + backup)")
 	kbd("q", "quit (warns if unsaved)")

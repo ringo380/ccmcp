@@ -117,7 +117,7 @@ var statusCmd = &cobra.Command{
 		fmt.Println("Project:")
 		fmt.Println("  " + data.ProjectPath)
 		fmt.Println()
-		section("User MCPs (~/.claude.json — loads in every project)", data.UserMCPs)
+		section("User MCPs (~/.claude.json - loads in every project)", data.UserMCPs)
 		section("Local MCPs (this directory only)", data.LocalMCPs)
 		if len(data.PluginSourced) > 0 {
 			fmt.Println("MCPs registered by enabled plugins (auto-load via the Plugins tab):")
@@ -167,7 +167,7 @@ var statusCmd = &cobra.Command{
 		fmt.Printf("Plugins: %d enabled / %d known (%d installed)\n", data.PluginsActive, data.PluginsTotal, data.Installed)
 		fmt.Printf("Skills:  %d/%d enabled  |  Agents: %d  |  Commands: %d\n", data.SkillsEnabled, data.SkillsTotal, data.AgentsTotal, data.CommandsTotal)
 		if len(data.Conflicts) > 0 {
-			fmt.Printf("\n⚠  %d slash-command conflict(s) — run `ccmcp command conflicts` for details\n", len(data.Conflicts))
+			fmt.Printf("\n⚠  %d slash-command conflict(s) - run `ccmcp command conflicts` for details\n", len(data.Conflicts))
 			for i, c := range data.Conflicts {
 				if i >= 3 {
 					fmt.Printf("   … and %d more\n", len(data.Conflicts)-3)

@@ -32,7 +32,7 @@ func WriteJSON(v any, w io.Writer) error {
 
 // WriteSnapshotMD renders a Snapshot as Markdown.
 func WriteSnapshotMD(s Snapshot, w io.Writer) error {
-	fmt.Fprintf(w, "# ccmcp Snapshot — %s\n\n", s.GeneratedAt.Format(time.RFC3339))
+	fmt.Fprintf(w, "# ccmcp Snapshot - %s\n\n", s.GeneratedAt.Format(time.RFC3339))
 	fmt.Fprintf(w, "**Project:** `%s`\n\n", s.ProjectPath)
 
 	table := func(title string, items []string, emptyMsg string) {
@@ -107,7 +107,7 @@ func WriteSnapshotCSV(s Snapshot, w io.Writer) error {
 
 // WriteSweepMD renders a SweepReport as a Markdown table.
 func WriteSweepMD(sr SweepReport, w io.Writer) error {
-	fmt.Fprintf(w, "# ccmcp Sweep — %s\n\n", sr.GeneratedAt.Format(time.RFC3339))
+	fmt.Fprintf(w, "# ccmcp Sweep - %s\n\n", sr.GeneratedAt.Format(time.RFC3339))
 	fmt.Fprintln(w, "| Project | User MCPs | Local MCPs | Overrides | Plugins | Skills | Agents | Cmds | Conflicts |")
 	fmt.Fprintln(w, "|---------|-----------|------------|-----------|---------|--------|--------|------|-----------|")
 	for _, r := range sr.Rows {
@@ -143,7 +143,7 @@ func WriteSweepCSV(sr SweepReport, w io.Writer) error {
 
 // WriteDriftMD renders a DriftReport as Markdown.
 func WriteDriftMD(d DriftReport, w io.Writer) error {
-	fmt.Fprintf(w, "# ccmcp Drift — %s\n\n", d.GeneratedAt.Format(time.RFC3339))
+	fmt.Fprintf(w, "# ccmcp Drift - %s\n\n", d.GeneratedAt.Format(time.RFC3339))
 	fmt.Fprintf(w, "**Project:** `%s`  \n", d.ProjectPath)
 	fmt.Fprintf(w, "**Baseline snapshot:** %s\n\n", d.Before.GeneratedAt.Format(time.RFC3339))
 
@@ -198,7 +198,7 @@ func WriteDriftMD(d DriftReport, w io.Writer) error {
 
 // WriteAuditMD renders an AuditReport as Markdown.
 func WriteAuditMD(a AuditReport, w io.Writer) error {
-	fmt.Fprintf(w, "# ccmcp Audit — %s\n\n", a.GeneratedAt.Format(time.RFC3339))
+	fmt.Fprintf(w, "# ccmcp Audit - %s\n\n", a.GeneratedAt.Format(time.RFC3339))
 	fmt.Fprintf(w, "**Project:** `%s`\n\n", a.ProjectPath)
 
 	if len(a.StaleOverrides) == 0 && len(a.Conflicts) == 0 && len(a.Redundancies) == 0 {

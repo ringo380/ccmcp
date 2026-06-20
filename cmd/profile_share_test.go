@@ -144,7 +144,7 @@ func TestCLIProfileImportNamesOnly(t *testing.T) {
 	claude := readJSON(t, filepath.Join(home, ".claude.json"))
 	userMCPs, _ := claude["mcpServers"].(map[string]any)
 	if _, added := userMCPs["server-a"]; added && len(sp.Configs) == 0 {
-		// server-a was already in user scope from sandbox setup — this is fine
+		// server-a was already in user scope from sandbox setup - this is fine
 	}
 }
 

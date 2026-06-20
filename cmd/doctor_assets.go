@@ -23,7 +23,7 @@ Claude Code 2.1.141 constraints:
   SKILL001  skill name doesn't match ^[a-z0-9-]+$ (hard requirement)
   SKILL002  skill name exceeds 64 characters (hard cap)
   SKILL003  skill description + when_to_use exceeds the 1536-char display limit
-            (warn at 1200, error at 1536 — content past the cap is silently dropped)
+            (warn at 1200, error at 1536 - content past the cap is silently dropped)
   AGENT001  agent description approaches/exceeds the 1536-char display limit
   CMD001    command description exceeds 500-char soft limit (palette readability)
   CMD002    command is shadowed by a same-named skill (skill wins; command never runs)
@@ -65,7 +65,7 @@ so this command is CI-friendly.`,
 		}
 
 		// Non-nil initial value so the --json branch emits `[]` instead of
-		// `null` when every linter is clean — downstream JSON consumers expect
+		// `null` when every linter is clean - downstream JSON consumers expect
 		// an array.
 		issues := []doctor.Issue{}
 		issues = append(issues, doctor.LintSkillsWithConfig(sks, cfg)...)
@@ -98,10 +98,10 @@ so this command is CI-friendly.`,
 			if iss.Line > 0 {
 				loc = fmt.Sprintf("%s:%d", iss.File, iss.Line)
 			}
-			fmt.Printf("  %s [%s] %s — %s\n", icon, iss.Code, loc, iss.Message)
+			fmt.Printf("  %s [%s] %s - %s\n", icon, iss.Code, loc, iss.Message)
 		}
 		if anyError {
-			return fmt.Errorf("asset lint errors found — see above")
+			return fmt.Errorf("asset lint errors found - see above")
 		}
 		return nil
 	},

@@ -175,7 +175,7 @@ func TestDetectTransientFailureReprobes(t *testing.T) {
 	saveInfo(CachePath(p), stale)
 
 	// Spawn now recovers; same binary identity must NOT short-circuit to the
-	// pinned unknown — Detect must re-probe and surface the real version.
+	// pinned unknown - Detect must re-probe and surface the real version.
 	withStubs(t,
 		func() (string, time.Time, error) { return "/bin/claude", mt, nil },
 		func(string) (string, error) { runs++; return "2.1.158 (Claude Code)\n", nil },

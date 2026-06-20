@@ -131,7 +131,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		default:
 			// Unknown origin: surface to the user rather than silently dropping
-			// the result. Any new caller of execFixCmd must add a case above —
+			// the result. Any new caller of execFixCmd must add a case above -
 			// this default catches the slip rather than letting a fix vanish.
 			m.message = styleErr.Render(fmt.Sprintf("internal: fixDoneMsg with unhandled origin %d", done.origin))
 			return m, nil
@@ -162,7 +162,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	// cliStreamLineMsg routes the same way — each line carries an origin so
+	// cliStreamLineMsg routes the same way - each line carries an origin so
 	// the line lands on the originating view's ring buffer regardless of
 	// where the user has navigated since starting the fix. Returning
 	// `line.next` re-arms the drainer for the following line; the chain ends
@@ -207,7 +207,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Help overlay swallows input until dismissed. Only `?` and `esc` close it
-		// — matching the footer hint — so keys the user might reflexively press (like
+		// - matching the footer hint - so keys the user might reflexively press (like
 		// `q` to "quit") don't silently do something different from the rest of the app.
 		if m.showHelp {
 			switch msg.String() {
@@ -231,7 +231,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.openGlobalSearch()
 		case "q", "esc":
 			if m.st.anyDirty() {
-				m.message = styleWarn.Render("unsaved changes — press Q again or `w` to save + quit, `D` to discard + quit")
+				m.message = styleWarn.Render("unsaved changes - press Q again or `w` to save + quit, `D` to discard + quit")
 				return m, nil
 			}
 			m.killActiveFixes()

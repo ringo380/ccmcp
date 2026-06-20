@@ -6,7 +6,7 @@ import "github.com/spf13/cobra"
 //
 // Every shim calls resetMCPFlags() before setting only the flags it needs. This protects
 // against global-state leakage in scenarios where multiple compat commands run in the
-// same process (library use, long-lived REPL) — previously a prior `clear-local` could
+// same process (library use, long-lived REPL) - previously a prior `clear-local` could
 // leave mcpAll=true and corrupt a subsequent `apply`/`remove-local`.
 
 // resetMCPFlags zeros every package-global mcp*/override*/mkt* flag back to its default.

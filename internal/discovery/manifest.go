@@ -43,7 +43,7 @@ func FetchManifest(ctx context.Context, c *http.Client, mp RemoteMarketplace) (*
 		return &m, nil
 	}
 	if all404 && mp.Source == "github" && mp.Repo != "" {
-		return nil, fmt.Errorf("no .claude-plugin/marketplace.json in %s (tried HEAD, main, master) — repo may not be a Claude Code marketplace", mp.Repo)
+		return nil, fmt.Errorf("no .claude-plugin/marketplace.json in %s (tried HEAD, main, master) - repo may not be a Claude Code marketplace", mp.Repo)
 	}
 	return nil, lastErr
 }

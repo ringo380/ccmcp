@@ -80,7 +80,7 @@ func TestClassifyClaudeFailure(t *testing.T) {
 			want:   "",
 		},
 		// Quoted file content mentioning auth concepts must not be read as an
-		// auth failure — only structured API auth errors should.
+		// auth failure - only structured API auth errors should.
 		{
 			name:   "file content mentions authentication -> empty",
 			output: "edited the section describing the authentication flow and oauth scopes; exited without applying",

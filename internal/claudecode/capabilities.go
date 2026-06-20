@@ -5,7 +5,7 @@ package claudecode
 // re-deriving from the version, so version logic stays confined to
 // CapabilitiesFor.
 type Capabilities struct {
-	// Asset-lint limits — Claude Code skill/agent/command/plugin constraints.
+	// Asset-lint limits - Claude Code skill/agent/command/plugin constraints.
 	MaxSkillNameChars    int
 	MaxSkillDescChars    int
 	WarnSkillDescChars   int
@@ -32,7 +32,7 @@ type Capabilities struct {
 //   - Skill `name` is lowercase letters/digits/hyphens with a hard 64-char cap.
 //   - Skill `description` + `when_to_use` combined is display-truncated at 1536
 //     characters in skill listings (overrun is silently dropped). As of CC
-//     2.1.152 this cap is configurable via `skillListingMaxDescChars` — callers
+//     2.1.152 this cap is configurable via `skillListingMaxDescChars` - callers
 //     that read it should override MaxSkillDescChars accordingly.
 //   - Agent `description` follows the same truncation; agent bodies are budgeted
 //     at ~15k tokens.
@@ -65,7 +65,7 @@ func Baseline() Capabilities {
 // version yields the Baseline.
 //
 // THIS IS THE SINGLE PLACE TO EDIT when a new Claude Code version changes a
-// limit, model, or feature — add one `if v.AtLeast("X.Y.Z") { ... }` branch.
+// limit, model, or feature - add one `if v.AtLeast("X.Y.Z") { ... }` branch.
 func CapabilitiesFor(v Version) Capabilities {
 	c := Baseline()
 	if !v.Known() {

@@ -28,7 +28,7 @@ const (
 	catPluginInstalledNotEnabled
 	catPluginRemovedFromMarketplace
 	catSlashConflict
-	// Asset-lint categories (CC 2.1.141 compliance — see internal/doctor/asset_lint.go).
+	// Asset-lint categories (CC 2.1.141 compliance - see internal/doctor/asset_lint.go).
 	// All use fixClaudeCLI to let Claude rewrite content while preserving meaning.
 	catSkillNameInvalid    // ^[a-z0-9-]+$ violation: rename file AND directory
 	catSkillNameTooLong    // >64 chars: rename file AND directory
@@ -82,7 +82,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			},
 			applyFn: func(s *state) (string, error) {
 				if !s.cj.RemoveProjectDisabledMcpServer(project, key) {
-					return "", fmt.Errorf("key %q already gone — refresh with r", key)
+					return "", fmt.Errorf("key %q already gone - refresh with r", key)
 				}
 				s.dirtyClaude = true
 				return "removed " + key + " from " + project + " (press w to save)", nil
@@ -105,7 +105,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			},
 			applyFn: func(s *state) (string, error) {
 				if !s.stash.Delete(name) {
-					return "", fmt.Errorf("stash entry %q already gone — refresh with r", name)
+					return "", fmt.Errorf("stash entry %q already gone - refresh with r", name)
 				}
 				s.dirtyStash = true
 				return "dropped stash entry " + name + " (press w to save)", nil
@@ -138,7 +138,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 		prompt := fmt.Sprintf(
 			"In ~/.claude.json, the user-scope MCP server %q is also registered by an installed plugin "+
 				"(plugin-shipped MCPs auto-load when the plugin is enabled). Two copies will try to load and "+
-				"may collide. Move the user-scope entry to ~/.claude-mcp-stash.json by stashing it — keep the "+
+				"may collide. Move the user-scope entry to ~/.claude-mcp-stash.json by stashing it - keep the "+
 				"plugin source as the active definition. If you have user-scope configuration overrides "+
 				"(args, env vars) that the plugin doesn't ship, preserve them in the stashed copy so they're "+
 				"available if the user un-stashes later. Do not edit any other MCP server entries.",
@@ -209,7 +209,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			},
 			applyFn: func(s *state) (string, error) {
 				if _, known := s.settings.PluginEnabled(id); known {
-					return "", fmt.Errorf("plugin %q already registered — refresh with r", id)
+					return "", fmt.Errorf("plugin %q already registered - refresh with r", id)
 				}
 				s.settings.SetPluginEnabled(id, true)
 				s.dirtySettings = true
@@ -240,7 +240,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 				s.settings.RemovePluginEntry(id)
 				instPath, removed := s.installed.Remove(id)
 				if !removed {
-					return "", fmt.Errorf("plugin %q already gone — refresh with r", id)
+					return "", fmt.Errorf("plugin %q already gone - refresh with r", id)
 				}
 				if instPath != "" {
 					_ = os.RemoveAll(instPath)
@@ -406,7 +406,7 @@ const (
 )
 
 // claudeAssetFixArgs returns the Claude CLI args for an asset-fix prompt. The
-// permission profile widens only when the task genuinely needs more — bulk-fix
+// permission profile widens only when the task genuinely needs more - bulk-fix
 // reuses these via buildBulkFixPrompt so the same scoping rules apply. `items`
 // is the count of files the run will touch (1 for a single-row fix, len(targets)
 // for a category bulk) and scales the turn cap so large bundles aren't starved.
@@ -509,7 +509,7 @@ func summarizeRow(r summaryRow) string {
 }
 
 // bulkFixCategory reports whether a category supports the F bulk-fix flow. In-memory
-// categories are excluded — `p` (prune) already handles them in one shot, and bulk
+// categories are excluded - `p` (prune) already handles them in one shot, and bulk
 // LLM rewrites only make sense for fixClaudeCLI categories.
 func bulkFixCategory(c summaryCat) bool {
 	switch c {
@@ -558,7 +558,7 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 		return nil, nil, false
 	}
 	// Special-case: catPluginInstalledNotEnabled is a deterministic settings.json
-	// edit — register each installed plugin with enabledPlugins[id]=true. No LLM
+	// edit - register each installed plugin with enabledPlugins[id]=true. No LLM
 	// needed; build an in-memory bulk proposal so the user gets one-keystroke fix
 	// for the whole batch without spawning Claude.
 	if cursor.cat == catPluginInstalledNotEnabled {
@@ -595,7 +595,7 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 					added = append(added, id)
 				}
 				if len(added) == 0 {
-					return "", fmt.Errorf("all %d plugin(s) already registered — refresh with r", len(ids))
+					return "", fmt.Errorf("all %d plugin(s) already registered - refresh with r", len(ids))
 				}
 				s.dirtySettings = true
 				return fmt.Sprintf("registered %d plugin(s) (press w to save)", len(added)), nil
@@ -643,7 +643,7 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 					removed = append(removed, id)
 				}
 				if len(removed) == 0 {
-					return "", fmt.Errorf("all %d plugin(s) already removed — refresh with r", len(ids))
+					return "", fmt.Errorf("all %d plugin(s) already removed - refresh with r", len(ids))
 				}
 				s.dirtySettings = true
 				s.dirtyPlugins = true
@@ -652,7 +652,7 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 			},
 		}, []string{st.paths.SettingsJSON, st.paths.InstalledPlugins}, true
 	}
-	// File path(s) Claude will touch — used for snapshot/revert and the
+	// File path(s) Claude will touch - used for snapshot/revert and the
 	// confirmation modal preview. For categories whose `key` IS the file path
 	// (asset-lint findings) we use the keys directly; for config-edit categories
 	// we point at the appropriate config file.
@@ -710,10 +710,10 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 }
 
 // categoryAffectsAssets reports whether a fix in this category could change
-// the output of skills/agents/commands Discover or the asset-lint passes —
+// the output of skills/agents/commands Discover or the asset-lint passes -
 // i.e. whether the cached asset state on summaryView must be dropped after the
 // fix lands. False for fixes that only touch ~/.claude.json mcpServers, the
-// stash, or per-project disabledMcpServers — those have no asset-side effect.
+// stash, or per-project disabledMcpServers - those have no asset-side effect.
 func categoryAffectsAssets(c summaryCat) bool {
 	switch c {
 	case catPluginEnabledNotInstalled,    // flips enabledPlugins → Discover plugin scope changes

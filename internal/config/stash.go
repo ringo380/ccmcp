@@ -2,7 +2,7 @@ package config
 
 import "sort"
 
-// Stash wraps ~/.claude-mcp-stash.json — a ccmcp-owned holding area for MCP server configs
+// Stash wraps ~/.claude-mcp-stash.json - a ccmcp-owned holding area for MCP server configs
 // that the user wants "installed but turned off" without losing their env/command.
 type Stash struct {
 	Path string
@@ -22,7 +22,7 @@ func LoadStash(path string) (*Stash, error) {
 
 func (s *Stash) Save() error { return WriteJSON(s.Path, s.Raw) }
 
-// Entries returns the live userMcpServers map (never nil). Shared storage — treat
+// Entries returns the live userMcpServers map (never nil). Shared storage - treat
 // the result as read-only; use Put/Delete to mutate.
 func (s *Stash) Entries() map[string]any {
 	return objOrEmpty(s.Raw, "userMcpServers")

@@ -58,7 +58,7 @@ func TestShaRegex(t *testing.T) {
 }
 
 func TestSplitOwnerRepoCleanedByCaller(t *testing.T) {
-	// splitOwnerRepo accepts arbitrary input — sanitizeSegment is the gate.
+	// splitOwnerRepo accepts arbitrary input - sanitizeSegment is the gate.
 	// This test documents the integration: any "../"-style segment from
 	// splitOwnerRepo is reduced to underscores before being used as a path.
 	cases := []struct {

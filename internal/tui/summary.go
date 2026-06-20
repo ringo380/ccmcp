@@ -43,7 +43,7 @@ type summaryView struct {
 	pendingPrune bool
 	flash        string
 
-	// Pre-apply / post-apply fix gates — same semantics as doctorView.
+	// Pre-apply / post-apply fix gates - same semantics as doctorView.
 	pendingFix    *fixProposal
 	postReview    *fixProposal
 	previewBody   string // styled multi-line body shown in the confirm panel
@@ -76,7 +76,7 @@ type summaryView struct {
 	llmFor     summaryRow
 
 	// In-flight CLI fix state. cliLog/showLog mirror the Doctor tab's
-	// togglable log panel — L reveals the last 10 streamed lines. fixCmd
+	// togglable log panel - L reveals the last 10 streamed lines. fixCmd
 	// holds the active subprocess so the model's quit path can kill it
 	// instead of orphaning the process.
 	fixRunning   bool
@@ -118,7 +118,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		if done.err != nil {
 			v.flash = styleErr.Render("chat session ended: " + done.err.Error())
 		} else {
-			v.flash = styleOK.Render("chat session ended — re-scanning")
+			v.flash = styleOK.Render("chat session ended - re-scanning")
 		}
 		v.invalidateAssets()
 		return nil
@@ -135,7 +135,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			after, err := os.ReadFile(done.proposal.target)
 			if err != nil {
 				v.flash = styleErr.Render(fmt.Sprintf(
-					"read post-fix %s: %s — snapshot kept at %s",
+					"read post-fix %s: %s - snapshot kept at %s",
 					filepath.Base(done.proposal.target), err.Error(), done.proposal.snapshotPath,
 				))
 				return nil
@@ -143,7 +143,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			diff := unifiedDiff(string(done.proposal.beforeBytes), string(after), 3)
 			if diff == "" {
 				deleteSnapshot(done.proposal.snapshotPath)
-				flash := styleErr.Render("claude CLI exited 0 but made no edits — token spend wasted")
+				flash := styleErr.Render("claude CLI exited 0 but made no edits - token spend wasted")
 				if tail := tailOutput(done.output, 8); tail != "" {
 					flash += "\n" + styleDim.Render(tail)
 				}
@@ -255,7 +255,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 
 	// Rebuild rows up-front so cursor navigation + fixable lookups work even
 	// before the first render() call (e.g. tests pressing f immediately after
-	// switching tabs). buildRows is pure state-read — same work render does —
+	// switching tabs). buildRows is pure state-read - same work render does -
 	// and keeps the cursor in sync with state mutations the prior tick landed
 	// (e.g. an in-memory fix that shrank the fixable set). The CLAUDE.md
 	// "lazy-load in render()" rule targets expensive first-time loads (network
@@ -280,7 +280,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		// No fallthrough to body-scroll here: render() handles auto-scroll
 		// for the cursor and clamps v.top to actual line count. Use pgdn/G
 		// to scroll past the last fixable row. Falling through used to
-		// increment v.top unboundedly on each j press at end-of-list — the
+		// increment v.top unboundedly on each j press at end-of-list - the
 		// visual was masked by render's clamp but state drifted.
 	case "pgup":
 		v.top -= 10
@@ -295,11 +295,11 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 	case "L":
 		v.showLog = !v.showLog
 		if v.showLog && len(v.cliLog) == 0 && !v.fixRunning {
-			v.flash = styleDim.Render("(no CLI activity yet — log will populate once a fix runs)")
+			v.flash = styleDim.Render("(no CLI activity yet - log will populate once a fix runs)")
 		}
 	case "c":
 		if !v.claudeOnPath {
-			v.flash = styleWarn.Render("chat follow-up unavailable — claude CLI not found in PATH")
+			v.flash = styleWarn.Render("chat follow-up unavailable - claude CLI not found in PATH")
 			return nil
 		}
 		return execChatCmd(v.st.project, v.chatContextPrompt(), tabSummary)
@@ -312,7 +312,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		if !v.claudeOnPath {
-			v.flash = styleWarn.Render("LLM review unavailable — claude CLI not found in PATH")
+			v.flash = styleWarn.Render("LLM review unavailable - claude CLI not found in PATH")
 			return nil
 		}
 		row := fixable[v.cursor]
@@ -329,7 +329,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		}
 	case "f":
 		if len(fixable) == 0 {
-			v.flash = styleDim.Render("no fixable issues — Summary is clean")
+			v.flash = styleDim.Render("no fixable issues - Summary is clean")
 			return nil
 		}
 		row := fixable[v.cursor]
@@ -339,7 +339,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		if proposal.kind == fixClaudeCLI && !v.claudeOnPath {
-			v.flash = styleWarn.Render("auto-fix unavailable — claude CLI not found in PATH")
+			v.flash = styleWarn.Render("auto-fix unavailable - claude CLI not found in PATH")
 			return nil
 		}
 		v.previewBody = v.buildFixPreview(proposal)
@@ -347,14 +347,14 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 		v.pendingFix = proposal
 	case "F":
 		// Bulk-fix every fixable row sharing the cursor's category. Skips
-		// in-memory categories (use `p` for prune) — they're refused with a hint.
+		// in-memory categories (use `p` for prune) - they're refused with a hint.
 		if len(fixable) == 0 {
-			v.flash = styleDim.Render("no fixable issues — Summary is clean")
+			v.flash = styleDim.Render("no fixable issues - Summary is clean")
 			return nil
 		}
 		row := fixable[v.cursor]
 		if !bulkFixCategory(row.cat) {
-			v.flash = styleDim.Render("bulk-fix not available for " + summarizeRow(row) + " — use `p` to prune or `f` per row")
+			v.flash = styleDim.Render("bulk-fix not available for " + summarizeRow(row) + " - use `p` to prune or `f` per row")
 			return nil
 		}
 		proposal, files, ok := buildBulkFixProposal(row, fixable, v.st)
@@ -363,7 +363,7 @@ func (v *summaryView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		if proposal.kind == fixClaudeCLI && !v.claudeOnPath {
-			v.flash = styleWarn.Render("bulk-fix unavailable — claude CLI not found in PATH")
+			v.flash = styleWarn.Render("bulk-fix unavailable - claude CLI not found in PATH")
 			return nil
 		}
 		v.bulkFixFiles = files
@@ -413,7 +413,7 @@ func (v *summaryView) executeFix() tea.Cmd {
 		}
 		// Per CLAUDE.md "TUI toggle keys that change the visible set should
 		// reset v.index = 0; v.top = 0 to prevent dangling cursor." The
-		// fix shrinks the fixable list — invalidate cursor + scroll so the
+		// fix shrinks the fixable list - invalidate cursor + scroll so the
 		// next render starts from a known-good frame regardless of where
 		// the user was navigating before.
 		v.rows = nil
@@ -443,7 +443,7 @@ func (v *summaryView) executeFix() tea.Cmd {
 			p.beforeBytes = b
 		}
 		// Bulk fix: snapshot every additional file too. Failures here are logged
-		// to the flash but don't abort the run — the primary target snapshot
+		// to the flash but don't abort the run - the primary target snapshot
 		// covers the most common revert case, and the user can manually restore
 		// from disk if needed.
 		for _, extra := range v.bulkFixFiles {
@@ -458,7 +458,7 @@ func (v *summaryView) executeFix() tea.Cmd {
 		cliPath, err := exec.LookPath("claude")
 		if err != nil {
 			if !v.claudeOnPath {
-				v.flash = styleErr.Render("claude CLI not found in PATH — install it or run the fix manually")
+				v.flash = styleErr.Render("claude CLI not found in PATH - install it or run the fix manually")
 				return nil
 			}
 			cliPath = "claude"
@@ -545,7 +545,7 @@ func (v *summaryView) render() string {
 		if target == "" || target == "." {
 			target = "config"
 		}
-		head := "Summary — " + v.st.spinnerFrame +
+		head := "Summary - " + v.st.spinnerFrame +
 			styleProgress.Render(fmt.Sprintf("Applying LLM fix to %s… (%s)", target, fixElapsed(v.fixStartedAt))) +
 			"\n" + styleDim.Render("running claude --print non-interactively; L: toggle live log") +
 			"\n" + v.flash
@@ -556,7 +556,7 @@ func (v *summaryView) render() string {
 	}
 
 	if v.llmRunning {
-		return "Summary — " + v.st.spinnerFrame + styleProgress.Render("LLM review in progress…") + "\n" + v.flash
+		return "Summary - " + v.st.spinnerFrame + styleProgress.Render("LLM review in progress…") + "\n" + v.flash
 	}
 
 	v.rows = v.buildRows()
@@ -568,7 +568,7 @@ func (v *summaryView) render() string {
 	// Resolve the cursor's row in the full v.rows slice by counting fixable
 	// entries. fixable[v.cursor] and v.rows[i] both derive from this same
 	// buildRows() pass, so the i-th fixable row in v.rows is identically the
-	// cursor's target — no need to match on identity.
+	// cursor's target - no need to match on identity.
 	var cursorRowIdx int = -1
 	if len(fixable) > 0 {
 		fixSeen := 0
@@ -589,7 +589,7 @@ func (v *summaryView) render() string {
 	if len(fixable) > 0 {
 		fmt.Fprintf(&b, "%s  %s\n",
 			styleTitle.Render("Summary"),
-			styleDim.Render(fmt.Sprintf("%d fixable issue(s) — f: fix  l: LLM review  j/k: navigate", len(fixable))))
+			styleDim.Render(fmt.Sprintf("%d fixable issue(s) - f: fix  l: LLM review  j/k: navigate", len(fixable))))
 	} else {
 		fmt.Fprintf(&b, "%s  %s\n", styleTitle.Render("Summary"), styleOK.Render("no actionable issues"))
 	}
@@ -605,8 +605,8 @@ func (v *summaryView) render() string {
 		b.WriteString("\n")
 	}
 
-	// Build any sticky-below panel first, capped to a budget so the panel — and
-	// crucially its action-prompt footer — always fits. The model-level clamp
+	// Build any sticky-below panel first, capped to a budget so the panel - and
+	// crucially its action-prompt footer - always fits. The model-level clamp
 	// trims from the BOTTOM, so an un-capped panel would lose its confirm prompt
 	// on a short terminal. panelBudget leaves at least a few list rows visible.
 	panelBudget := v.h - 3
@@ -682,7 +682,7 @@ func (v *summaryView) renderLLMPanel(maxLines int) string {
 	var rb strings.Builder
 	rb.WriteString(styleDim.Render(strings.Repeat("─", maxInt(44, v.w-2))))
 	rb.WriteString("\n")
-	rb.WriteString(styleTitle.Render("LLM review — "+summarizeRow(v.llmFor)) + "\n")
+	rb.WriteString(styleTitle.Render("LLM review - "+summarizeRow(v.llmFor)) + "\n")
 	result := strings.Split(strings.TrimRight(v.llmResult, "\n"), "\n")
 	budget := maxLines - 3 // border + title + dismiss hint
 	if budget < 1 {
@@ -890,7 +890,7 @@ func (v *summaryView) buildRows() []summaryRow {
 					styleOK.Render("•"), styleBadge.Render("p")))
 			}
 			if len(classified.StashGhost) > 0 {
-				add(fmt.Sprintf("  %s  %d stash-ghost entr%s — f to drop one at a time",
+				add(fmt.Sprintf("  %s  %d stash-ghost entr%s - f to drop one at a time",
 					styleDim.Render("•"),
 					len(classified.StashGhost),
 					classify.PluralY(len(classified.StashGhost))))
@@ -1026,7 +1026,7 @@ func (v *summaryView) buildRows() []summaryRow {
 	}
 
 	// Asset-lint findings (CC 2.1.141: skill/agent/command frontmatter rules).
-	// Only error-severity issues become fixable rows — warnings are reported as
+	// Only error-severity issues become fixable rows - warnings are reported as
 	// counts so the user can decide whether to act. The `key` for these rows is
 	// the file path so buildSummaryFixProposal / buildBulkFixProposal can dispatch.
 	// Findings come from the lazy-loaded cache populated by ensureAssets().
@@ -1078,7 +1078,7 @@ func (v *summaryView) buildRows() []summaryRow {
 				addFix(fmt.Sprintf("    %s  %s  %s", styleErr.Render("✗"), iss.Code, iss.Message), catAgentDescTooLong, iss.File, "")
 			}
 			if iss.Code == "AGENT002" {
-				// Surface both severities — at 13k+ the user benefits from
+				// Surface both severities - at 13k+ the user benefits from
 				// being nudged before the hard cap; at 15k the lint already
 				// matters operationally.
 				icon := styleWarn.Render("⚠")
@@ -1163,7 +1163,7 @@ func (v *summaryView) buildRows() []summaryRow {
 
 	hasWarn := len(dup)+len(stashAndUser)+len(stashedButPluginProvides)+len(userDupPlugin)+len(stale) > 0
 	if !hasWarn {
-		add(styleOK.Render("Redundancies: (none — everything looks clean)"))
+		add(styleOK.Render("Redundancies: (none - everything looks clean)"))
 	} else {
 		add(styleWarn.Render("Redundancies:"))
 		for _, n := range dup {
@@ -1196,7 +1196,7 @@ func (v *summaryView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *summaryView) helpText() string {
 	if v.fixRunning {
-		return "applying LLM fix — please wait  L: toggle live log"
+		return "applying LLM fix - please wait  L: toggle live log"
 	}
 	if v.llmRunning {
 		return "LLM review in progress…"
@@ -1219,7 +1219,7 @@ func (v *summaryView) helpText() string {
 // what the user was just doing in ccmcp. Best-effort.
 //
 // v.cursor indexes into the *fixable* subset (see fixableRows / render), not
-// the raw v.rows slice — addressing v.rows[v.cursor] returns the wrong row
+// the raw v.rows slice - addressing v.rows[v.cursor] returns the wrong row
 // whenever non-fixable display rows precede the cursor. Use fixable[v.cursor]
 // so the prompt actually describes the issue under the cursor.
 func (v *summaryView) chatContextPrompt() string {

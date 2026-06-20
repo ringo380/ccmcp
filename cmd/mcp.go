@@ -30,7 +30,7 @@ var (
 )
 
 // normalizeScope maps user-friendly scope names (aligned with Claude Code's own
-// terminology — "local", "project") to ccmcp's legacy internal keys.
+// terminology - "local", "project") to ccmcp's legacy internal keys.
 func normalizeScope(s string) string {
 	switch s {
 	case "local":
@@ -72,9 +72,9 @@ var mcpListCmd = &cobra.Command{
 		for _, s := range scopes {
 			switch s {
 			case "user":
-				printMCPs("User MCPs (~/.claude.json#/mcpServers — loads in every project)", cj.UserMCPs())
+				printMCPs("User MCPs (~/.claude.json#/mcpServers - loads in every project)", cj.UserMCPs())
 			case "project":
-				printMCPs(fmt.Sprintf("Local MCPs (%s — this dir only)", proj), cj.ProjectMCPs(proj))
+				printMCPs(fmt.Sprintf("Local MCPs (%s - this dir only)", proj), cj.ProjectMCPs(proj))
 			case "stash":
 				printMCPs("Stashed", stash.Entries())
 			case "mcpjson":
@@ -83,7 +83,7 @@ var mcpListCmd = &cobra.Command{
 				}
 			case "claudeai":
 				claudeai := cj.ClaudeAiEverConnected()
-				fmt.Println("Claude.ai integrations (from claudeAiMcpEverConnected — best-effort):")
+				fmt.Println("Claude.ai integrations (from claudeAiMcpEverConnected - best-effort):")
 				if len(claudeai) == 0 {
 					fmt.Println("  (none)")
 					fmt.Println()
@@ -233,12 +233,12 @@ var mcpMoveCmd = &cobra.Command{
 	Short: "Move an MCP's config between scopes (user ↔ local ↔ stash)",
 	Long: `Move the named MCP's full config from its current location(s) to the target scope.
 Removes the entry from every other mutable scope so there's no duplication (the main reason
-to move: "I don't want this auto-loading in every project anymore — park it in local/stash").
+to move: "I don't want this auto-loading in every project anymore - park it in local/stash").
 
 Scopes (Claude Code terminology):
-  user     — ~/.claude.json#/mcpServers         (loads in every project)
-  local    — ~/.claude.json#/projects[<cwd>]    (this dir only, private)
-  stash    — ~/.claude-mcp-stash.json            (parked, not active anywhere)
+  user     - ~/.claude.json#/mcpServers         (loads in every project)
+  local    - ~/.claude.json#/projects[<cwd>]    (this dir only, private)
+  stash    - ~/.claude-mcp-stash.json            (parked, not active anywhere)
 
 Aliases: 'project' means 'local' here for back-compat with earlier ccmcp versions.`,
 	Args: cobra.ExactArgs(1),
@@ -283,7 +283,7 @@ func runMCPEnable(names []string) error {
 		for _, n := range names {
 			cfg, ok := findMCPConfig(n, cj, stash, proj)
 			if !ok {
-				return fmt.Errorf("%q not found in stash, user, or project scope — nothing to enable", n)
+				return fmt.Errorf("%q not found in stash, user, or project scope - nothing to enable", n)
 			}
 			if mcpScope == "user" {
 				cj.SetUserMCP(n, cfg)
@@ -556,7 +556,7 @@ func runMCPOverride(nameOrKey string) error {
 		verb = "disabled"
 	}
 	if !changed {
-		fmt.Printf("no change — %q already %s for %s\n", key, verb, proj)
+		fmt.Printf("no change - %q already %s for %s\n", key, verb, proj)
 		return nil
 	}
 	if flagDryRun {
@@ -626,13 +626,13 @@ func resolveOverrideKey(p paths.Paths, proj string, cj *config.ClaudeJSON, nameO
 	}
 
 	if len(candidates) == 0 {
-		// Accept as raw stdio name anyway — user may be disabling a legacy name
+		// Accept as raw stdio name anyway - user may be disabling a legacy name
 		return nameOrKey, nil
 	}
 	if len(candidates) == 1 {
 		return candidates[0], nil
 	}
-	return "", fmt.Errorf("ambiguous name %q — candidates: %s  (pass --source and --plugin to disambiguate)", nameOrKey, strings.Join(candidates, ", "))
+	return "", fmt.Errorf("ambiguous name %q - candidates: %s  (pass --source and --plugin to disambiguate)", nameOrKey, strings.Join(candidates, ", "))
 }
 
 // --- move ------------------------------------------------------------------
@@ -656,7 +656,7 @@ func runMCPMove(name, target string) error {
 	}
 	// Locate the current config. Priority: stash > local > user. First match wins so the
 	// user can rely on "stash is the canonical parked copy" semantics. (Previous versions
-	// used sequential reassignment which let the last check win — that silently clobbered
+	// used sequential reassignment which let the last check win - that silently clobbered
 	// stash/local configs when the same name existed in multiple scopes.)
 	var cfg any
 	var found bool

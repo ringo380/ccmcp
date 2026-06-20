@@ -292,7 +292,7 @@ var DefaultRunner Runner = defaultRunner{}
 
 // CheckMCPLauncher probes the registry for the latest version of an MCP launcher and
 // compares it against the pinned version (if any). Floating versions ("@latest", no @)
-// always return Outdated=false because there's nothing to compare against — the user
+// always return Outdated=false because there's nothing to compare against - the user
 // already gets the latest on each launch.
 func CheckMCPLauncher(r Runner, l MCPLauncher) Status {
 	s := Status{CheckedAt: time.Now(), Local: l.Version}

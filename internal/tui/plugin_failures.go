@@ -34,35 +34,35 @@ func classifyUpdateError(s string) string {
 	l := strings.ToLower(s)
 	switch {
 	case strings.Contains(l, "permission denied"):
-		return "permission denied — check write access to the plugin cache directory"
+		return "permission denied - check write access to the plugin cache directory"
 	case strings.Contains(l, "could not resolve host"),
 		strings.Contains(l, "connection refused"),
 		strings.Contains(l, "network is unreachable"),
 		strings.Contains(l, "tls handshake timeout"),
 		strings.Contains(l, "operation timed out"):
-		return "network issue — retry when connectivity is back"
+		return "network issue - retry when connectivity is back"
 	case strings.Contains(l, "reference not found"),
 		strings.Contains(l, "unknown revision"),
 		strings.Contains(l, "did not match any file(s) known to git"),
 		strings.Contains(l, "couldn't find remote ref"):
-		return "marketplace SHA pin is stale — try refreshing the marketplace first (M tab → R)"
+		return "marketplace SHA pin is stale - try refreshing the marketplace first (M tab → R)"
 	case strings.Contains(l, "authentication failed"),
 		strings.Contains(l, "could not read username"),
 		strings.Contains(l, "403"):
-		return "auth required — the source repo is private or needs credentials"
+		return "auth required - the source repo is private or needs credentials"
 	case strings.Contains(l, "no space left"):
-		return "disk full — free space under ~/.claude/plugins/cache"
+		return "disk full - free space under ~/.claude/plugins/cache"
 	case strings.Contains(l, "already exists"):
-		return "stale cache entry — press R in the panel to retry; ccmcp will overwrite"
+		return "stale cache entry - press R in the panel to retry; ccmcp will overwrite"
 	case strings.Contains(l, "not a git repository"):
-		return "cache corrupted — remove the plugin's cache dir and reinstall"
+		return "cache corrupted - remove the plugin's cache dir and reinstall"
 	}
 	return "see error text for details; press R to retry"
 }
 
 // saveLastFailures persists the current failure set to BackupsDir/last-bulk-failures.json.
 // An empty `failures` removes the file (no stale data lingering after a clean run).
-// All errors are swallowed by the caller — persistence is best-effort, the panel
+// All errors are swallowed by the caller - persistence is best-effort, the panel
 // still works in-memory regardless.
 func saveLastFailures(backupsDir string, failures []bulkUpdateFailure) error {
 	path := filepath.Join(backupsDir, lastFailuresFile)
@@ -168,7 +168,7 @@ func (v *pluginView) updateFailures(key tea.KeyMsg) tea.Cmd {
 		f := v.lastFailures[v.failuresIndex]
 		name, mkt := config.ParsePluginID(f.ID)
 		if mkt == "" {
-			v.flash = styleErr.Render(f.ID + ": unqualified ID — cannot retry")
+			v.flash = styleErr.Render(f.ID + ": unqualified ID - cannot retry")
 			return nil
 		}
 		var oldSha, oldInstPath string

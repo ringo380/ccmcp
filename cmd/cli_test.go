@@ -472,7 +472,7 @@ func TestCLIPruneSkipsDisabledPluginAndStashGhosts(t *testing.T) {
 	proj := "/tmp/cli-prune-proj"
 
 	// Seed disabledMcpServers with one of each bucket. Sandbox doesn't have any
-	// plugin infrastructure so plugin:* entries will classify as orphan-plugin — which
+	// plugin infrastructure so plugin:* entries will classify as orphan-plugin - which
 	// is fine for this test (we're checking that the command prunes orphans but keeps
 	// stash ghosts and live-stdio by default).
 	cj := readJSON(t, filepath.Join(home, ".claude.json"))

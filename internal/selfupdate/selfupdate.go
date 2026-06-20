@@ -13,7 +13,7 @@
 //     published since the last check is surfaced on THIS launch, not the next
 //   - Result has not been dismissed by the user in the dismiss-window
 //
-// All failures (network errors, malformed JSON, missing TTY) are silent —
+// All failures (network errors, malformed JSON, missing TTY) are silent -
 // the check is best-effort and must never block ccmcp launch.
 package selfupdate
 
@@ -231,7 +231,7 @@ func DetectMethod() Method {
 }
 
 // UpgradeCommand returns the argv that performs the upgrade for the given method.
-// Empty slice means "no automatic command — user must upgrade manually".
+// Empty slice means "no automatic command - user must upgrade manually".
 func UpgradeCommand(m Method) []string {
 	switch m {
 	case MethodBrew:
@@ -248,14 +248,14 @@ func UpgradeCommand(m Method) []string {
 func MethodHint(m Method, htmlURL string) string {
 	switch m {
 	case MethodBrew:
-		return "Detected Homebrew install — will run: brew upgrade ccmcp"
+		return "Detected Homebrew install - will run: brew upgrade ccmcp"
 	case MethodGo:
-		return "Detected go install — will run: go install github.com/ringo380/ccmcp@latest"
+		return "Detected go install - will run: go install github.com/ringo380/ccmcp@latest"
 	default:
 		if htmlURL != "" {
-			return "Manual install detected — download the latest binary from " + htmlURL
+			return "Manual install detected - download the latest binary from " + htmlURL
 		}
-		return "Manual install detected — visit https://github.com/ringo380/ccmcp/releases"
+		return "Manual install detected - visit https://github.com/ringo380/ccmcp/releases"
 	}
 }
 
@@ -271,7 +271,7 @@ func MethodHint(m Method, htmlURL string) string {
 //     bail out of TUI launch and let the user re-run the upgraded binary
 //
 // Errors are returned only when an upgrade command actually fails after the user
-// confirmed — every other failure is swallowed so the TUI launch is unblocked.
+// confirmed - every other failure is swallowed so the TUI launch is unblocked.
 type Decision struct {
 	// Updated is true when an upgrade command ran successfully.
 	Updated bool
@@ -355,7 +355,7 @@ func chooseRefresh(s Status, now time.Time) refreshMode {
 	return refreshNone
 }
 
-// CheckOnLaunch wires together the pieces above. Pure plumbing — no business
+// CheckOnLaunch wires together the pieces above. Pure plumbing - no business
 // logic lives here that isn't tested through the exported helpers.
 func CheckOnLaunch(ctx context.Context, p paths.Paths, currentVersion string) Decision {
 	if SkipCheck(currentVersion) {
@@ -376,7 +376,7 @@ func CheckOnLaunch(ctx context.Context, p paths.Paths, currentVersion string) De
 }
 
 // prompt is split out so tests can drive it with synthetic readers/writers and
-// inject an arbitrary upgrade command — DetectMethod's result depends on the
+// inject an arbitrary upgrade command - DetectMethod's result depends on the
 // running binary's path and isn't useful to test against.
 func prompt(p paths.Paths, currentVersion string, status Status, method Method, cmd []string, in io.Reader, out io.Writer) Decision {
 	fmt.Fprintf(out, "\nccmcp v%s is available (you have v%s).\n", status.LatestVersion, currentVersion)

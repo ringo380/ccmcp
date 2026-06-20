@@ -318,7 +318,7 @@ func (v *marketplaceView) focusSearch(key string) {
 }
 
 func (v *discoveryView) searchEntries() []searchEntry {
-	// Discover is network-backed — only index rows already fetched. Never force
+	// Discover is network-backed - only index rows already fetched. Never force
 	// a fetch from the overlay.
 	if !v.loaded {
 		return nil

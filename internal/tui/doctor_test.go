@@ -83,7 +83,7 @@ func TestDoctorFixDoneEnrichesExitStatus(t *testing.T) {
 	// Simulate the exit-status error from a failed claude CLI run. The handler
 	// should rewrite the bare "exit status N" text into "claude CLI exit N".
 	// Captured stderr (now surfaced inline below the flash since the goroutine
-	// switch in execFixCmd) is not exercised here — see
+	// switch in execFixCmd) is not exercised here - see
 	// TestDoctorFixErrorSurfacesOutputInline for that path.
 	v.update(fixDoneMsg{err: errors.New("exit status 1"), origin: tabDoctor})
 	if !strings.Contains(stripANSI(v.flash), "claude CLI exit 1") {

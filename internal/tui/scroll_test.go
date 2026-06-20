@@ -128,7 +128,7 @@ func TestModelBodyNeverOverflows(t *testing.T) {
 
 // TestSummaryPanelPromptSurvivesShortTerminal: a tall fix-preview panel on a
 // short terminal must not have its confirm prompt trimmed off by the model-level
-// height clamp — the panel is capped so list+panel always fit the body.
+// height clamp - the panel is capped so list+panel always fit the body.
 func TestSummaryPanelPromptSurvivesShortTerminal(t *testing.T) {
 	st, _ := buildState(t)
 	longDiff := strings.Repeat("+ added line of a long diff\n", 40)

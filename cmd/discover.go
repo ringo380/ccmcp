@@ -122,7 +122,7 @@ var discoverShowCmd = &cobra.Command{
 		if discoverJSON {
 			return writeJSON(cmd, man)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "%s — %d plugin(s)\n", mp.Name, len(man.Plugins))
+		fmt.Fprintf(cmd.OutOrStdout(), "%s - %d plugin(s)\n", mp.Name, len(man.Plugins))
 		for _, pl := range man.Plugins {
 			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", pl.Name)
 		}
@@ -220,7 +220,7 @@ func shortSha(sha string) string {
 }
 
 // lookupRemote finds a discovered marketplace by name. Uses the cache (if
-// fresh) or runs a fresh Discover() — either way avoids the user having to
+// fresh) or runs a fresh Discover() - either way avoids the user having to
 // rediscover before each show/plugin call.
 func lookupRemote(cmd *cobra.Command, name string) (discovery.RemoteMarketplace, error) {
 	p, err := resolvePaths()

@@ -111,7 +111,7 @@ func TestGCDoctorSnapshotsExpiresOld(t *testing.T) {
 
 func TestGCDoctorSnapshotsGroupsBySourceFile(t *testing.T) {
 	dir := t.TempDir()
-	// 12 of file A, 12 of file B. Both groups under keep=20 — all should survive.
+	// 12 of file A, 12 of file B. Both groups under keep=20 - all should survive.
 	base := time.Now().Add(-1 * time.Hour)
 	for i := 0; i < 12; i++ {
 		for _, name := range []string{"A", "B"} {
