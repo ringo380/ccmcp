@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ccmcp — manage Claude Code MCP servers</title>
+<title>ccmcp - manage Claude Code MCP servers</title>
 <meta name="description" content="A dynamic CLI and TUI for managing Claude Code MCP servers, plugins, and per-project overrides across every scope Claude Code honors.">
 <meta property="og:title" content="ccmcp">
 <meta property="og:description" content="Bulk-toggle Claude Code MCP servers by scope, filter, or plugin. One view across user, local, project, plugin, and claude.ai sources.">
@@ -257,13 +257,13 @@
 <section id="why">
   <div class="wrap">
     <h2><span class="hash">#</span> Why</h2>
-    <p>Claude Code auto-loads MCP servers from at least <strong>six</strong> distinct places — user config, local project state, committed <code>.mcp.json</code>, bundled plugin <code>.mcp.json</code>s, claude.ai OAuth integrations, and in-memory overrides. Starting a session with all of them enabled burns hundreds of tokens of context before you type a character.</p>
+    <p>Claude Code auto-loads MCP servers from at least <strong>six</strong> distinct places - user config, local project state, committed <code>.mcp.json</code>, bundled plugin <code>.mcp.json</code>s, claude.ai OAuth integrations, and in-memory overrides. Starting a session with all of them enabled burns hundreds of tokens of context before you type a character.</p>
     <p>The built-in <code>/mcp</code> menu toggles things one row at a time. <code>ccmcp</code> toggles them in bulk, by scope, or by filter, and gives you a single view that reflects what will actually load in the current project.</p>
 
     <div class="term">
       <div class="term-bar">
         <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-        <span class="title">ccmcp — MCPs tab</span>
+        <span class="title">ccmcp - MCPs tab</span>
       </div>
       <div class="term-body"><span class="acc">ccmcp</span> <span class="dim">v0.21.0</span>    <span class="dim">project:</span> ~/git/ccmcp    <span class="warn">UNSAVED</span>
 <span class="dim">──────────────────────────────────────────────────────────────────</span>
@@ -311,9 +311,9 @@ go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
     <p>The <em>effective</em> view is the default. It lists every MCP that will load in this project, with a badge showing its source and a checkbox showing whether it's currently enabled here. Three keystrokes to turn off every plugin-registered MCP for this project:</p>
 <pre><code>/plugin      &lt;enter&gt;      N      w</code></pre>
     <ul>
-      <li><kbd>/plugin</kbd> — filter rows whose name contains "plugin" (or a plugin name like <code>cloudflare</code>)</li>
-      <li><kbd>N</kbd> — bulk-disable everything visible (writes to <code>disabledMcpServers</code> for this project only)</li>
-      <li><kbd>w</kbd> — save</li>
+      <li><kbd>/plugin</kbd> - filter rows whose name contains "plugin" (or a plugin name like <code>cloudflare</code>)</li>
+      <li><kbd>N</kbd> - bulk-disable everything visible (writes to <code>disabledMcpServers</code> for this project only)</li>
+      <li><kbd>w</kbd> - save</li>
     </ul>
     <p>Undo the same way with <kbd>A</kbd>.</p>
   </div>
@@ -335,10 +335,10 @@ go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
     </table>
     <h3>Effective-view marks</h3>
     <ul>
-      <li><code>[x]</code> — will load in this project</li>
-      <li><code>[~]</code> — disabled here via a per-project override (easy to undo)</li>
-      <li><code>[ ]</code> — not active in this project by any source</li>
-      <li><code>[?]</code> — in <code>disabledMcpServers</code> but no live source found (stale); the row description explains why, and <code>ccmcp mcp prune</code> cleans it up</li>
+      <li><code>[x]</code> - will load in this project</li>
+      <li><code>[~]</code> - disabled here via a per-project override (easy to undo)</li>
+      <li><code>[ ]</code> - not active in this project by any source</li>
+      <li><code>[?]</code> - in <code>disabledMcpServers</code> but no live source found (stale); the row description explains why, and <code>ccmcp mcp prune</code> cleans it up</li>
     </ul>
   </div>
 </section>
@@ -349,7 +349,7 @@ go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
     <div class="grid">
       <div class="card">
         <h3>Bulk toggles</h3>
-        <p>Filter by substring, then <kbd>A</kbd>/<kbd>N</kbd> flips every visible row at once — per scope, in one keystroke.</p>
+        <p>Filter by substring, then <kbd>A</kbd>/<kbd>N</kbd> flips every visible row at once - per scope, in one keystroke.</p>
       </div>
       <div class="card">
         <h3>Scope-aware</h3>
@@ -357,7 +357,7 @@ go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
       </div>
       <div class="card">
         <h3>Stash</h3>
-        <p>Park servers you don't currently need in <code>~/.claude-mcp-stash.json</code>. <kbd>S</kbd> smart-toggles — stash a live row, unstash a parked one.</p>
+        <p>Park servers you don't currently need in <code>~/.claude-mcp-stash.json</code>. <kbd>S</kbd> smart-toggles - stash a live row, unstash a parked one.</p>
       </div>
       <div class="card">
         <h3>Profiles</h3>
@@ -365,7 +365,7 @@ go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
       </div>
       <div class="card">
         <h3>Prune stale overrides</h3>
-        <p><code>ccmcp mcp prune</code> classifies every entry in <code>disabledMcpServers</code> into 7 buckets and removes what's truly stale — orphan plugin keys, deleted MCPs — while preserving intentional per-project disables.</p>
+        <p><code>ccmcp mcp prune</code> classifies every entry in <code>disabledMcpServers</code> into 7 buckets and removes what's truly stale - orphan plugin keys, deleted MCPs - while preserving intentional per-project disables.</p>
       </div>
       <div class="card">
         <h3>Plugin installer</h3>
@@ -385,11 +385,11 @@ go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
       </div>
       <div class="card">
         <h3>Doctor</h3>
-        <p>Lint <code>CLAUDE.md</code> and <code>MEMORY.md</code> for structural issues — stale entries, missing sections, broken pointers. Press <code>f</code> in the TUI to preview an autofix as a unified diff or <code>F</code> to bulk-fix every issue sharing the cursor's code in one keystroke (programmatic edits stack directly; CLI codes bundle into a single Claude Haiku invocation). The bundled <code>l</code> review and post-review <code>a</code> apply use the same single-call pattern. Every fix snapshots the original to <code>~/.claude-mcp-backups/doctor/</code> and Claude-CLI fixes can be reverted with <code>u</code>.</p>
+        <p>Lint <code>CLAUDE.md</code> and <code>MEMORY.md</code> for structural issues - stale entries, missing sections, broken pointers. Press <code>f</code> in the TUI to preview an autofix as a unified diff or <code>F</code> to bulk-fix every issue sharing the cursor's code in one keystroke (programmatic edits stack directly; CLI codes bundle into a single Claude Haiku invocation). The bundled <code>l</code> review and post-review <code>a</code> apply use the same single-call pattern. Every fix snapshots the original to <code>~/.claude-mcp-backups/doctor/</code> and Claude-CLI fixes can be reverted with <code>u</code>.</p>
       </div>
       <div class="card">
         <h3>Reports</h3>
-        <p>Point-in-time snapshots, cross-project sweep tables, drift diffs against a baseline, and full stale-override audits — all in JSON, Markdown, or CSV.</p>
+        <p>Point-in-time snapshots, cross-project sweep tables, drift diffs against a baseline, and full stale-override audits - all in JSON, Markdown, or CSV.</p>
       </div>
     </div>
   </div>

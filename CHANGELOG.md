@@ -6,12 +6,12 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
-## [0.21.0] — 2026-06-20
+## [0.21.0] - 2026-06-20
 
 ### Added
 
 - **Surface MCPs enabled per-project via `enabledMcpServers`.** Claude Code records the
-  positive counterpart to `disabledMcpServers` — the per-project allowlist that turns ON
+  positive counterpart to `disabledMcpServers` - the per-project allowlist that turns ON
   an MCP that is off by default at a higher scope, most commonly a built-in like
   `computer-use` (Claude-in-Chrome). ccmcp previously ignored this key, so the effective
   MCPs view (which claims to mirror `/mcp`) silently omitted these servers. They now
@@ -24,14 +24,14 @@ All notable changes to this project are documented here. Format based on
 - **Plugin updates no longer strand Claude Code with "plugin cache does not exist".**
   `install.UpdateInstall` deleted the superseded cache directory immediately, but the
   matching `installed_plugins.json` write is deferred (TUI `w`/Apply) or post-loop (CLI).
-  Updating a plugin and then discarding/quitting — or a failed save — left the on-disk
+  Updating a plugin and then discarding/quitting - or a failed save - left the on-disk
   registry pointing at a directory that was already removed. The cache dir is now GC'd
   only **after** the registry persists successfully (queued via `pendingCacheGC` in the
   TUI, collected and swept post-`Save()` in the CLI), mirroring the already-safe ordering
   of `plugin remove --purge`. A discarded update keeps the old cache intact, so the
   registry reference stays valid.
 
-## [0.20.1] — 2026-06-19
+## [0.20.1] - 2026-06-19
 
 ### Fixed
 
@@ -48,7 +48,7 @@ All notable changes to this project are documented here. Format based on
   - Turn exhaustion is now classified and reported with an actionable message
     instead of the generic exit-status flash.
 
-## [0.20.0] — 2026-06-09
+## [0.20.0] - 2026-06-09
 
 ### Changed
 
@@ -69,7 +69,7 @@ All notable changes to this project are documented here. Format based on
   - Both bulk CLI paths now report the count of items skipped because they could
     not be probed.
 
-## [0.19.0] — 2026-06-05
+## [0.19.0] - 2026-06-05
 
 ### Changed
 - Discover tab now lists only marketplaces you haven't installed yet, so it stays focused on
@@ -77,14 +77,14 @@ All notable changes to this project are documented here. Format based on
   already-installed marketplaces (marked `[=]`); when every discovered marketplace is already
   installed, the empty state points to the Marketplaces tab.
 
-## [0.18.1] — 2026-06-05
+## [0.18.1] - 2026-06-05
 
 ### Fixed
 
 - **Effective MCP list now includes plugin servers declared in `plugin.json`.**
   ccmcp previously discovered a plugin's MCP servers by reading only
   `<installPath>/.mcp.json`, but Claude Code also loads servers from the
-  `mcpServers` field of `<installPath>/.claude-plugin/plugin.json` — so plugins
+  `mcpServers` field of `<installPath>/.claude-plugin/plugin.json` - so plugins
   that declare their servers there (e.g. `xclaude-plugin`, which ships 8 servers
   via `plugin.json` but only 2 via `.mcp.json`) showed up incomplete in the MCPs
   tab and every CLI surface. `config.ScanAllInstalledPluginMCPs` now merges both
@@ -92,7 +92,7 @@ All notable changes to this project are documented here. Format based on
   object, string-path, and array-of-paths shapes. The MCPs tab also re-scans on
   tab-enter so plugin enable/disable changes made elsewhere reflect immediately.
 
-## [0.18.0] — 2026-06-02
+## [0.18.0] - 2026-06-02
 
 ### Added
 
@@ -102,7 +102,7 @@ All notable changes to this project are documented here. Format based on
   binary's mtime so an upgrade is picked up immediately) and calibrates its
   version-sensitive behavior to it. The detected version shows as a `· CC <ver>`
   chip in the TUI header and as a one-line note on `ccmcp doctor`. All version
-  logic lives in one place — `internal/claudecode/CapabilitiesFor` — so absorbing
+  logic lives in one place - `internal/claudecode/CapabilitiesFor` - so absorbing
   a future Claude Code release is a localized edit. Detection is best-effort:
   when `claude` isn't on `PATH` or its output is unparseable, ccmcp falls back to
   conservative baseline rules.
@@ -110,9 +110,9 @@ All notable changes to this project are documented here. Format based on
   `SKILL003` limit (default 1536) now reads the user's `skillListingMaxDescChars`
   setting (Claude Code 2.1.152+) instead of hardcoding it, so raising or lowering
   the cap no longer produces false-positive/negative lint results.
-- **`CMD002` — shadowed-command lint.** `ccmcp doctor assets` now flags a
+- **`CMD002` - shadowed-command lint.** `ccmcp doctor assets` now flags a
   user/project command that a same-named skill silently shadows (Claude Code runs
-  the skill, so the command never executes) — the CI/lint surface for the
+  the skill, so the command never executes) - the CI/lint surface for the
   collision the TUI Commands tab already shows interactively.
 
 ### Changed
@@ -124,7 +124,7 @@ All notable changes to this project are documented here. Format based on
   `--fallback-model` is passed so Claude Code recovers automatically if the
   primary model ID is retired.
 
-## [0.17.1] — 2026-05-29
+## [0.17.1] - 2026-05-29
 
 ### Fixed
 
@@ -133,15 +133,15 @@ All notable changes to this project are documented here. Format based on
   plugins (those living in a subdirectory of a marketplace repo) copy their
   files from the *local* marketplace clone, and no update path ever pulled that
   clone. Meanwhile the staleness probe compares the recorded sha against the
-  *upstream* `git ls-remote` HEAD — so a plugin would show "needs update"
+  *upstream* `git ls-remote` HEAD - so a plugin would show "needs update"
   forever while an individual update reported "already up to date" (it re-copied
-  the same stale local files). All three update paths — `ccmcp plugin update`
+  the same stale local files). All three update paths - `ccmcp plugin update`
   (single and `--all`), the TUI single-plugin update (`u`), and the TUI bulk
-  update (`B`) — now `git pull --ff-only` each distinct backing marketplace once
+  update (`B`) - now `git pull --ff-only` each distinct backing marketplace once
   before re-installing. New `install.PullMarketplacesForPlugins` helper;
   best-effort (a pull failure falls back to the stale clone rather than aborting).
 
-## [0.17.0] — 2026-05-29
+## [0.17.0] - 2026-05-29
 
 ### Changed
 
@@ -162,28 +162,28 @@ All notable changes to this project are documented here. Format based on
   ("Prompt is too long"). This matters now that the CLI is the default backend.
 - **Failure messages are intelligible instead of a generic "claude CLI exit
   1".** A new classifier maps captured `claude --print` output (and the review
-  path's error string) to a clear, actionable line — usage limit (with the
-  regain date), context overflow, auth, model, or rate-limit — surfaced
+  path's error string) to a clear, actionable line - usage limit (with the
+  regain date), context overflow, auth, model, or rate-limit - surfaced
   consistently across both the fix and review paths in the Doctor and Summary
   tabs. Signatures are anchored (word-boundaried status codes, bounded
   `model … not found` proximity, specific auth phrases) so incidental numbers
   or quoted file content don't misclassify.
 
-## [0.16.0] — 2026-05-28
+## [0.16.0] - 2026-05-28
 
 ### Fixed
 
 - **Launch update-check now surfaces a release on the launch right after it
   ships, closing the ≤1h blind spot.** The previous two-tier model trusted the
   cache verbatim for a full hour (`SoftTTL`) with no network call, so a release
-  published within an hour of your last check stayed invisible — and even past
+  published within an hour of your last check stayed invisible - and even past
   that, the background-refresh tier only surfaced it on the *next* launch. The
   model is now single-tier: under a short `SoftTTL` (15m) the cache is trusted
   as-is; at or past it, the check refreshes synchronously (≤2s `FetchTimeout`)
   before deciding, so a newly-shipped release prompts on THIS launch. Routine
   back-to-back launches within 15m still avoid hitting the GitHub API.
 
-## [0.15.0] — 2026-05-28
+## [0.15.0] - 2026-05-28
 
 ### Added
 
@@ -195,11 +195,11 @@ All notable changes to this project are documented here. Format based on
   no false positives when a marketplace simply isn't synced); press `R` on the
   Plugins tab to additionally recheck membership live against the remote
   manifest. Removing a flagged plugin (`x` on the Plugins tab, or the Summary
-  fix) is a clean removal — it drops the plugin from `enabledPlugins` and
+  fix) is a clean removal - it drops the plugin from `enabledPlugins` and
   `installed_plugins.json` and deletes its on-disk cache, since the marketplace
   can no longer re-provide it. Both single and bulk (`F`) removal are supported.
 
-## [0.14.1] — 2026-05-24
+## [0.14.1] - 2026-05-24
 
 ### Fixed
 
@@ -212,7 +212,7 @@ All notable changes to this project are documented here. Format based on
   next launch reflects any new release; past `FreshTTL` it refreshes synchronously
   as before. Launch is never blocked and the GitHub API is hit at most ~once/hour.
 
-## [0.14.0] — 2026-05-24
+## [0.14.0] - 2026-05-24
 
 ### Added
 
@@ -221,21 +221,21 @@ All notable changes to this project are documented here. Format based on
   discover, skills, agents, commands, profiles, summary, doctor). Type to
   fuzzy-filter, `enter` jumps to the matching row in its native tab and
   positions the cursor, `esc` closes. Discover is indexed only if its remote
-  list was already fetched — the overlay never forces a network call. (#22)
+  list was already fetched - the overlay never forces a network call. (#22)
 
 ### Fixed
 
 - **TUI list views no longer overflow the terminal into native scrollback.**
   The Discover tab (plus the Profiles tab and the plugin bulk-update failures
   panel) sized their scroll window by row count, but each entry spans multiple
-  physical lines — so the body rendered taller than the viewport and excess rows
+  physical lines - so the body rendered taller than the viewport and excess rows
   spilled into the terminal's own scrollback instead of scrolling inside the app.
   These views now window by physical line count (shared `windowLines` helper),
   keeping the selected row visible and the header/footer fixed. A model-level
   safety clamp also trims any view body to the available height as a last resort.
 - **Summary/Doctor fix-preview panels no longer lose their confirm prompt on
   short terminals.** The panel is now capped to a height budget (its diff body
-  scrolls with `j`/`k`) so the list + panel always fit the viewport — previously
+  scrolls with `j`/`k`) so the list + panel always fit the viewport - previously
   a tall diff on a short terminal pushed the `Apply? / Cancel?` prompt past the
   bottom where the safety clamp trimmed it, leaving no visible way to act.
 - **Profiles tab gained `g`/`G`/`pgup`/`pgdn`** for jump-to-top/bottom and paging,
@@ -243,7 +243,7 @@ All notable changes to this project are documented here. Format based on
 - The Discover and failures-panel scroll indicators now report item position with
   up/down arrows (e.g. `▼ 12/47 marketplaces`) instead of a raw physical-line count.
 
-## [0.13.1] — 2026-05-23
+## [0.13.1] - 2026-05-23
 
 ### Added
 
@@ -259,18 +259,18 @@ All notable changes to this project are documented here. Format based on
   charging tokens.** Headless `claude --print` invocations inherited the user's
   full MCP-server configuration, loading every server's tool definitions into
   context. On a machine with many MCP servers (ccmcp's exact audience) this
-  overflowed the model's context window — the API returned "Prompt is too long",
+  overflowed the model's context window - the API returned "Prompt is too long",
   the CLI exited 1, no edit was made, and tokens were still spent. All fix and
   review invocations now pass `--strict-mcp-config --mcp-config '{"mcpServers":{}}'`
   to run with no MCP servers loaded (fixes only ever need Edit/Write/Read).
 
-## [0.13.0] — 2026-05-22
+## [0.13.0] - 2026-05-22
 
 ### Added
 
 - **Discover tab is now install-capable and far more useful.** Previously
-  read-only, the Discover tab can now **add a marketplace** (`a` — clones it and
-  writes settings) and **install a plugin** straight from the drill-down (`i` —
+  read-only, the Discover tab can now **add a marketplace** (`a` - clones it and
+  writes settings) and **install a plugin** straight from the drill-down (`i` -
   adds the plugin's marketplace first if needed, then enables it; press `i`
   twice to reinstall an already-installed plugin). Added a `/` filter (matches
   name, description, tags), `c` to clear, and star-based sorting. Marketplace
@@ -309,7 +309,7 @@ All notable changes to this project are documented here. Format based on
   index against the filtered slice before indexing it, instead of relying on
   `render()` to clamp.
 
-## [0.12.1] — 2026-05-16
+## [0.12.1] - 2026-05-16
 
 ### Added
 
@@ -320,7 +320,7 @@ All notable changes to this project are documented here. Format based on
   package var set from the cmd layer using the existing
   `currentVersion()` helper.
 
-## [0.12.0] — 2026-05-15
+## [0.12.0] - 2026-05-15
 
 ### Added (v0.12 cycle, part 2)
 
@@ -347,13 +347,13 @@ All notable changes to this project are documented here. Format based on
 ### Fixed
 
 - **Status-line text no longer bleeds across tabs.** `m.message` is now
-  cleared on every tab-switch (numeric keys 1–0 plus tab/shift+tab). Without
+  cleared on every tab-switch (numeric keys 1-0 plus tab/shift+tab). Without
   this, a flash like "fixed: …" from one tab persisted onto the status line
   of every subsequent tab.
 
 ### Added
 
-- **Doctor tab: bulk-fix by category (`F`).** Mirrors Summary's pattern —
+- **Doctor tab: bulk-fix by category (`F`).** Mirrors Summary's pattern -
   pressing `F` on any lint issue collects every issue sharing the cursor's
   lint code and applies them in one keystroke. Programmatic codes (MEM001,
   MEM002, MEM004 missing-frontmatter, MEM005, MD004 standalone) stack each
@@ -367,7 +367,7 @@ All notable changes to this project are documented here. Format based on
   produces a single sectioned response. `a` applies that single review back
   to disk in one Claude call. Previously the model was invoked per-file.
 - **Commands tab: bulk conflict resolution (`R`).** Resolves every visible
-  slash-command conflict in one banner — `s` disables every conflicting
+  slash-command conflict in one banner - `s` disables every conflicting
   skill via `skillOverrides` (one save + one backup); `i` adds every visible
   effective name to the ignore list (one save).
 
@@ -390,7 +390,7 @@ All notable changes to this project are documented here. Format based on
   minimal `name`/`description`/`metadata.type` block derived from the
   filename; `MD004 broken link` removes the line when it's a self-contained
   list entry. Each falls back to the CLI only when the heuristic can't
-  decide — no more LLM token spend for edits that are deterministic.
+  decide - no more LLM token spend for edits that are deterministic.
 
 ### Review-pass fixes (post-PR)
 
@@ -416,7 +416,7 @@ All notable changes to this project are documented here. Format based on
   refuses to run on files that already have frontmatter so a stale MEM004
   issue can't produce double-frontmatter.
 
-## [0.11.1] — 2026-05-15
+## [0.11.1] - 2026-05-15
 
 ### Fixed
 
@@ -425,14 +425,14 @@ All notable changes to this project are documented here. Format based on
   hand off to the claude CLI with a prompt asking it to register the plugin
   in `enabledPlugins`. The LLM hop frequently produced no settings.json
   change. Replaced with an in-memory edit that calls
-  `SetPluginEnabled(id, true)` directly — the plugin id already carries the
+  `SetPluginEnabled(id, true)` directly - the plugin id already carries the
   full `name@marketplace` suffix from `installed_plugins.json`, so no LLM is
   needed. Mirrors the sibling `catPluginEnabledNotInstalled` pattern. The
   bulk `F` handler's `claudeOnPath` gate was also tightened to only block
   `fixClaudeCLI` proposals, so the new in-memory bulk path works without
   the claude binary on PATH.
 
-## [0.11.0] — 2026-05-14
+## [0.11.0] - 2026-05-14
 
 ### Review-pass fixes
 
@@ -440,7 +440,7 @@ All notable changes to this project are documented here. Format based on
   once per session** instead of running on every keystroke. Cache lives on
   `summaryView`; `invalidateAssets()` fires only after fixes whose category
   could have affected the result (skill/agent/command frontmatter rewrites,
-  slug renames, `enabledPlugins`/`skillOverrides` flips) — orphan-override
+  slug renames, `enabledPlugins`/`skillOverrides` flips) - orphan-override
   prunes, stash drops, and `~/.claude.json` mcpServer edits keep the cache
   warm. Per CLAUDE.md "TUI lazy-load point: trigger expensive lazy work in
   render(), not update()".
@@ -475,9 +475,9 @@ All notable changes to this project are documented here. Format based on
 
 - **Doctor: `ccmcp doctor assets` lints skills/agents/commands against
   Claude Code 2.1.141 frontmatter constraints.** New `internal/doctor/asset_lint.go`
-  validates skill `name` (`^[a-z0-9-]+$`, ≤64 chars — hard requirement),
+  validates skill `name` (`^[a-z0-9-]+$`, ≤64 chars - hard requirement),
   skill `description`+`when_to_use` combined length (warn at 1200, error at
-  1536 — content past the cap is silently dropped from skill listings),
+  1536 - content past the cap is silently dropped from skill listings),
   agent `description` length, command `description` palette-readability cap,
   and plugin manifest description. New issue codes: SKILL001/002/003,
   AGENT001, CMD001, PLUGIN001. CI-friendly exit code: 1 on any error-severity
@@ -505,12 +505,12 @@ All notable changes to this project are documented here. Format based on
   their place. Git operations in the installer also now capture stderr
   into wrapped errors instead of dumping it to the terminal.
 
-## [0.10.0] — 2026-05-14
+## [0.10.0] - 2026-05-14
 
 ### Added
 
 - **Summary tab: select-and-fix issues with LLM (parity with Doctor).** The
-  Summary tab is no longer scroll-only — each actionable finding (orphan
+  Summary tab is no longer scroll-only - each actionable finding (orphan
   override, stash redundancy, duplicate-load, slash-command conflict, plugin
   registration drift) is cursor-selectable and fixable in place. `f` opens a
   confirm panel; `l` runs a non-applying LLM review of the selected issue;
@@ -526,10 +526,10 @@ All notable changes to this project are documented here. Format based on
   users to raw terminal output until `claude --print` finished) with a
   goroutine-based `tea.Cmd`. The view now renders a spinner + elapsed-time
   panel during the fix (e.g. `Applying LLM fix to MEMORY.md… (12s)`), and
-  surfaces captured stderr inline if the CLI exits non-zero — no more "see
+  surfaces captured stderr inline if the CLI exits non-zero - no more "see
   output above" hint that lost context after the screen redrew.
 
-## [0.9.1] — 2026-05-13
+## [0.9.1] - 2026-05-13
 
 ### Fixed
 
@@ -559,7 +559,7 @@ All notable changes to this project are documented here. Format based on
   the help-text strip, advertise the full key set (`n`/`esc` cancel
   the apply gate; `u`/`n`/`esc` all revert from the post-review gate).
 
-## [0.9.0] — 2026-05-12
+## [0.9.0] - 2026-05-12
 
 ### Changed
 
@@ -584,7 +584,7 @@ All notable changes to this project are documented here. Format based on
 - **Doctor snapshot GC.** On every lint run, snapshots are pruned in the
   background under two rules: per source file, keep the 20 newest;
   delete anything older than 30 days regardless of count. Errors are
-  silent — they only affect cleanup, never the fix itself.
+  silent - they only affect cleanup, never the fix itself.
 
 ### Fixed
 
@@ -600,7 +600,7 @@ All notable changes to this project are documented here. Format based on
   `repo may not be a Claude Code marketplace` rather than echoing the
   last URL it tried.
 
-## [0.8.0] — 2026-05-11
+## [0.8.0] - 2026-05-11
 
 ### Added
 
@@ -619,7 +619,7 @@ All notable changes to this project are documented here. Format based on
   the check entirely so scripted flows stay quiet; the prompt is also
   suppressed when stdin/stdout aren't TTYs.
 
-## [0.7.0] — 2026-05-11
+## [0.7.0] - 2026-05-11
 
 ### Changed
 
@@ -636,7 +636,7 @@ All notable changes to this project are documented here. Format based on
   and stream `(N/M)` progress to the in-progress line plus a
   `updating <id>… (N/M)` flash for each item. The `↑ update available`
   annotation for each plugin/marketplace clears the moment its own item
-  lands rather than waiting for the entire batch to finish — so a 20-item
+  lands rather than waiting for the entire batch to finish - so a 20-item
   sweep doesn't look frozen. Final bulk-summary flash
   (`N updated, M already up to date, K failed`) is unchanged.
 
@@ -668,42 +668,42 @@ All notable changes to this project are documented here. Format based on
   `TestTUIPluginUpdateInProgressVisible`, `TestTUISpinnerLoopsContinuously`,
   `TestTUIPluginBulkPerItemProgress`,
   `TestTUIPluginBulkResultHandlerStillAppliesForDirectSender`,
-  `TestTUIPluginBulkNilResultIsTreatedAsFailure` — assert the
+  `TestTUIPluginBulkNilResultIsTreatedAsFailure` - assert the
   `↑ update available` annotation clears on success, preserves on error,
   that the spinner tick loop self-perpetuates, per-item bulk progress
   increments the (N/M) counter and clears each plugin's indicator live,
   that the `streamed` flag correctly gates the redundant apply loop, and
   that nil-result payloads classify as failure. Total: 234.
 
-## [0.6.0] — 2026-05-08
+## [0.6.0] - 2026-05-08
 
 ### Added
 
-- **Doctor: `claude-cli` LLM-review provider** — `doctor md --llm-review`
+- **Doctor: `claude-cli` LLM-review provider** - `doctor md --llm-review`
   and the TUI `l` key now auto-fall-back to running the local `claude` CLI
   (via `--print` over stdin) when no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`
   is set, so offline review works out of the box. Explicit selection via
   `--provider claude-cli`. The default `--provider` value is now empty
   (auto); existing `anthropic` / `openai` selections behave identically.
-- **Doctor: typed `APIError` with parsed messages** — non-2xx responses
+- **Doctor: typed `APIError` with parsed messages** - non-2xx responses
   from Anthropic/OpenAI now return a `*doctor.APIError` carrying the
   parsed `error.message` plus the raw body. CLI prints a single-line
   message instead of the noisy raw JSON; the TUI surfaces a 401-specific
   hint pointing at `/login` or `--provider claude-cli`.
-- **Doctor TUI: `claude` CLI presence banner** — when `claude` is not on
+- **Doctor TUI: `claude` CLI presence banner** - when `claude` is not on
   PATH, a warning banner is rendered at the top of the Doctor tab and the
   `l` / `f` keys surface a friendly hint instead of a cryptic failure.
-- **Doctor TUI: enriched fix-failure messages** — bare `"exit status N"`
+- **Doctor TUI: enriched fix-failure messages** - bare `"exit status N"`
   errors from `tea.ExecProcess` (which loses subprocess stderr) are
-  rewritten to `"claude CLI exit N — see output above"`. Long error
+  rewritten to `"claude CLI exit N - see output above"`. Long error
   strings from LLM review wrap cleanly to fit the viewport.
-- **Discover tab + `ccmcp discover` CLI** — browse Claude Code marketplaces
+- **Discover tab + `ccmcp discover` CLI** - browse Claude Code marketplaces
   surfaced from a merged set of authoritative sources without ever touching
   the user's installed state. Sources: an embedded ccmcp-curated registry,
   an Anthropic-published registry probe (no-op until the canonical URL
   exists), `awesome-claude-code`-style README scrapers, and any user-
   supplied registry URLs configured under
-  `settings.json#discoverySources`. Two-stage drill-down — list view shows
+  `settings.json#discoverySources`. Two-stage drill-down - list view shows
   every discovered marketplace, Enter fetches the marketplace's manifest
   (no clone) to list its plugins, second Enter shallow-clones the plugin
   to a sha-keyed preview cache (`~/.claude/plugins/cache/_discovery/`) and
@@ -714,7 +714,7 @@ All notable changes to this project are documented here. Format based on
   `ccmcp discover list [--json] [--refresh]`,
   `ccmcp discover show <marketplace>`, and
   `ccmcp discover plugin <marketplace> <plugin>`.
-- **`CCMCP_DISCOVERY_OFFLINE`** — when set, restricts default discovery
+- **`CCMCP_DISCOVERY_OFFLINE`** - when set, restricts default discovery
   sources to the embedded curated registry only. Useful for hermetic test
   runs and air-gapped environments.
 
@@ -739,7 +739,7 @@ All notable changes to this project are documented here. Format based on
   <sha> not found"); SHA refs are resolved via post-clone
   `fetch + checkout`.
 - Discovery cache directory segments (`<owner>`, `<repo>`) derived from
-  untrusted registry input are now sanitized — `..` runs / `/` /
+  untrusted registry input are now sanitized - `..` runs / `/` /
   separator chars collapse to `_`, blocking a malicious
   `repo: "../evil"` entry from writing outside the preview cache.
 - Discovery `Discover()` no longer overwrites a previously-good cache
@@ -754,49 +754,49 @@ All notable changes to this project are documented here. Format based on
   fetch, eliminating a data race against concurrent settings mutations
   on other tabs.
 
-## [0.5.1] — 2026-05-03
+## [0.5.1] - 2026-05-03
 
 ### Added
 
-- **Doctor tab: actionable fix for every lint issue** — press `f` on any
+- **Doctor tab: actionable fix for every lint issue** - press `f` on any
   selected issue to apply a fix. Trivial issues (MEM002 broken index link,
   MEM005 missing frontmatter field) are resolved in-TUI with a y/n confirm.
   Judgment-required issues (MD003 line too long, MD004 broken link, MD005
   file too long, MEM001/MEM003/MEM004/MEM006, etc.) build a contextual
   prompt and hand off to `claude` CLI via `tea.ExecProcess`; the TUI
   resumes and re-runs lint automatically when the CLI session exits.
-- **Doctor tab: cursor navigation** — `j/k` moves a `▶` cursor through
+- **Doctor tab: cursor navigation** - `j/k` moves a `▶` cursor through
   issues; `g/G` jump to first/last; `pgup/pgdn` page through. Scroll
   auto-follows the cursor in lint mode; `j/k` scroll the LLM review text
   directly (unchanged behaviour).
-- **Marketplace update parity with Plugins tab** — `u` now shows
+- **Marketplace update parity with Plugins tab** - `u` now shows
   `"already up to date"` vs `"updated abc123 → def456"` SHA feedback.
   Bulk update (`B`) reports updated / already-up-to-date / failed counts
   separately. `R` (force refresh) now invalidates all marketplace cache
   entries before re-probing, matching the behaviour of `R` on the Plugins
   tab.
 
-## [0.5.0] — 2026-05-02
+## [0.5.0] - 2026-05-02
 
 ### Added
 
-- **Marketplaces TUI tab** (key `3`) — full CRUD parity with Claude
+- **Marketplaces TUI tab** (key `3`) - full CRUD parity with Claude
   Code's `/plugins` interface: add (`a`) with multi-step prompt, update
   (`u`), bulk update (`B`), remove (`x`, two-step confirm with clone-dir
   purge), filter (`/`), and refresh update probes (`R`). Lists installed
   marketplaces with plugin counts and installed-vs-available badges.
-- **"Newer version available" indicators** — `↑` markers next to
+- **"Newer version available" indicators** - `↑` markers next to
   outdated rows on the Plugins, Marketplaces, and MCPs tabs; aggregate
   count surfaced at the top of the Summary tab.
-- **`internal/updates` package** — git `ls-remote` probes for
+- **`internal/updates` package** - git `ls-remote` probes for
   marketplaces and plugin sources; best-effort `npm view` / PyPI JSON
   probes for npx- and uvx-launched stdio MCPs. Injectable `Runner` so
   tests never hit the network. In-process session cache, invalidated
   after successful updates.
-- **`ccmcp plugin outdated`** and **`ccmcp marketplace outdated`** —
+- **`ccmcp plugin outdated`** and **`ccmcp marketplace outdated`** -
   CLI parity with the TUI indicators; reports rows whose upstream
   has advanced.
-- **`marketplace add` clones automatically** — was settings-only;
+- **`marketplace add` clones automatically** - was settings-only;
   `--no-clone` opt-out preserved. `marketplace remove --purge` deletes
   the on-disk clone directory.
 
@@ -817,71 +817,71 @@ All notable changes to this project are documented here. Format based on
 
 ### Changed
 
-- Numeric tab shortcuts shifted to **1–9** to accommodate the new
-  Marketplaces tab (was 1–8).
+- Numeric tab shortcuts shifted to **1-9** to accommodate the new
+  Marketplaces tab (was 1-8).
 - `.gitignore` now excludes `.DS_Store`, `.claude-dev-helper/`, and
   `.plugin-config/`.
 
-## [0.4.0] — 2026-04-30
+## [0.4.0] - 2026-04-30
 
 ### Added
 
-- **Plugin install/update/uninstall** — `ccmcp plugin install <id>` and
+- **Plugin install/update/uninstall** - `ccmcp plugin install <id>` and
   `ccmcp plugin update [id|--all]` fetch or refresh source from the
   marketplace; `ccmcp plugin update --all` bulk-updates every installed
   plugin. SHA comparison skips no-op updates with "already up to date".
-- **Marketplace refresh** — `ccmcp marketplace update [name]` runs
+- **Marketplace refresh** - `ccmcp marketplace update [name]` runs
   `git pull --ff-only` on each locally-cloned marketplace catalog;
   no args updates all.
-- **`InstalledPlugin` metadata** — `gitCommitSha` and `installedAt`
+- **`InstalledPlugin` metadata** - `gitCommitSha` and `installedAt`
   fields are now stored and parsed, enabling update-skip detection and
   preserving original install timestamps across updates.
-- **Old-version GC** — `plugin update` automatically removes the
+- **Old-version GC** - `plugin update` automatically removes the
   previous versioned cache directory after a successful update.
-- **claude.ai integration rows in the Plugins tab** — remote integrations
+- **claude.ai integration rows in the Plugins tab** - remote integrations
   (e.g. Stripe, Supabase) appear in the Plugins tab with `[~]` / `[-]`
   markers; `space` toggles their per-project disable state.
-- **TUI `U` key** — async in-place plugin update from the Plugins tab;
+- **TUI `U` key** - async in-place plugin update from the Plugins tab;
   flashes old→new SHA on success.
-- **TUI `x` key** — two-step confirmation to remove an installed plugin
+- **TUI `x` key** - two-step confirmation to remove an installed plugin
   from the Plugins tab (press `x` again to confirm, any other key cancels).
-- **TUI `I` key** — browse-and-install sub-view that loads available
+- **TUI `I` key** - browse-and-install sub-view that loads available
   plugins from all locally-cloned marketplace catalogs, filtered to
   uninstalled entries; press `I` on a row to install.
 
-## [0.3.1] — 2026-04-29
+## [0.3.1] - 2026-04-29
 
 ### Changed
 
 - **MCPs tab default view is now load-accurate.** The effective scope
   (the default when opening `ccmcp tui`) hides rows that can never load
-  in the current project — stash entries, MCPs from
+  in the current project - stash entries, MCPs from
   installed-but-globally-disabled plugins, and orphan
   `disabledMcpServers` keys whose source is gone. The title bar breaks
   out the count as `(N active · M disabled here · K hidden)` so noise
   is visible without cluttering the list. Press `H` to reveal the
   hidden rows.
-- **Conflict indicator** — when the same MCP name is registered by
+- **Conflict indicator** - when the same MCP name is registered by
   multiple effective sources (e.g. user scope + an enabled plugin),
   rows are flagged with `⚠ 2x (also loads from another source)` so
   duplicate-load situations don't masquerade as redundant duplicates.
 
-## [0.3.0] — 2026-04-24
+## [0.3.0] - 2026-04-24
 
 ### Added
 
-- **Skills, Agents & Commands TUI tabs** — list, enable/disable, create,
+- **Skills, Agents & Commands TUI tabs** - list, enable/disable, create,
   move, and remove skills, agents, and slash commands across user, project,
   and plugin scopes directly from the TUI.
-- **Doctor tab** — lint `CLAUDE.md` and `MEMORY.md` for structural issues;
+- **Doctor tab** - lint `CLAUDE.md` and `MEMORY.md` for structural issues;
   add `--llm-review` for an LLM quality pass.
-- **Reports** — `ccmcp report snapshot|sweep|drift|audit` for point-in-time
+- **Reports** - `ccmcp report snapshot|sweep|drift|audit` for point-in-time
   dumps, cross-project sweep tables, drift diffs, and stale-override audits
   (JSON, Markdown, or CSV output).
-- **Profile export/import** — `ccmcp profile export <name> [--with-config]`
+- **Profile export/import** - `ccmcp profile export <name> [--with-config]`
   and `ccmcp profile import [FILE|-] [--overwrite]` for sharing profiles
   across machines or teams.
-- **Command conflict detection** — `ccmcp command conflicts` and
+- **Command conflict detection** - `ccmcp command conflicts` and
   `ccmcp command resolve` surface and resolve shadowed slash commands.
 
 ### Fixed
@@ -896,7 +896,7 @@ All notable changes to this project are documented here. Format based on
   tabs (was using `v.rows[:0]` + append which aliased the unfiltered slice).
 - Flash message drain wired for Agents and Commands tabs in `updateActive()`.
 
-## [0.2.5] — 2026-04-21
+## [0.2.5] - 2026-04-21
 
 ### Changed
 
@@ -916,18 +916,18 @@ All notable changes to this project are documented here. Format based on
   brew install robworks-code/tap/ccmcp
   ```
 
-## [0.2.4] — 2026-04-20
+## [0.2.4] - 2026-04-20
 
 ### Added
 
 - **`S` key in the MCPs tab: stash/unstash the current row.** Smart
-  toggle based on source — stashes a user/local-scope row, unstashes a
+  toggle based on source - stashes a user/local-scope row, unstashes a
   stash row. Plugin / claude.ai / `.mcp.json` / orphan rows show a
   specific hint explaining why those can't be stashed. Saves the prior
   two-keystroke `m` + picker flow and makes the operation discoverable
   via the footer hint and `?` legend.
 
-## [0.2.3] — 2026-04-20
+## [0.2.3] - 2026-04-20
 
 ### Added
 
@@ -936,7 +936,7 @@ All notable changes to this project are documented here. Format based on
   thing (move entries from `~/.claude-mcp-stash.json` back into
   `~/.claude.json#/mcpServers`). Prior versions only exposed `restore`.
 
-## [0.2.2] — 2026-04-20
+## [0.2.2] - 2026-04-20
 
 ### Added
 
@@ -945,7 +945,7 @@ All notable changes to this project are documented here. Format based on
   classified into one of: plugin active, plugin disabled-but-installed,
   claude.ai, stdio live, stash ghost, orphan plugin (plugin not installed),
   or orphan stdio (no source anywhere). Rows show a specific reason text
-  like *"plugin 'Notion' is not installed — stale override (safe to prune)"*
+  like *"plugin 'Notion' is not installed - stale override (safe to prune)"*
   instead of a vague question mark.
 - **Disabled-but-installed plugins** (e.g. `plugin:postman:postman` when
   the `postman` plugin is globally disabled) now render as regular plugin
@@ -956,10 +956,10 @@ All notable changes to this project are documented here. Format based on
   parked in the stash (e.g. `"dropbox"` in `disabledMcpServers` while
   `dropbox` now lives in the stash) now attach to the stash row as an
   informational marker instead of falling through to unknown.
-- **`ccmcp mcp prune`** — new subcommand that removes orphaned entries
+- **`ccmcp mcp prune`** - new subcommand that removes orphaned entries
   from the current project's `disabledMcpServers`. Preserves
   disabled-but-installed plugin overrides (re-enabling the plugin would
-  re-activate them — user intent respected). `--dry-run` lists what
+  re-activate them - user intent respected). `--dry-run` lists what
   would be removed; `--yes` skips the confirmation prompt;
   `--include-stash-ghosts` also sweeps stash ghosts.
 - **Summary tab** gains a classified breakdown of per-project overrides
@@ -978,11 +978,11 @@ All notable changes to this project are documented here. Format based on
 
 ### Internal
 
-- New package `internal/config`: `InstalledPlugins.ByName(name)` — match
+- New package `internal/config`: `InstalledPlugins.ByName(name)` - match
   installed plugins by bare plugin name (without `@marketplace`), needed
   to attribute `plugin:X:Y` override keys back to a concrete plugin.
 
-## [0.2.1] — 2026-04-20
+## [0.2.1] - 2026-04-20
 
 ### Added
 
@@ -997,14 +997,14 @@ All notable changes to this project are documented here. Format based on
   Install path updated on the release page and in the README to lead
   with Homebrew, then `go install`, then prebuilt binaries.
 
-## [0.2.0] — 2026-04-20
+## [0.2.0] - 2026-04-20
 
 ### Added
 
 - **`?` help overlay** in the TUI: a full-screen legend describing every
   source badge (`[u]` / `[l]` / `[p]` / `[P]` / `[@]` / `[s]` / `[?]`),
   every row mark (`[x]` / `[~]` / `[ ]` / `[!]`), and every key binding
-  grouped by tab — including the `m`-move sub-prompt (`u`/`l`/`s`/esc)
+  grouped by tab - including the `m`-move sub-prompt (`u`/`l`/`s`/esc)
   that was previously only visible when triggered. Close with `?` or
   `esc`. Discoverable via the new footer hint (`?: help`).
 - `ccmcp tui --dump --tab help` dumps the legend as plain text for
@@ -1022,7 +1022,7 @@ All notable changes to this project are documented here. Format based on
   20 deprecation on GitHub runners. Goreleaser v2 config unchanged.
 - Footer hint updated to include `?: help` so the overlay is discoverable.
 
-## [0.1.0] — 2026-04-20
+## [0.1.0] - 2026-04-20
 
 Initial public release.
 
