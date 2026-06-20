@@ -20,7 +20,7 @@ type PreviewResult struct {
 	// Dir is the local path containing the plugin's contents (the root the
 	// scanners walk).
 	Dir string
-	// Repo is the cloned upstream URL — useful for messages.
+	// Repo is the cloned upstream URL - useful for messages.
 	Repo string
 	// Sha is the resolved git commit sha of the clone, or empty when the
 	// source isn't git-backed.
@@ -154,7 +154,7 @@ func resolvePluginUpstream(mp RemoteMarketplace, plugin RemotePlugin) (cloneURL,
 		subdir, _ = obj["path"].(string)
 	default:
 		// Fall back to the marketplace's own repo when the source kind is
-		// unfamiliar — the inventory scan will simply find nothing useful.
+		// unfamiliar - the inventory scan will simply find nothing useful.
 		if cloneURL == "" {
 			return "", "", "", fmt.Errorf("plugin %q has unsupported source kind %q", plugin.Name, kind)
 		}
@@ -215,7 +215,7 @@ var traversalRe = regexp.MustCompile(`\.{2,}`)
 // any error so the caller can fall back to a sha-less cache key.
 //
 // When ref is already a 40-char sha, ls-remote isn't useful (servers don't
-// resolve sha → sha) — return it unchanged.
+// resolve sha → sha) - return it unchanged.
 func remoteSha(ctx context.Context, repoURL, ref string) string {
 	if shaRe.MatchString(strings.ToLower(ref)) {
 		return strings.ToLower(ref)
@@ -278,7 +278,7 @@ func shallowClone(ctx context.Context, url, dst, ref, resolvedSha string) error 
 
 	if checkoutSha != "" && checkoutSha != readHeadSha(dst) {
 		// Sha-pinned plugin or branch tip already moved between ls-remote and
-		// clone — fetch and check out the exact commit. Fail loudly: a stale
+		// clone - fetch and check out the exact commit. Fail loudly: a stale
 		// working tree would silently produce wrong conflict reports.
 		fetch := exec.CommandContext(ctx, "git", "-C", dst, "fetch", "--depth", "1", "origin", checkoutSha)
 		var fetchErr bytes.Buffer
@@ -297,7 +297,7 @@ func shallowClone(ctx context.Context, url, dst, ref, resolvedSha string) error 
 }
 
 // readHeadSha returns the resolved HEAD sha of a clone, or "" on any error
-// (the caller doesn't need surgical precision — a missing sha just means we
+// (the caller doesn't need surgical precision - a missing sha just means we
 // can't display a "pinned at <sha>" hint in the UI).
 func readHeadSha(repo string) string {
 	cmd := exec.Command("git", "-C", repo, "rev-parse", "HEAD")

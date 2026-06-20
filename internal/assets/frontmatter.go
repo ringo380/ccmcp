@@ -9,7 +9,7 @@ import (
 )
 
 // Frontmatter holds the subset of YAML frontmatter fields ccmcp needs.
-// We parse by hand to avoid pulling in a YAML dep for such a narrow surface —
+// We parse by hand to avoid pulling in a YAML dep for such a narrow surface -
 // only top-level scalar keys are read; nested structures (triggers:, etc.)
 // are ignored.
 type Frontmatter struct {

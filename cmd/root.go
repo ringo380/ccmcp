@@ -28,10 +28,10 @@ Primary use case: reduce context consumption when starting a new project by enab
 only the MCPs and plugins you actually need, without editing JSON files by hand.
 
 Scopes:
-  user     — ~/.claude.json#/mcpServers and ~/.claude/settings.json (all projects)
-  project  — ~/.claude.json#/projects[<cwd>] (per-directory)
-  mcpjson  — ./.mcp.json allow/deny lists (committed to the repo)
-  stash    — ccmcp-owned holding area for disabled user MCPs
+  user     - ~/.claude.json#/mcpServers and ~/.claude/settings.json (all projects)
+  project  - ~/.claude.json#/projects[<cwd>] (per-directory)
+  mcpjson  - ./.mcp.json allow/deny lists (committed to the repo)
+  stash    - ccmcp-owned holding area for disabled user MCPs
 
 Run with no subcommand to launch the interactive TUI.`,
 	SilenceUsage:  true,

@@ -1,7 +1,7 @@
 // Package claudecode detects the actively-installed Claude Code CLI version and
 // derives a Capabilities bundle that calibrates ccmcp's version-sensitive
-// behavior — asset-lint limits, the headless fix/review model, and
-// fallback-model support — to that exact version.
+// behavior - asset-lint limits, the headless fix/review model, and
+// fallback-model support - to that exact version.
 //
 // To support a NEW Claude Code version, edit ONLY CapabilitiesFor (in
 // capabilities.go). Every consumer reads a resolved Capabilities (or a
@@ -30,8 +30,8 @@ import (
 
 // SoftTTL is the fallback freshness window for a cached probe when the binary's
 // identity (path + mtime) can't be confirmed unchanged. The mtime check is the
-// primary, precise invalidation signal — a Claude Code upgrade swaps the
-// versioned install and changes the resolved binary's mtime — so this TTL only
+// primary, precise invalidation signal - a Claude Code upgrade swaps the
+// versioned install and changes the resolved binary's mtime - so this TTL only
 // matters on filesystems that don't report mtime.
 const SoftTTL = 15 * time.Minute
 
@@ -158,7 +158,7 @@ func saveInfo(path string, i Info) {
 // Detect returns the installed Claude Code version. It reuses a cached probe
 // when the resolved binary's path and mtime are unchanged (a CC upgrade changes
 // one or both), otherwise spawns `claude --version` and rewrites the cache. All
-// failures degrade to an unknown Version — Detect never errors.
+// failures degrade to an unknown Version - Detect never errors.
 func Detect(p paths.Paths) Version {
 	cachePath := CachePath(p)
 	cached, haveCache := loadInfo(cachePath)
@@ -166,7 +166,7 @@ func Detect(p paths.Paths) Version {
 	binPath, modTime, err := lookupClaude()
 	if err != nil {
 		// `claude` not resolvable. Persist an unknown probe so we don't rewrite
-		// the cache on every call — but only when the existing marker is stale,
+		// the cache on every call - but only when the existing marker is stale,
 		// otherwise this path would re-write on every Detect (no actual throttle).
 		if !(haveCache && cached.BinPath == "" && !cached.CheckedAt.IsZero() && time.Since(cached.CheckedAt) < SoftTTL) {
 			saveInfo(cachePath, Info{CheckedAt: time.Now().UTC()})
@@ -180,7 +180,7 @@ func Detect(p paths.Paths) Version {
 			// Binary unchanged since last probe. A KNOWN version is trusted until
 			// the mtime changes (a CC upgrade swaps the versioned install). An
 			// unknown cached.Version means the last probe FAILED transiently
-			// (spawn error / unparseable output) — never pin that until mtime
+			// (spawn error / unparseable output) - never pin that until mtime
 			// changes; re-probe once the TTL backstop lapses so a recovered
 			// `claude --version` is picked up.
 			if cached.Version != "" || (!cached.CheckedAt.IsZero() && time.Since(cached.CheckedAt) < SoftTTL) {

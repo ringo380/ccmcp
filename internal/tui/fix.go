@@ -19,7 +19,7 @@ import (
 // cliStreamLineMsg carries one line of stdout/stderr from a live `claude
 // --print` invocation. Views append to a ring buffer so the user can toggle a
 // log panel showing the most recent activity. `next` is the Cmd that returns
-// the *next* line (or the final fixDoneMsg when the process exits) — the
+// the *next* line (or the final fixDoneMsg when the process exits) - the
 // model handler must include it in tea.Batch so the drain doesn't stall.
 type cliStreamLineMsg struct {
 	line     string
@@ -35,8 +35,8 @@ type cliStreamLineMsg struct {
 const streamRingMax = 50
 
 // Turn-cap tuning for headless fixes. A single fix needs a few model⇄tool
-// round-trips — Read the target, reason, one or more Edits, then a confirming
-// turn — so the historical flat 4 left no headroom: read + a multi-edit change
+// round-trips - Read the target, reason, one or more Edits, then a confirming
+// turn - so the historical flat 4 left no headroom: read + a multi-edit change
 // exhausted the budget and exited "Reached max turns" as an opaque failure.
 //
 //   - fixTurnsBase    headroom shared across the run (envelope reasoning, the
@@ -77,7 +77,7 @@ func fixTurnsForItems(items int) int {
 //
 // --strict-mcp-config + an empty --mcp-config disable the user's configured MCP
 // servers for the duration of the fix. Without this, every headless invocation
-// loads the full set of MCP tool definitions into context — and ccmcp's exact
+// loads the full set of MCP tool definitions into context - and ccmcp's exact
 // audience is people with many MCP servers configured, so the request overflows
 // the model's context window ("Prompt is too long" → exit 1, tokens charged, no
 // edit made). Fixes only ever need Edit/Write/Read, never an MCP server.
@@ -98,8 +98,8 @@ func claudeFixModelArgs(items int) []string {
 }
 
 // Compiled failure signatures for classifyClaudeFailure. They are anchored
-// deliberately — word boundaries on the bare HTTP status codes (\b401\b /
-// \b429\b) and bounded same-line proximity for "model … not found" — so they
+// deliberately - word boundaries on the bare HTTP status codes (\b401\b /
+// \b429\b) and bounded same-line proximity for "model … not found" - so they
 // match the structured API-error text claude emits rather than incidental
 // numbers, dates, or quoted file content that can appear anywhere in the
 // captured buffer. Ordered most-specific-first; the switch below tries them
@@ -120,7 +120,7 @@ var (
 //
 // The headless claude CLI writes API errors to stdout (captured in `output` by
 // execFixCmd for the fix path) or, on the doctor-review path, folded into the
-// returned error string by callClaudeCLI — so both are scanned. Without this,
+// returned error string by callClaudeCLI - so both are scanned. Without this,
 // every distinct failure (usage limit, auth, context overflow) renders
 // identically as "claude CLI exit 1", making a transient account cap look like
 // a broken tool.
@@ -133,19 +133,19 @@ func classifyClaudeFailure(output []byte, err error) string {
 	case reUsageLimit.MatchString(raw):
 		msg := "Anthropic usage limit reached"
 		if when := extractRegainDate(raw); when != "" {
-			msg += " — regains access " + when
+			msg += " - regains access " + when
 		}
 		return msg + ". The fix command is correct; retry after that, or use a provider with separate credit."
 	case reCtxOverflow.MatchString(raw):
-		return "context overflow — the headless claude run exceeded the model window. Try a smaller target or fewer bulk files."
+		return "context overflow - the headless claude run exceeded the model window. Try a smaller target or fewer bulk files."
 	case reAuthFail.MatchString(raw):
-		return "claude CLI not authenticated — run `claude` once to log in, then retry."
+		return "claude CLI not authenticated - run `claude` once to log in, then retry."
 	case reModelFail.MatchString(raw):
-		return "model unavailable — the configured model was rejected by the API."
+		return "model unavailable - the configured model was rejected by the API."
 	case reRateLimit.MatchString(raw):
-		return "rate limited by the API — wait a moment and retry."
+		return "rate limited by the API - wait a moment and retry."
 	case reMaxTurns.MatchString(raw):
-		return "fix ran out of turns before finishing — the edit was too involved for one headless pass. Retry, narrow the target, or apply it in an interactive `claude` chat (Summary's `c`)."
+		return "fix ran out of turns before finishing - the edit was too involved for one headless pass. Retry, narrow the target, or apply it in an interactive `claude` chat (Summary's `c`)."
 	}
 	return ""
 }
@@ -183,28 +183,28 @@ func renderFixFailure(output []byte, err error) string {
 // wrapImperativeFixPrompt prepends a strict instruction that forces Claude to
 // reach for the Edit/Write tool against the named target, rather than narrate
 // the change in prose. The historical failure mode was a clean exit 0 with no
-// file changes — costly and worthless. `target` may be empty for multi-target
+// file changes - costly and worthless. `target` may be empty for multi-target
 // bundles; when empty, the envelope speaks to each path listed inside the body.
 func wrapImperativeFixPrompt(target, body string) string {
 	if target == "" {
 		return fmt.Sprintf(
-			"You MUST use the Edit (or Write, for new files) tool to apply every change described below. Do not respond in prose. Do not summarise. Make the edits and exit.\n\nIf a specific change is ambiguous, make the smallest reasonable edit rather than refusing — refusing without an edit is the worst outcome.\n\nTask:\n\n%s",
+			"You MUST use the Edit (or Write, for new files) tool to apply every change described below. Do not respond in prose. Do not summarise. Make the edits and exit.\n\nIf a specific change is ambiguous, make the smallest reasonable edit rather than refusing - refusing without an edit is the worst outcome.\n\nTask:\n\n%s",
 			body,
 		)
 	}
 	return fmt.Sprintf(
-		"You MUST use the Edit (or Write, for new files) tool to modify the file at: %s. Do not respond in prose. Do not print the proposed change. Make the edit and exit.\n\nIf the exact change is ambiguous, make the smallest reasonable edit rather than refusing — refusing without an edit is the worst outcome.\n\nTask:\n\n%s",
+		"You MUST use the Edit (or Write, for new files) tool to modify the file at: %s. Do not respond in prose. Do not print the proposed change. Make the edit and exit.\n\nIf the exact change is ambiguous, make the smallest reasonable edit rather than refusing - refusing without an edit is the worst outcome.\n\nTask:\n\n%s",
 		target, body,
 	)
 }
 
 // fixKind distinguishes how a proposal is applied.
 //
-//	fixInTUI       — write `proposed` bytes to `target` file (Doctor markdown fixes).
-//	fixClaudeCLI   — hand off to `claude --print` to edit `target`.
-//	fixInMemory    — run `applyFn` to mutate in-memory state (Summary config edits).
+//	fixInTUI       - write `proposed` bytes to `target` file (Doctor markdown fixes).
+//	fixClaudeCLI   - hand off to `claude --print` to edit `target`.
+//	fixInMemory    - run `applyFn` to mutate in-memory state (Summary config edits).
 //	                  Marked dirty by applyFn; saved by the global 'w' flow. No
-//	                  snapshot, no post-apply diff — the user keeps or discards
+//	                  snapshot, no post-apply diff - the user keeps or discards
 //	                  the whole session with w/Q like other in-memory edits.
 type fixKind int
 
@@ -222,7 +222,7 @@ type fixProposal struct {
 	target       string   // primary file being modified (empty for fixInMemory)
 	proposed     []byte   // pre-computed post-state bytes (fixInTUI only); nil for CLI
 	cliArgs      []string // args for exec.Command("claude", cliArgs...)
-	cliPrompt    string   // full envelope-wrapped prompt text (CLI only) — shown verbatim in confirm panel and passed via cliArgs
+	cliPrompt    string   // full envelope-wrapped prompt text (CLI only) - shown verbatim in confirm panel and passed via cliArgs
 	cliPromptRaw string   // un-wrapped task body, used by bulk builders to concatenate multiple fixes under a single outer envelope without double-wrapping
 
 	// cat is the Summary-tab issue category this proposal addresses, used by
@@ -230,7 +230,7 @@ type fixProposal struct {
 	// could have affected skill/agent/command discovery or lint output. Zero
 	// (catNone) for Doctor proposals and Summary categories whose fix has no
 	// asset-side effects (orphan prunes, stash drops, .claude.json mcpServer
-	// edits) — those skip invalidation.
+	// edits) - those skip invalidation.
 	cat summaryCat
 
 	// applyFn is the in-memory mutator for fixInMemory proposals. Returns the
@@ -374,7 +374,7 @@ func fixElapsed(started time.Time) string {
 
 // killIfRunning best-effort kills the given exec.Cmd's process if it's still
 // alive. Used by the global quit path so an in-flight claude --print doesn't
-// outlive the TUI session. Safe to call with nil. Ignores all errors — by
+// outlive the TUI session. Safe to call with nil. Ignores all errors - by
 // design, this is fire-and-forget cleanup.
 func killIfRunning(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {

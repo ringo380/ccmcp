@@ -25,7 +25,7 @@ const (
 
 var scopeDesc = map[string]string{
 	scopeEffective: "all MCPs that will load in this project (matches /mcp)",
-	scopeUser:      "~/.claude.json#/mcpServers  (global — every project)",
+	scopeUser:      "~/.claude.json#/mcpServers  (global - every project)",
 	scopeLocal:     "~/.claude.json > projects  (this dir only, private)",
 	scopeProject:   "./.mcp.json  (shared, git-tracked)",
 	scopeStash:     "~/.claude-mcp-stash.json  (parked, not active)",
@@ -46,13 +46,13 @@ type mcpView struct {
 	filterActive bool
 
 	moveActive bool
-	moveForKey string // RowKey (not just Name — we need the source too)
+	moveForKey string // RowKey (not just Name - we need the source too)
 
 	// showHidden, only meaningful in scopeEffective: when false (the default), rows that
-	// can never load in this project are filtered out — stash entries, plugin MCPs whose
+	// can never load in this project are filtered out - stash entries, plugin MCPs whose
 	// plugin is globally disabled, and orphan entries (UnknownReason set). The point of
 	// the effective scope is to mirror what `/mcp` shows; those rows just clutter it.
-	// Press `H` to flip and reveal them (rows are interleaved alphabetically — no divider).
+	// Press `H` to flip and reveal them (rows are interleaved alphabetically - no divider).
 	showHidden bool
 
 	loaded bool // lazy-load gate for update probes
@@ -66,17 +66,17 @@ type mcpUpdateCheckMsg struct {
 }
 
 // mcpRow represents one (display-name, source) pair. Two rows can share a Name
-// if the same name is registered by different sources — this is the correct model
+// if the same name is registered by different sources - this is the correct model
 // for Claude Code's world, where e.g. `context7` as a stdio MCP is a different
 // entity than `context7` registered by the context7 plugin.
 type mcpRow struct {
 	Name         string           // display name shown to the user
 	Source       config.MCPSource // primary source of this row
-	OverrideKey  string           // key to write into disabledMcpServers when toggling (empty for stash rows — they can't be disabled per-project, but their MatchKey still attracts stale plain-name overrides)
+	OverrideKey  string           // key to write into disabledMcpServers when toggling (empty for stash rows - they can't be disabled per-project, but their MatchKey still attracts stale plain-name overrides)
 	MatchKey     string           // key compared against existing disabledMcpServers entries (may differ from OverrideKey for stash rows, which should match the plain name they were parked under)
 	PluginName   string           // only for SourcePlugin rows (the plugin's name without @mkt)
 	PluginIDs    []string         // qualified plugin IDs (e.g. "context7@claude-plugins-official")
-	PluginEnabled bool            // for SourcePlugin rows: true if the plugin is globally enabled; false means "installed but off — MCP won't load"
+	PluginEnabled bool            // for SourcePlugin rows: true if the plugin is globally enabled; false means "installed but off - MCP won't load"
 	DisabledHere bool             // MatchKey appears in projects[cwd].disabledMcpServers
 	EnabledHere  bool             // Name appears in projects[cwd].enabledMcpServers (SourceBuiltin rows: this is the only reason they load)
 	McpjsonDeny  bool             // .mcp.json allow/deny list excludes this row (project-source only)
@@ -179,7 +179,7 @@ func (v *mcpView) rebuild() {
 			seenKeys[key] = true
 		}
 	}
-	// 4) plugin-sourced — include BOTH enabled and disabled-but-installed plugins.
+	// 4) plugin-sourced - include BOTH enabled and disabled-but-installed plugins.
 	// Disabled plugins still contribute rows (with PluginEnabled=false) so that stale
 	// `plugin:X:Y` override entries from when X was enabled are still classified correctly.
 	// state.pluginMCPs is now populated from ScanAllInstalledPluginMCPs.
@@ -226,7 +226,7 @@ func (v *mcpView) rebuild() {
 	// 6) stash. Register the plain name as the MatchKey so a pre-stash disable entry
 	// (e.g. project had `"dropbox"` disabled back when it was a stdio MCP) attaches
 	// back to the stash row instead of falling through to the orphan classifier.
-	// Stash rows have empty OverrideKey because Claude Code doesn't honor stash entries —
+	// Stash rows have empty OverrideKey because Claude Code doesn't honor stash entries -
 	// there's nothing meaningful to toggle per-project.
 	for name, cfg := range v.st.stash.Entries() {
 		rows = append(rows, mcpRow{
@@ -239,7 +239,7 @@ func (v *mcpView) rebuild() {
 		})
 		seenKeys[name] = true
 	}
-	// 7) orphans — anything in disabledMcpServers we haven't accounted for. Each gets a
+	// 7) orphans - anything in disabledMcpServers we haven't accounted for. Each gets a
 	// specific UnknownReason so the user can see exactly why the entry is unrecognized.
 	for k := range disabled {
 		if seenKeys[k] {
@@ -258,18 +258,18 @@ func (v *mcpView) rebuild() {
 			Description:   reason,
 		})
 		// Mark seen like every other section so a later section (e.g. the built-in loop
-		// below) can't re-emit a second row for the same plain name — a name present in
+		// below) can't re-emit a second row for the same plain name - a name present in
 		// BOTH disabledMcpServers and enabledMcpServers would otherwise produce two
 		// contradictory rows ([~] orphan here + [x] built-in).
 		seenKeys[k] = true
 	}
 
 	// 8) built-ins / externally-managed MCPs explicitly enabled for this project via
-	// enabledMcpServers — the positive counterpart to disabledMcpServers. These have no
+	// enabledMcpServers - the positive counterpart to disabledMcpServers. These have no
 	// source ccmcp enumerates (e.g. the "computer-use" Claude-in-Chrome built-in, which
 	// ships disabled). Surfacing them keeps the effective view honest: it claims to mirror
 	// /mcp, and /mcp counts these as loaded. A name already represented by an enumerated
-	// source (plain-key collision) is skipped — the enable entry is redundant there.
+	// source (plain-key collision) is skipped - the enable entry is redundant there.
 	for name := range enabled {
 		if seenKeys[name] {
 			continue
@@ -279,7 +279,7 @@ func (v *mcpView) rebuild() {
 			Source:      config.SourceBuiltin,
 			MatchKey:    name,
 			EnabledHere: true,
-			Description: "enabled here (built-in or externally-managed — no local config)",
+			Description: "enabled here (built-in or externally-managed - no local config)",
 		})
 		seenKeys[name] = true
 	}
@@ -305,7 +305,7 @@ func (v *mcpView) rebuild() {
 //
 // Order matters: sources that can never load (stash, disabled plugins, orphans) are
 // hidden BEFORE the DisabledHere check, because a per-project override on top of a
-// non-loading source is redundant — the override won't kick in until the source itself
+// non-loading source is redundant - the override won't kick in until the source itself
 // becomes loadable, at which point the user is in the Plugins/Stash tab anyway.
 //
 // UnknownReason is the orphan-row contract from rebuild() (set only inside the orphan
@@ -313,7 +313,7 @@ func (v *mcpView) rebuild() {
 // this gate must be revisited.
 func isHiddenInEffective(r mcpRow) bool {
 	if r.UnknownReason != "" {
-		return true // orphan — no source to recover from
+		return true // orphan - no source to recover from
 	}
 	switch r.Source {
 	case config.SourceStash:
@@ -324,7 +324,7 @@ func isHiddenInEffective(r mcpRow) bool {
 		}
 	}
 	if r.DisabledHere {
-		return false // overridden here but recoverable with `space` — keep visible
+		return false // overridden here but recoverable with `space` - keep visible
 	}
 	return false
 }
@@ -362,14 +362,14 @@ func isEffective(r mcpRow) bool {
 func (v *mcpView) classifyOrphan(key string, src config.MCPSource, name, pluginName string) string {
 	if src == config.SourcePlugin && pluginName != "" {
 		if v.st.installed != nil && len(v.st.installed.ByName(pluginName)) > 0 {
-			return "plugin '" + pluginName + "' is installed but doesn't register '" + name + "' — stale override"
+			return "plugin '" + pluginName + "' is installed but doesn't register '" + name + "' - stale override"
 		}
-		return "plugin '" + pluginName + "' is not installed — stale override (safe to prune)"
+		return "plugin '" + pluginName + "' is not installed - stale override (safe to prune)"
 	}
 	if src == config.SourceClaude {
-		return "claude.ai integration not in the ever-connected list — stale override"
+		return "claude.ai integration not in the ever-connected list - stale override"
 	}
-	return "no active MCP source found for '" + name + "' — stale override (likely deleted or renamed)"
+	return "no active MCP source found for '" + name + "' - stale override (likely deleted or renamed)"
 }
 
 // --- update (input handling) -----------------------------------------------
@@ -450,7 +450,7 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 	case "s":
 		v.cycleScope()
 	case "S":
-		// Dedicated stash/unstash shortcut — smart toggle based on current row's source:
+		// Dedicated stash/unstash shortcut - smart toggle based on current row's source:
 		//   stash row → move to user scope  (unstash)
 		//   anything else mutable → move to stash  (stash)
 		//   plugin / claude.ai / project(.mcp.json) / orphan → refused with explanation
@@ -483,7 +483,7 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 		v.bulkToggle(visible, false)
 	case "H":
 		// Reveal/hide the noise rows (stash, disabled-plugin, orphans) in the effective scope.
-		// In other scopes this is a no-op — visibleRows() doesn't apply the filter there.
+		// In other scopes this is a no-op - visibleRows() doesn't apply the filter there.
 		// Reset cursor + viewport so toggling doesn't leave the cursor pointing at an
 		// arbitrary row whose content shifted under it.
 		v.showHidden = !v.showHidden
@@ -492,7 +492,7 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 		if v.showHidden {
 			v.flash = styleDim.Render("showing hidden rows (stash / disabled plugins / orphans)")
 		} else {
-			v.flash = styleDim.Render("hiding inactive rows — press H to show again")
+			v.flash = styleDim.Render("hiding inactive rows - press H to show again")
 		}
 	}
 	return nil
@@ -500,7 +500,7 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 
 // bulkToggle applies the equivalent of `space` to every currently-visible row,
 // in the direction indicated by `on` (true = enable, false = disable). Semantics
-// depend on the active scope and match the per-row toggle exactly — just batched.
+// depend on the active scope and match the per-row toggle exactly - just batched.
 //
 // The target set is "visible rows", which respects any active filter. So the common
 // workflow "filter to only plugin-registered MCPs, then turn them all off for this
@@ -529,7 +529,7 @@ func (v *mcpView) bulkToggle(rows []mcpRow, on bool) {
 
 // bulkApplyRow applies a single in-scope toggle; returns true if state actually changed.
 // Keeps logic per-scope rather than delegating to toggle() because toggle() issues its
-// own flash message per row and calls rebuild() — both would be quadratic during bulk.
+// own flash message per row and calls rebuild() - both would be quadratic during bulk.
 func (v *mcpView) bulkApplyRow(r mcpRow, on bool) bool {
 	switch v.scope {
 	case scopeEffective:
@@ -649,15 +649,15 @@ func (v *mcpView) stashToggle(row mcpRow) {
 		// Row in user/local scope → stash it.
 		v.doMove(row.RowKey(), scopeStash)
 	case config.SourcePlugin:
-		v.flash = styleWarn.Render("can't stash plugin-registered MCPs — disable the plugin or override per-project instead")
+		v.flash = styleWarn.Render("can't stash plugin-registered MCPs - disable the plugin or override per-project instead")
 	case config.SourceClaude:
-		v.flash = styleWarn.Render("can't stash claude.ai integrations — they live in Claude.ai; override per-project with `space` instead")
+		v.flash = styleWarn.Render("can't stash claude.ai integrations - they live in Claude.ai; override per-project with `space` instead")
 	case config.SourceProject:
-		v.flash = styleWarn.Render("can't stash .mcp.json entries — they're git-tracked; use the allow/deny list (cycle scope to project + space) instead")
+		v.flash = styleWarn.Render("can't stash .mcp.json entries - they're git-tracked; use the allow/deny list (cycle scope to project + space) instead")
 	case config.SourceBuiltin:
-		v.flash = styleWarn.Render("can't stash built-in MCPs — they have no local config; press space to turn off here, or manage via /mcp")
+		v.flash = styleWarn.Render("can't stash built-in MCPs - they have no local config; press space to turn off here, or manage via /mcp")
 	default:
-		v.flash = styleDim.Render("nothing to stash here — row source is unknown or orphaned")
+		v.flash = styleDim.Render("nothing to stash here - row source is unknown or orphaned")
 	}
 }
 
@@ -693,9 +693,9 @@ func (v *mcpView) toggle(row mcpRow) {
 // toggleEffective: flip the per-project disabledMcpServers entry for this row.
 // This is the unified "enable/disable here" action that matches /mcp exactly.
 func (v *mcpView) toggleEffective(row mcpRow) {
-	// Stash rows can't be toggled in effective view — they don't load anywhere by themselves.
+	// Stash rows can't be toggled in effective view - they don't load anywhere by themselves.
 	if row.Source == config.SourceStash {
-		v.flash = styleDim.Render("stashed MCPs aren't loaded anywhere — press 'm' to move into user/local/project scope to activate")
+		v.flash = styleDim.Render("stashed MCPs aren't loaded anywhere - press 'm' to move into user/local/project scope to activate")
 		return
 	}
 	// Built-in / externally-managed rows live only in enabledMcpServers. The honest inverse
@@ -776,7 +776,7 @@ func (v *mcpView) toggleStash(row mcpRow) {
 func (v *mcpView) toggleMcpjsonAllow(row mcpRow) {
 	// Only makes sense for SourceProject rows
 	if row.Source != config.SourceProject {
-		v.flash = styleDim.Render("allow/deny toggling applies to .mcp.json entries only — switch to a different scope")
+		v.flash = styleDim.Render("allow/deny toggling applies to .mcp.json entries only - switch to a different scope")
 		return
 	}
 	name := row.Name
@@ -797,7 +797,7 @@ func (v *mcpView) toggleMcpjsonAllow(row mcpRow) {
 }
 
 // doMove copies the row's config into the target scope. For plugin-sourced rows
-// the plugin's entry is copied — both will load unless the user separately disables
+// the plugin's entry is copied - both will load unless the user separately disables
 // the plugin version (via space on the plugin row, or via the Plugins tab).
 func (v *mcpView) doMove(rowKey, target string) {
 	defer func() {
@@ -826,11 +826,11 @@ func (v *mcpView) doMove(rowKey, target string) {
 	}
 
 	// Plugin-sourced MCPs: COPY to the target and warn about duplicate loading.
-	// Do NOT remove the plugin's entry (we can't — it's inside the plugin cache dir).
+	// Do NOT remove the plugin's entry (we can't - it's inside the plugin cache dir).
 	isPluginCopy := row.Source == config.SourcePlugin
 
 	var removed []string
-	// Remove from mutable source scopes that aren't the target (except plugin — immutable).
+	// Remove from mutable source scopes that aren't the target (except plugin - immutable).
 	if !isPluginCopy {
 		if row.Source == config.SourceUser && target != scopeUser {
 			v.st.cj.DeleteUserMCP(row.Name)
@@ -867,7 +867,7 @@ func (v *mcpView) doMove(rowKey, target string) {
 
 	if isPluginCopy {
 		v.flash = styleWarn.Render(fmt.Sprintf(
-			"copied %s from plugin '%s' to %s — both will load; press space on the plugin row to disable per-project, or disable the plugin in the Plugins tab",
+			"copied %s from plugin '%s' to %s - both will load; press space on the plugin row to disable per-project, or disable the plugin in the Plugins tab",
 			row.Name, row.PluginName, target))
 	} else {
 		fromStr := "(nowhere)"
@@ -919,13 +919,13 @@ func (v *mcpView) hiddenCount() int {
 
 func (v *mcpView) render() string {
 	visible := v.visibleRows()
-	title := fmt.Sprintf("MCPs — scope: %s  %s", styleBadge.Render(v.scope), styleDim.Render(scopeDesc[v.scope]))
+	title := fmt.Sprintf("MCPs - scope: %s  %s", styleBadge.Render(v.scope), styleDim.Render(scopeDesc[v.scope]))
 	if v.scope == scopeEffective {
 		// Break out the effective-scope counts so the user sees what's loading vs
 		// merely-overridden vs hidden, instead of a single ambiguous "shown" total.
 		var active, dis int
 		for _, r := range visible {
-			// Orphans (UnknownReason set) are not "recoverable overrides" — they're stale
+			// Orphans (UnknownReason set) are not "recoverable overrides" - they're stale
 			// entries with no source to re-enable. Don't lump them in with `dis` when the
 			// user has H toggled on, since the count means "press space to recover" rows.
 			if r.UnknownReason != "" {
@@ -943,7 +943,7 @@ func (v *mcpView) render() string {
 			if v.showHidden {
 				title += fmt.Sprintf(" · %d hidden shown", hidden)
 			} else {
-				title += fmt.Sprintf(" · %d hidden — press H", hidden)
+				title += fmt.Sprintf(" · %d hidden - press H", hidden)
 			}
 		}
 		title += ")"
@@ -987,10 +987,10 @@ func (v *mcpView) render() string {
 	}
 	// Count effective rows per name so we can flag duplicates inline. Two rows for the
 	// same display name are usually distinct entities (e.g. a user-scope `context7` and a
-	// plugin-registered `context7`), but Claude Code will try to load both — that's worth
+	// plugin-registered `context7`), but Claude Code will try to load both - that's worth
 	// surfacing rather than letting it look like a redundant duplicate.
 	//
-	// Counting walks v.rows (not `visible`) so the warning survives any UI filter — a
+	// Counting walks v.rows (not `visible`) so the warning survives any UI filter - a
 	// duplicate-load is a duplicate-load whether or not one of the rows is currently
 	// hidden by a text filter or by !showHidden.
 	effDup := map[string]int{}
@@ -1171,7 +1171,7 @@ func (v *mcpView) capturingInput() bool { return v.filterActive || v.moveActive 
 // pickConfig returns an MCP's config for enable/move/stash operations.
 // Called when the user wants to copy an entry from its source into a new scope.
 // Plugin sources are included so moving a plugin-registered MCP "works" (copies the
-// plugin's bundled config — a warning is shown to avoid duplicate-load confusion).
+// plugin's bundled config - a warning is shown to avoid duplicate-load confusion).
 //
 // The `row` argument is optional context (may be zero value); when provided, we try
 // its Config field first before scanning sources.
@@ -1193,7 +1193,7 @@ func pickConfig(st *state, name string, row mcpRow) (any, bool) {
 			return v, true
 		}
 	}
-	// Plugin sources — last resort (may produce duplicate-load if caller copies to another scope).
+	// Plugin sources - last resort (may produce duplicate-load if caller copies to another scope).
 	if srcs, ok := st.pluginMCPs[name]; ok && len(srcs) > 0 {
 		return srcs[0].Config, true
 	}

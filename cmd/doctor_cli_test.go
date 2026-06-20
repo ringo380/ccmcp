@@ -10,7 +10,7 @@ import (
 func TestCLIDoctorMD_NoFile(t *testing.T) {
 	home := setupSandbox(t)
 	proj := t.TempDir()
-	// No CLAUDE.md in proj — should report MD001
+	// No CLAUDE.md in proj - should report MD001
 	out, err := runCLI(t, home, "doctor", "md", "--path", proj)
 	// Error is expected (lint error found)
 	_ = err
@@ -28,7 +28,7 @@ func TestCLIDoctorMD_CleanFile(t *testing.T) {
 	}
 	out, err := runCLI(t, home, "doctor", "md", "--path", proj)
 	if err != nil {
-		// errors are expected only if lint errors found — a clean file + missing memory is OK
+		// errors are expected only if lint errors found - a clean file + missing memory is OK
 		// as long as it's not an error-level issue
 		if strings.Contains(out, "MD001") || strings.Contains(out, "MD002") {
 			t.Errorf("clean CLAUDE.md should not cause error-level issues; got:\n%s", out)
@@ -87,7 +87,7 @@ func TestCLIDoctorMD_WithValidMemory(t *testing.T) {
 	if err := os.WriteFile(memFile, []byte("---\nname: feedback\ndescription: test feedback\ntype: feedback\n---\n\nContent.\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("- [Feedback](feedback.md) — test feedback\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("- [Feedback](feedback.md) - test feedback\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -107,7 +107,7 @@ func TestCLIDoctorMD_BrokenMemoryLink(t *testing.T) {
 
 	memDir := t.TempDir()
 	// Index points to a file that doesn't exist
-	if err := os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("- [Ghost](ghost.md) — gone\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("- [Ghost](ghost.md) - gone\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -138,7 +138,7 @@ func TestCLIDoctorAssets_FlagsBadName(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, err := runCLI(t, home, "doctor", "assets")
-	// Errors expected — invalid name is SKILL001 error severity.
+	// Errors expected - invalid name is SKILL001 error severity.
 	if err == nil {
 		t.Errorf("expected nonzero exit for SKILL001 error; got:\n%s", out)
 	}

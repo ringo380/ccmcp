@@ -63,7 +63,7 @@ func LintClaudeMD(path string) []Issue {
 			File:     path,
 			Severity: SeverityInfo,
 			Code:     "MD005",
-			Message:  fmt.Sprintf("file is %d lines — consider trimming to reduce context load", len(lines)),
+			Message:  fmt.Sprintf("file is %d lines - consider trimming to reduce context load", len(lines)),
 		})
 	}
 
@@ -126,7 +126,7 @@ func LintMemoryIndex(memDir string) []Issue {
 	}
 
 	lines, _ := readLines(indexPath)
-	// Pattern: - [Title](file.md) — description
+	// Pattern: - [Title](file.md) - description
 	entryRe := regexp.MustCompile(`^\s*-\s+\[([^\]]+)\]\(([^)]+)\)`)
 
 	for i, line := range lines {
@@ -215,7 +215,7 @@ func lintMemoryFile(path string) []Issue {
 			File:     path,
 			Severity: SeverityError,
 			Code:     "MEM006",
-			Message:  fmt.Sprintf("invalid type %q — must be one of: user, feedback, project, reference", t),
+			Message:  fmt.Sprintf("invalid type %q - must be one of: user, feedback, project, reference", t),
 		})
 	}
 

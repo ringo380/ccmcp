@@ -4,13 +4,13 @@
 //
 // Buckets:
 //
-//	PluginActive    — "plugin:X:Y" where plugin X is enabled globally (legit per-project override)
-//	PluginDisabled  — "plugin:X:Y" where plugin X is installed but globally off (legit, informational)
-//	ClaudeAi        — "claude.ai Z" where Z is in claudeAiMcpEverConnected
-//	StdioLive       — plain name matching a live user/local source
-//	StashGhost      — plain name matching ONLY a stash entry (leftover from pre-stash life)
-//	OrphanPlugin    — "plugin:X:Y" where plugin X is not installed anywhere
-//	OrphanStdio     — plain name with no source on disk
+//	PluginActive    - "plugin:X:Y" where plugin X is enabled globally (legit per-project override)
+//	PluginDisabled  - "plugin:X:Y" where plugin X is installed but globally off (legit, informational)
+//	ClaudeAi        - "claude.ai Z" where Z is in claudeAiMcpEverConnected
+//	StdioLive       - plain name matching a live user/local source
+//	StashGhost      - plain name matching ONLY a stash entry (leftover from pre-stash life)
+//	OrphanPlugin    - "plugin:X:Y" where plugin X is not installed anywhere
+//	OrphanStdio     - plain name with no source on disk
 package classify
 
 import (
@@ -19,7 +19,7 @@ import (
 )
 
 // Overrides groups every entry in a project's disabledMcpServers into its
-// explaining bucket. Pure data — safe to compare with reflect.DeepEqual.
+// explaining bucket. Pure data - safe to compare with reflect.DeepEqual.
 type Overrides struct {
 	PluginActive   []string
 	PluginDisabled []string
@@ -30,7 +30,7 @@ type Overrides struct {
 	OrphanStdio    []string
 }
 
-// Classify buckets the given overrides list. Pure function — no I/O. Callers
+// Classify buckets the given overrides list. Pure function - no I/O. Callers
 // pass in the pre-loaded config views they already have on hand.
 func Classify(
 	overrides []string,
@@ -88,7 +88,7 @@ func Classify(
 	return out
 }
 
-// PluralY returns "y" for 1 and "ies" otherwise — for printing "entr{y,ies}".
+// PluralY returns "y" for 1 and "ies" otherwise - for printing "entr{y,ies}".
 func PluralY(n int) string {
 	if n == 1 {
 		return "y"

@@ -119,7 +119,7 @@ func newMarketplaceView(st *state) *marketplaceView {
 }
 
 // ---------------------------------------------------------------------------
-// rebuild — assemble the row set from settings + cloned dirs + installed plugins
+// rebuild - assemble the row set from settings + cloned dirs + installed plugins
 // ---------------------------------------------------------------------------
 
 func (v *marketplaceView) rebuild() {
@@ -246,7 +246,7 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 		v.updating = false
 		v.bulkUpdating = false
 		// Drop bulk-progress scratch so next B-press starts clean. Safe for non-bulk
-		// ops too — these fields are only ever populated during a B-sweep.
+		// ops too - these fields are only ever populated during a B-sweep.
 		v.bulkTargets = nil
 		v.bulkIndex = 0
 		v.bulkUpdated = nil
@@ -259,7 +259,7 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 				return nil
 			}
 			// install.AddMarketplace already mutated settings + cloned to disk. Save
-			// synchronously to keep settings.json in sync with the on-disk clone — a
+			// synchronously to keep settings.json in sync with the on-disk clone - a
 			// `Q` force-quit at this point would otherwise discard the settings change
 			// while leaving the clone behind.
 			if err := v.persistSettings(); err != nil {
@@ -458,13 +458,13 @@ func (v *marketplaceView) update(msg tea.Msg) tea.Cmd {
 		}
 		r := visible[v.index]
 		if !r.Cloned {
-			v.flash = styleDim.Render(r.Name + " is not cloned — press u to clone via git pull")
+			v.flash = styleDim.Render(r.Name + " is not cloned - press u to clone via git pull")
 			return nil
 		}
-		// No actual install here — surface a hint pointing to the Plugins tab's
+		// No actual install here - surface a hint pointing to the Plugins tab's
 		// existing browse-and-install workflow. Plumbing a marketplace filter into
 		// pluginView later would be a follow-up.
-		v.flash = styleDim.Render(fmt.Sprintf("%d plugins in %s — switch to Plugins tab and press I to browse", r.NumPlugins, r.Name))
+		v.flash = styleDim.Render(fmt.Sprintf("%d plugins in %s - switch to Plugins tab and press I to browse", r.NumPlugins, r.Name))
 	}
 	return nil
 }
@@ -493,9 +493,9 @@ func (v *marketplaceView) bulkRunNextItem() tea.Cmd {
 
 // updateAddForm drives the multi-step add wizard. The sequence is:
 //   1. name
-//   2. source type — type "github", "git", or "local" (enter accepts; default github)
+//   2. source type - type "github", "git", or "local" (enter accepts; default github)
 //   3. repo (for github/git) or path (for local)
-//   4. submit — clones and saves
+//   4. submit - clones and saves
 func (v *marketplaceView) updateAddForm(msg tea.Msg) tea.Cmd {
 	if k, ok := msg.(tea.KeyMsg); ok {
 		switch k.String() {
@@ -519,7 +519,7 @@ func (v *marketplaceView) updateAddForm(msg tea.Msg) tea.Cmd {
 					val = "github"
 				}
 				if val != "github" && val != "git" && val != "local" {
-					v.flash = styleErr.Render("invalid source type — use github, git, or local")
+					v.flash = styleErr.Render("invalid source type - use github, git, or local")
 					return nil
 				}
 				v.addForm.sourceType = val
@@ -602,7 +602,7 @@ func (v *marketplaceView) checkAll() tea.Cmd {
 }
 
 // initialCheckCmd returns the lazy-load update check Cmd if it hasn't fired yet.
-// Lives in the update() path (not render()) by necessity — async network probes need
+// Lives in the update() path (not render()) by necessity - async network probes need
 // to be dispatched as tea.Cmds, which can only originate from update(). Dump() and
 // the very first render therefore won't show "↑ update available" indicators, which
 // is acceptable for diagnostics.
@@ -640,7 +640,7 @@ func (v *marketplaceView) render() string {
 			outdated++
 		}
 	}
-	title := fmt.Sprintf("Marketplaces — %d total, %d cloned", len(v.rows), countCloned(v.rows))
+	title := fmt.Sprintf("Marketplaces - %d total, %d cloned", len(v.rows), countCloned(v.rows))
 	if outdated > 0 {
 		title += "  " + styleWarn.Render(fmt.Sprintf("(%d update available)", outdated))
 	}
@@ -672,7 +672,7 @@ func (v *marketplaceView) render() string {
 	}
 
 	if len(visible) == 0 {
-		b.WriteString(styleDim.Render("  (no marketplaces — press a to add)"))
+		b.WriteString(styleDim.Render("  (no marketplaces - press a to add)"))
 		return b.String()
 	}
 	if v.index >= len(visible) {

@@ -16,7 +16,7 @@ const (
 
 	// PluginVsUser: a user- or project-scope command shares an effective name with a
 	// plugin-scope command's slug (post-colon). Example: user `/build` vs plugin
-	// `/foo:build` — the bare `/build` invocation usually resolves to user scope,
+	// `/foo:build` - the bare `/build` invocation usually resolves to user scope,
 	// but tab-completion or partial matches become ambiguous.
 	PluginVsUser ConflictKind = "plugin-vs-user"
 

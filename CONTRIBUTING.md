@@ -41,7 +41,7 @@ go mod tidy
   comment style of the package you're editing.
 - **Add tests for behavior changes.** New logic should come with table tests or
   headless TUI tests (see existing `*_test.go` files for patterns). Tests
-  sandbox state via `t.Setenv` — never touch real user config.
+  sandbox state via `t.Setenv` - never touch real user config.
 - **Keep the README test count in sync.** The "Testing" section of `README.md`
   cites a test total. If you add or remove top-level `Test*` functions, update
   it. The canonical count is:
@@ -64,7 +64,7 @@ imperative mood and explain the "why" in the body when it isn't obvious.
 Contributions to ccmcp require a [Developer Certificate of
 Origin](https://developercertificate.org/) sign-off. This is a lightweight way
 to certify that you wrote the patch or otherwise have the right to submit it
-under the project's license — no separate agreement or account is needed.
+under the project's license - no separate agreement or account is needed.
 
 Add a sign-off to each commit by committing with `-s`:
 
@@ -119,7 +119,7 @@ offered under the same [MIT License](LICENSE) that covers the project. You
 retain copyright to your contribution.
 
 Note that the project's [trademark and naming policy](TRADEMARK.md) reserves the
-"ccmcp" name and brand — contributing code does not grant any rights to that
+"ccmcp" name and brand - contributing code does not grant any rights to that
 name.
 
 ## Pull request checklist

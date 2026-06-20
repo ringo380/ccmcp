@@ -4,7 +4,7 @@ import "strings"
 
 // MCPSource identifies where an MCP server entry originates. The same display name
 // can appear under multiple sources (e.g. "context7" the stdio MCP vs the one
-// registered by the context7 plugin) — they are distinct entries with distinct
+// registered by the context7 plugin) - they are distinct entries with distinct
 // override keys in ~/.claude.json#/projects[<path>].disabledMcpServers.
 type MCPSource string
 
@@ -63,7 +63,7 @@ func ParseOverrideKey(key string) (source MCPSource, displayName, pluginName str
 		if i > 0 {
 			return SourcePlugin, rest[i+1:], rest[:i]
 		}
-		// malformed "plugin:x" with no second colon — treat as unknown
+		// malformed "plugin:x" with no second colon - treat as unknown
 		return SourceUnknown, key, ""
 	}
 	if strings.HasPrefix(key, "claude.ai ") {

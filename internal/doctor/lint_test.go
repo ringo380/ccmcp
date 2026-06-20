@@ -126,7 +126,7 @@ func TestLintMemoryIndex_Missing(t *testing.T) {
 func TestLintMemoryIndex_MissingFile(t *testing.T) {
 	dir := t.TempDir()
 	index := filepath.Join(dir, "MEMORY.md")
-	writeFile(t, index, "- [My Memory](missing.md) — some memory\n")
+	writeFile(t, index, "- [My Memory](missing.md) - some memory\n")
 	issues := doctor.LintMemoryIndex(dir)
 	if !hasCode(issues, "MEM002") {
 		t.Errorf("expected MEM002 for missing memory file; got %v", issues)
@@ -137,7 +137,7 @@ func TestLintMemoryIndex_ValidFile(t *testing.T) {
 	dir := t.TempDir()
 	memFile := filepath.Join(dir, "user_role.md")
 	writeFile(t, memFile, "---\nname: user role\ndescription: user is a senior engineer\ntype: user\n---\n\nContent here.\n")
-	writeFile(t, filepath.Join(dir, "MEMORY.md"), "- [User Role](user_role.md) — user is a senior engineer\n")
+	writeFile(t, filepath.Join(dir, "MEMORY.md"), "- [User Role](user_role.md) - user is a senior engineer\n")
 	issues := doctor.LintMemoryIndex(dir)
 	if issueCount(issues, doctor.SeverityError) > 0 {
 		t.Errorf("valid memory should have no errors; got %v", issues)
@@ -148,7 +148,7 @@ func TestLintMemoryIndex_MissingFrontmatterField(t *testing.T) {
 	dir := t.TempDir()
 	memFile := filepath.Join(dir, "feedback.md")
 	writeFile(t, memFile, "---\nname: some feedback\ntype: feedback\n---\n\nContent.\n")
-	writeFile(t, filepath.Join(dir, "MEMORY.md"), "- [Feedback](feedback.md) — feedback\n")
+	writeFile(t, filepath.Join(dir, "MEMORY.md"), "- [Feedback](feedback.md) - feedback\n")
 	issues := doctor.LintMemoryIndex(dir)
 	if !hasCode(issues, "MEM005") {
 		t.Errorf("expected MEM005 for missing description; got %v", issues)
@@ -159,7 +159,7 @@ func TestLintMemoryIndex_InvalidType(t *testing.T) {
 	dir := t.TempDir()
 	memFile := filepath.Join(dir, "bad.md")
 	writeFile(t, memFile, "---\nname: bad type\ndescription: something\ntype: random\n---\n\nContent.\n")
-	writeFile(t, filepath.Join(dir, "MEMORY.md"), "- [Bad](bad.md) — bad type example\n")
+	writeFile(t, filepath.Join(dir, "MEMORY.md"), "- [Bad](bad.md) - bad type example\n")
 	issues := doctor.LintMemoryIndex(dir)
 	if !hasCode(issues, "MEM006") {
 		t.Errorf("expected MEM006 for invalid type; got %v", issues)
@@ -170,7 +170,7 @@ func TestLintMemoryIndex_NoFrontmatter(t *testing.T) {
 	dir := t.TempDir()
 	memFile := filepath.Join(dir, "nofm.md")
 	writeFile(t, memFile, "This file has no frontmatter at all.\n")
-	writeFile(t, filepath.Join(dir, "MEMORY.md"), "- [NoFM](nofm.md) — no frontmatter\n")
+	writeFile(t, filepath.Join(dir, "MEMORY.md"), "- [NoFM](nofm.md) - no frontmatter\n")
 	issues := doctor.LintMemoryIndex(dir)
 	if !hasCode(issues, "MEM004") {
 		t.Errorf("expected MEM004 for missing frontmatter block; got %v", issues)
@@ -181,7 +181,7 @@ func TestLintMemoryIndex_LongEntry(t *testing.T) {
 	dir := t.TempDir()
 	memFile := filepath.Join(dir, "long.md")
 	writeFile(t, memFile, "---\nname: long\ndescription: long entry\ntype: project\n---\n\nContent.\n")
-	longLine := "- [Long](" + "long.md" + ") — " + strings.Repeat("y", 160)
+	longLine := "- [Long](" + "long.md" + ") - " + strings.Repeat("y", 160)
 	writeFile(t, filepath.Join(dir, "MEMORY.md"), longLine+"\n")
 	issues := doctor.LintMemoryIndex(dir)
 	if !hasCode(issues, "MEM003") {

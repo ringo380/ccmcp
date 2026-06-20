@@ -37,7 +37,7 @@ func TestTUIEnabledMcpServersBuiltinRow(t *testing.T) {
 		t.Error("an enabled built-in should be effective")
 	}
 	if isHiddenInEffective(*row) {
-		t.Error("an enabled built-in loads in the project — it must not be hidden in the effective scope")
+		t.Error("an enabled built-in loads in the project - it must not be hidden in the effective scope")
 	}
 }
 
@@ -67,7 +67,7 @@ func TestTUIEnabledMcpServersToggleOff(t *testing.T) {
 }
 
 // A name present in BOTH an enumerated source and enabledMcpServers must not produce a
-// duplicate built-in row — the enumerated source already represents it.
+// duplicate built-in row - the enumerated source already represents it.
 func TestTUIEnabledMcpServersNoDuplicateForKnownSource(t *testing.T) {
 	st, _ := buildState(t)
 	// "user-only" is seeded as a user-scope MCP in buildState.
@@ -86,7 +86,7 @@ func TestTUIEnabledMcpServersNoDuplicateForKnownSource(t *testing.T) {
 }
 
 // A name present in BOTH enabledMcpServers and disabledMcpServers (contradictory config
-// with no enumerated source) must not produce two rows — the orphan/disabled-here row
+// with no enumerated source) must not produce two rows - the orphan/disabled-here row
 // already represents it, so the built-in loop must skip it.
 func TestTUIEnabledMcpServersNoDuplicateWhenAlsoDisabled(t *testing.T) {
 	st, _ := buildState(t)

@@ -91,12 +91,12 @@ type anthropicSource struct {
 }
 
 // AnthropicSource returns a source that probes the Anthropic-published
-// registry. When endpoint is empty the source becomes a no-op — useful for
+// registry. When endpoint is empty the source becomes a no-op - useful for
 // disabling at build time without surgery elsewhere.
 func AnthropicSource(endpoint string) Source { return anthropicSource{endpoint: endpoint} }
 
 // AnthropicEndpoint is the canonical URL the build expects an Anthropic
-// registry to live at. It may not exist yet — the source treats 404 as
+// registry to live at. It may not exist yet - the source treats 404 as
 // "no registry" and surfaces no rows. Override at runtime via the user
 // settings discovery list when Anthropic publishes a final URL.
 const AnthropicEndpoint = "https://docs.claude.com/.well-known/claude-code-marketplaces.json"
@@ -123,7 +123,7 @@ func (s anthropicSource) Fetch(ctx context.Context, c *http.Client) ([]RemoteMar
 		return nil, fmt.Errorf("anthropic registry: HTTP %d", resp.StatusCode)
 	}
 	// docs.claude.com serves an HTML SPA at every path (including unknown
-	// .well-known URLs that have no JSON behind them) — treat non-JSON 200
+	// .well-known URLs that have no JSON behind them) - treat non-JSON 200
 	// responses as "no registry yet" rather than surfacing a parse error.
 	ct := resp.Header.Get("Content-Type")
 	if ct != "" && !strings.Contains(strings.ToLower(ct), "json") {
@@ -149,7 +149,7 @@ func (s anthropicSource) Fetch(ctx context.Context, c *http.Client) ([]RemoteMar
 
 // awesomeListSource scrapes a curated GitHub README for github.com/<owner>/<repo>
 // links and surfaces each unique target as a candidate marketplace. The README
-// is fetched from raw.githubusercontent.com (no rate limit) — never from the
+// is fetched from raw.githubusercontent.com (no rate limit) - never from the
 // API.
 type awesomeListSource struct {
 	owner, repo, branch, path string

@@ -8,7 +8,7 @@ import (
 )
 
 // PluginMCPSource describes an MCP server registered by a plugin's bundled .mcp.json.
-// These load automatically whenever the plugin is enabled — they are NOT managed via
+// These load automatically whenever the plugin is enabled - they are NOT managed via
 // ~/.claude.json or the top-level .mcp.json, so ccmcp must scan plugin cache dirs to
 // find them.
 type PluginMCPSource struct {
@@ -23,7 +23,7 @@ type PluginMCPSource struct {
 // of whether the value is true or false) and reads <installPath>/.mcp.json to collect every
 // MCP server the plugin ships. Each emitted source carries an Enabled bool.
 //
-// This is strictly a superset of ScanEnabledPluginMCPs — callers that only care about what
+// This is strictly a superset of ScanEnabledPluginMCPs - callers that only care about what
 // will actually load in the current project should filter by .Enabled (or use the helper).
 //
 // Why all installed plugins, not just enabled? Per-project disable entries in

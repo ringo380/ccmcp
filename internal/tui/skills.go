@@ -223,20 +223,20 @@ func (v *skillView) update(msg tea.Msg) tea.Cmd {
 		}
 		cur := v.rows[v.index]
 		if cur.Scope == skills.ScopePlugin {
-			v.flash = styleWarn.Render("plugin skills are read-only — copy to user scope to customise")
+			v.flash = styleWarn.Render("plugin skills are read-only - copy to user scope to customise")
 			return nil
 		}
 		v.moveName = cur.Name
 		v.moveFrom = cur.Scope
 		v.moveActive = true
-		v.flash = styleDim.Render(fmt.Sprintf("move %q — target scope: [u]ser / [p]roject / esc: cancel", cur.Name))
+		v.flash = styleDim.Render(fmt.Sprintf("move %q - target scope: [u]ser / [p]roject / esc: cancel", cur.Name))
 	case "d":
 		if len(v.rows) == 0 {
 			return nil
 		}
 		cur := v.rows[v.index]
 		if cur.Scope == skills.ScopePlugin {
-			v.flash = styleWarn.Render("plugin skills are read-only — disable the plugin instead")
+			v.flash = styleWarn.Render("plugin skills are read-only - disable the plugin instead")
 			return nil
 		}
 		if v.pendingRm == cur.Name {
@@ -318,7 +318,7 @@ func (v *skillView) render() string {
 		b.WriteString(v.filter.View() + "\n")
 	}
 	if len(v.rows) == 0 {
-		b.WriteString(styleDim.Render("  (no skills match — press 'n' to create one)"))
+		b.WriteString(styleDim.Render("  (no skills match - press 'n' to create one)"))
 		return b.String()
 	}
 	pageH := v.h - 4

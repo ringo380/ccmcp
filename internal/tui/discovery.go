@@ -18,7 +18,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/skills"
 )
 
-// discoveryView is the "Discover" tab — browse remote marketplaces, drill into
+// discoveryView is the "Discover" tab - browse remote marketplaces, drill into
 // their plugin lists, and preview-clone individual plugins to surface conflict
 // reports against the currently-installed state.
 type discoveryView struct {
@@ -75,7 +75,7 @@ type discoveryView struct {
 	// installedNames is a snapshot of already-added marketplace names, refreshed
 	// only on the bubbletea goroutine (construction, fetch, post-mutation). render
 	// and key handlers read this instead of calling settings.ExtraMarketplaces()
-	// directly — the add/install closures mutate that map off-goroutine, and a
+	// directly - the add/install closures mutate that map off-goroutine, and a
 	// live read during the spinner-driven render would be a concurrent map
 	// read/write panic.
 	installedNames map[string]struct{}
@@ -300,7 +300,7 @@ func (v *discoveryView) update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 
-	// Filter input drainage — must come after the async-msg switch (so result
+	// Filter input drainage - must come after the async-msg switch (so result
 	// messages aren't swallowed) but before key dispatch.
 	if v.filterActive {
 		var cmd tea.Cmd
@@ -388,7 +388,7 @@ func (v *discoveryView) updateList(key tea.KeyMsg) tea.Cmd {
 		v.flash = styleProgress.Render("refreshing discovery sources…")
 		return v.fetchCmd(true)
 	case "a":
-		// Block while any mutation closure is in flight — both add and install
+		// Block while any mutation closure is in flight - both add and install
 		// call install.AddMarketplace off-goroutine, and two concurrent writers to
 		// the shared settings map would panic.
 		if v.addBusy || v.installBusy || len(visible) == 0 {
@@ -513,7 +513,7 @@ func (v *discoveryView) updateDetail(key tea.KeyMsg) tea.Cmd {
 // reinstall behind a double-press confirm when the plugin ID already collides
 // with an installed one.
 func (v *discoveryView) installPluginCmd(plugin discovery.RemotePlugin) tea.Cmd {
-	// Block while any mutation closure is in flight (see the `a` handler) — a
+	// Block while any mutation closure is in flight (see the `a` handler) - a
 	// concurrent add and install would both write the shared settings map.
 	if v.installBusy || v.addBusy {
 		return nil
@@ -523,7 +523,7 @@ func (v *discoveryView) installPluginCmd(plugin discovery.RemotePlugin) tea.Cmd 
 	if v.mode == modeDetail && v.report.PluginIDClash {
 		if v.pendingInstall != plugin.Name {
 			v.pendingInstall = plugin.Name
-			v.flash = styleWarn.Render("already installed — press i again to reinstall")
+			v.flash = styleWarn.Render("already installed - press i again to reinstall")
 			return nil
 		}
 	}
@@ -601,7 +601,7 @@ func buildTUIConflictState(st *state) discovery.ConflictState {
 
 // toConfigMarketplace converts a discovered RemoteMarketplace into the
 // config.Marketplace shape the install pipeline consumes. config.Marketplace
-// has no "url" source type (only github|git|local) and no branch field — a
+// has no "url" source type (only github|git|local) and no branch field - a
 // "url" source maps to "git" (CloneMarketplace passes the URL verbatim to
 // git clone), and any pinned discovery Branch is dropped (clones HEAD).
 func toConfigMarketplace(r discovery.RemoteMarketplace) (config.Marketplace, error) {
@@ -656,7 +656,7 @@ func (v *discoveryView) visibleRows() []discovery.RemoteMarketplace {
 	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
 	out := make([]discovery.RemoteMarketplace, 0, len(v.rows))
 	for _, r := range v.rows {
-		// Hide already-installed marketplaces by default — Discover surfaces new
+		// Hide already-installed marketplaces by default - Discover surfaces new
 		// ones; the Marketplaces tab manages existing ones. `H` (showInstalled)
 		// reveals them. Same name-match convention as the [=] marker.
 		if !v.showInstalled {
@@ -731,11 +731,11 @@ func (v *discoveryView) renderList() string {
 	visible := v.visibleRows()
 	installed := v.installedCount()
 	if v.showInstalled {
-		b.WriteString(fmt.Sprintf("Discover — %d marketplace(s)", len(v.rows)))
+		b.WriteString(fmt.Sprintf("Discover - %d marketplace(s)", len(v.rows)))
 	} else {
-		b.WriteString(fmt.Sprintf("Discover — %d new marketplace(s)", len(visible)))
+		b.WriteString(fmt.Sprintf("Discover - %d new marketplace(s)", len(visible)))
 		if installed > 0 {
-			b.WriteString(styleDim.Render(fmt.Sprintf("  (%d installed hidden — H to show)", installed)))
+			b.WriteString(styleDim.Render(fmt.Sprintf("  (%d installed hidden - H to show)", installed)))
 		}
 	}
 	if v.filter.Value() != "" {
@@ -757,13 +757,13 @@ func (v *discoveryView) renderList() string {
 	if len(visible) == 0 && !v.fetchBusy {
 		switch {
 		case v.filter.Value() != "":
-			b.WriteString(styleDim.Render("  (no matches — press c to clear filter)") + "\n")
+			b.WriteString(styleDim.Render("  (no matches - press c to clear filter)") + "\n")
 		case len(v.rows) == 0:
-			b.WriteString(styleDim.Render("  (no marketplaces — press r to retry)") + "\n")
+			b.WriteString(styleDim.Render("  (no marketplaces - press r to retry)") + "\n")
 		case !v.showInstalled && installed > 0:
-			b.WriteString(styleDim.Render("  All discovered marketplaces already installed — manage them in the Marketplaces tab (3)") + "\n")
+			b.WriteString(styleDim.Render("  All discovered marketplaces already installed - manage them in the Marketplaces tab (3)") + "\n")
 		default:
-			b.WriteString(styleDim.Render("  (no marketplaces — press r to retry)") + "\n")
+			b.WriteString(styleDim.Render("  (no marketplaces - press r to retry)") + "\n")
 		}
 	}
 
@@ -775,7 +775,7 @@ func (v *discoveryView) renderList() string {
 	}
 
 	// Each marketplace row spans up to two physical lines (name + description/tags),
-	// so window by physical lines rather than row count — a row-count clamp would
+	// so window by physical lines rather than row count - a row-count clamp would
 	// overflow the terminal. Build all body lines into a flat slice, tracking the
 	// physical line where the selected row begins.
 	var lines []string
@@ -845,7 +845,7 @@ func (v *discoveryView) renderList() string {
 func (v *discoveryView) renderPlugins() string {
 	var b strings.Builder
 	visible := v.visiblePlugins()
-	b.WriteString(fmt.Sprintf("Discover › %s — %d plugin(s)", v.curMP.Name, len(v.plugins)))
+	b.WriteString(fmt.Sprintf("Discover › %s - %d plugin(s)", v.curMP.Name, len(v.plugins)))
 	if v.pFilter.Value() != "" {
 		b.WriteString(styleDim.Render(fmt.Sprintf("  (%d shown)", len(visible))))
 	}

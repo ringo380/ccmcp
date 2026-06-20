@@ -68,7 +68,7 @@ func TestDetectMCPLauncher(t *testing.T) {
 		{"uvx pinned", "uvx", []string{"my-tool==2.5"}, "my-tool", "2.5", "pypi"},
 		{"uv tool run", "uv", []string{"tool", "run", "x@1"}, "x", "1", "pypi"},
 		{"absolute npx path", "/usr/local/bin/npx", []string{"-y", "x@1"}, "x", "1", "npm"},
-		{"docker — unknown", "docker", []string{"run", "image"}, "", "", ""},
+		{"docker - unknown", "docker", []string{"run", "image"}, "", "", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -27,7 +27,7 @@
     },
     {
       "name": "knowledge-work-plugins",
-      "description": "Anthropic knowledge-work plugin suite — broad productivity set (49 plugins).",
+      "description": "Anthropic knowledge-work plugin suite - broad productivity set (49 plugins).",
       "source": "github",
       "repo": "anthropics/knowledge-work-plugins",
       "tags": ["productivity", "docs", "skills"],
@@ -35,7 +35,7 @@
     },
     {
       "name": "superpowers",
-      "description": "Core skills library for Claude Code — TDD, debugging, collaboration patterns.",
+      "description": "Core skills library for Claude Code - TDD, debugging, collaboration patterns.",
       "source": "github",
       "repo": "obra/superpowers",
       "tags": ["skills", "testing", "productivity"],
@@ -124,7 +124,7 @@
     },
     {
       "name": "claude-marketplace-elixir",
-      "description": "Elixir tooling — Credo, Dialyzer, Sobelow, ExUnit, Ash, Phoenix.",
+      "description": "Elixir tooling - Credo, Dialyzer, Sobelow, ExUnit, Ash, Phoenix.",
       "source": "github",
       "repo": "bradleygolden/claude-marketplace-elixir",
       "tags": ["testing", "security", "data"],
@@ -252,7 +252,7 @@
     },
     {
       "name": "devsforge-marketplace",
-      "description": "DevsForge — very large plugin marketplace across many categories (161 plugins).",
+      "description": "DevsForge - very large plugin marketplace across many categories (161 plugins).",
       "source": "github",
       "repo": "claudeforge/marketplace",
       "tags": ["agents", "commands", "skills", "devops", "testing", "data"]
@@ -266,7 +266,7 @@
     },
     {
       "name": "softaworks-agent-toolkit",
-      "description": "Softaworks agent toolkit — broad dev workflow agents (56 plugins).",
+      "description": "Softaworks agent toolkit - broad dev workflow agents (56 plugins).",
       "source": "github",
       "repo": "softaworks/agent-toolkit",
       "tags": ["agents", "commands", "devops", "testing"]
@@ -280,28 +280,28 @@
     },
     {
       "name": "claudesmith",
-      "description": "Claudesmith dev tooling — commit, review, test generation (12 plugins).",
+      "description": "Claudesmith dev tooling - commit, review, test generation (12 plugins).",
       "source": "github",
       "repo": "JNLei/claude-tools",
       "tags": ["commands", "testing", "productivity"]
     },
     {
       "name": "ai-eng-system",
-      "description": "AI engineering system — agents and workflows for ML/AI dev (7 plugins).",
+      "description": "AI engineering system - agents and workflows for ML/AI dev (7 plugins).",
       "source": "github",
       "repo": "v1truv1us/ai-eng-system",
       "tags": ["agents", "data", "productivity"]
     },
     {
       "name": "dotai",
-      "description": "udecode dotai — AI-assisted development workflow toolkit (7 plugins).",
+      "description": "udecode dotai - AI-assisted development workflow toolkit (7 plugins).",
       "source": "github",
       "repo": "udecode/dotai",
       "tags": ["agents", "commands", "productivity"]
     },
     {
       "name": "elevenlabs-plugins",
-      "description": "ElevenLabs official Claude plugins — text-to-speech / audio (2 plugins).",
+      "description": "ElevenLabs official Claude plugins - text-to-speech / audio (2 plugins).",
       "source": "github",
       "repo": "elevenlabs/claude-plugins",
       "tags": ["mcp", "productivity"]
@@ -322,7 +322,7 @@
     },
     {
       "name": "prompts-chat",
-      "description": "prompts.chat — the awesome-chatgpt-prompts collection as a plugin.",
+      "description": "prompts.chat - the awesome-chatgpt-prompts collection as a plugin.",
       "source": "github",
       "repo": "f/awesome-chatgpt-prompts",
       "tags": ["commands", "productivity"]
@@ -364,7 +364,7 @@
     },
     {
       "name": "xcsift",
-      "description": "xcsift — Xcode build/test output parsing for agents.",
+      "description": "xcsift - Xcode build/test output parsing for agents.",
       "source": "github",
       "repo": "ldomaradzki/xcsift",
       "tags": ["skills", "testing", "devops"]

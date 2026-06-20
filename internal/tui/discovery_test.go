@@ -156,7 +156,7 @@ func TestDiscoveryInstallReinstallNeedsConfirm(t *testing.T) {
 	v.curMP = discovery.RemoteMarketplace{Name: "mkt", Source: "github", Repo: "o/mkt"}
 	v.curPlugin = discovery.RemotePlugin{Name: "dup"}
 
-	// First `i` only arms the confirm — no install kicks off.
+	// First `i` only arms the confirm - no install kicks off.
 	if cmd := v.update(key("i")); cmd != nil {
 		t.Fatalf("first i on a clashing plugin should not start install")
 	}

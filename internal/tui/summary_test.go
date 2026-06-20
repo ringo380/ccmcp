@@ -115,7 +115,7 @@ func TestSummaryLLMReviewRendersResponse(t *testing.T) {
 		im, _ = im.Update(msg)
 	}
 	view := stripANSI(im.View())
-	if !strings.Contains(view, "LLM review — Orphan stdio override") {
+	if !strings.Contains(view, "LLM review - Orphan stdio override") {
 		t.Fatalf("expected review header in output:\n%s", view)
 	}
 	if !strings.Contains(view, "Verdict: yes") {
@@ -191,7 +191,7 @@ func TestDoctorFixRunsInTUIWithSpinner(t *testing.T) {
 }
 
 // TestDoctorFixErrorSurfacesOutputInline: when the stub returns an error +
-// output, the error flash should include a tail of the captured output —
+// output, the error flash should include a tail of the captured output -
 // no terminal handoff means stderr no longer prints "above" the TUI.
 func TestDoctorFixErrorSurfacesOutputInline(t *testing.T) {
 	st, _ := buildState(t)
@@ -402,7 +402,7 @@ func TestBulkFixRefusesInMemoryCategories(t *testing.T) {
 
 // TestSummaryAssetCacheLazyLoadsOnce: ensureAssets is sentinel-gated; calling
 // it twice does not re-read from disk. Verified by mutating an underlying file
-// after the first load — the cached values must NOT reflect the on-disk change
+// after the first load - the cached values must NOT reflect the on-disk change
 // until invalidateAssets is called.
 func TestSummaryAssetCacheLazyLoadsOnce(t *testing.T) {
 	st, p := buildState(t)
@@ -461,7 +461,7 @@ func TestSummaryAssetCachePopulatedFromBuildRows(t *testing.T) {
 
 // TestSummaryAssetCachePreservedAcrossOrphanFix: pruning an orphan override
 // (an in-memory fix that doesn't touch skills/agents/commands) must NOT drop
-// the asset cache — re-scanning all skill files on every unrelated fix would
+// the asset cache - re-scanning all skill files on every unrelated fix would
 // negate the lazy-load optimization.
 func TestSummaryAssetCachePreservedAcrossOrphanFix(t *testing.T) {
 	st, _ := buildState(t)
@@ -474,7 +474,7 @@ func TestSummaryAssetCachePreservedAcrossOrphanFix(t *testing.T) {
 		t.Fatal("expected assetsLoaded=true after first render of summary tab")
 	}
 
-	// Apply the orphan-prune fix (catOrphanPlugin/Stdio — does NOT affect assets).
+	// Apply the orphan-prune fix (catOrphanPlugin/Stdio - does NOT affect assets).
 	drive(m, "f", "y")
 	if !m.summary.assetsLoaded {
 		t.Errorf("orphan-prune fix should preserve asset cache (categoryAffectsAssets=false), but cache was invalidated")

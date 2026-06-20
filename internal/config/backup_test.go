@@ -47,7 +47,7 @@ func TestBackupSameSecondCollision(t *testing.T) {
 		t.Fatal(err)
 	}
 	backups := filepath.Join(dir, "backups")
-	// Call several times in a tight loop — all should succeed.
+	// Call several times in a tight loop - all should succeed.
 	for i := 0; i < 5; i++ {
 		if err := Backup(src, backups); err != nil {
 			t.Fatalf("backup %d: %v", i, err)

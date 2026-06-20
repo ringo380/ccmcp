@@ -182,7 +182,7 @@ var pluginInstallCmd = &cobra.Command{
 Supported marketplace source types: bare-string path, url, git-subdir, github.
 
 The marketplace manifest must already be present at
-~/.claude/plugins/marketplaces/<m>/.claude-plugin/marketplace.json — use Claude Code's
+~/.claude/plugins/marketplaces/<m>/.claude-plugin/marketplace.json - use Claude Code's
 /plugin menu or clone the marketplace repo manually before running this.
 
 Pass --register-only to skip the fetch and just wire up enabledPlugins + installed_plugins.json
@@ -476,7 +476,7 @@ explicit id to force a re-fetch regardless of detected state.`,
 		if err := installed.Save(); err != nil {
 			return err
 		}
-		// Registry persisted — now it's safe to GC the superseded cache dirs. Doing this
+		// Registry persisted - now it's safe to GC the superseded cache dirs. Doing this
 		// before Save() risked leaving installed_plugins.json pointing at a deleted dir
 		// (Claude Code: "plugin cache does not exist") if Save() failed.
 		for _, sp := range staleCaches {
@@ -808,6 +808,6 @@ func init() {
 	marketplaceAddCmd.Flags().StringVar(&mktRepo, "repo", "", "repo (owner/name for github, URL for git)")
 	marketplaceAddCmd.Flags().StringVar(&mktLocalPath, "path", "", "local filesystem path (for --source local)")
 	marketplaceAddCmd.Flags().BoolVar(&mktAutoUpdate, "auto-update", true, "enable auto-update")
-	marketplaceAddCmd.Flags().BoolVar(&mktNoClone, "no-clone", false, "register only — skip git clone")
+	marketplaceAddCmd.Flags().BoolVar(&mktNoClone, "no-clone", false, "register only - skip git clone")
 	marketplaceRemoveCmd.Flags().BoolVar(&mktPurge, "purge", false, "also delete the marketplace clone directory")
 }

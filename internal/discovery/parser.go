@@ -19,13 +19,13 @@ type GitHubRepoRef struct {
 // (the trailing `/` boundary stops the match before the path component).
 var repoLinkAnyRe = regexp.MustCompile(`(?i)github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[)\s/#?]|$)`)
 
-// stoplist drops common false-positives — these are repos that turn up in
+// stoplist drops common false-positives - these are repos that turn up in
 // almost every awesome-list as references but aren't ccmcp marketplaces.
 var stoplist = map[string]bool{
 	"github/awesome-claude":     true,
 	"sindresorhus/awesome":      true,
 	"matiassingers/awesome-rea": true,
-	// The awesome-list index repo itself — it's a curated list, not a marketplace.
+	// The awesome-list index repo itself - it's a curated list, not a marketplace.
 	"hesreallyhim/awesome-claude-code": true,
 	// Hooks examples repo; has no .claude-plugin/marketplace.json.
 	"disler/claude-code-hooks-mastery": true,
@@ -35,7 +35,7 @@ var stoplist = map[string]bool{
 // bullet list items. The result is deduplicated and ordered alphabetically.
 // Links not inside a bullet are ignored (e.g. badges in the header).
 //
-// The hint string is the bullet text with markdown link syntax stripped — it
+// The hint string is the bullet text with markdown link syntax stripped - it
 // is best-effort and may be empty.
 func ExtractGitHubRepos(markdown string) []GitHubRepoRef {
 	seen := map[string]GitHubRepoRef{}

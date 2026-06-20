@@ -43,7 +43,7 @@ func LoadCache(path string) (*DiscoveryResult, bool, error) {
 }
 
 // SaveCache writes result atomically to path. Errors during cache persistence
-// are non-fatal for callers — a working session is more valuable than a
+// are non-fatal for callers - a working session is more valuable than a
 // pristine cache.
 func SaveCache(path string, r *DiscoveryResult) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

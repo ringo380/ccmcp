@@ -137,9 +137,9 @@ var commandResolveCmd = &cobra.Command{
 			}
 			fmt.Println("\nAvailable strategies:")
 			if match.Kind == commands.SkillVsCommand {
-				fmt.Println("  disable-skill  — write skillOverrides[" + match.Effective + `]="off"`)
+				fmt.Println("  disable-skill  - write skillOverrides[" + match.Effective + `]="off"`)
 			}
-			fmt.Println("  ignore         — record in ~/.claude-ccmcp-ignores.json (stops reporting)")
+			fmt.Println("  ignore         - record in ~/.claude-ccmcp-ignores.json (stops reporting)")
 			return nil
 		case "disable-skill":
 			if match.Kind != commands.SkillVsCommand {

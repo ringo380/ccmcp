@@ -3,11 +3,11 @@
 //
 // Four marketplace source types are supported:
 //
-//  1. bare string  — "./plugins/foo": path inside the marketplace repo itself.
+//  1. bare string  - "./plugins/foo": path inside the marketplace repo itself.
 //     Plugin files are already on disk at marketplaces/<mkt>/plugins/foo.
-//  2. "url"        — {source:"url", url, sha?}: full-repo clone; optional sha pin.
-//  3. "git-subdir" — {source:"git-subdir", url, path, ref?, sha?}: clone then copy subdir.
-//  4. "github"     — {source:"github", repo, ref?}: same as url but repo-shorthand.
+//  2. "url"        - {source:"url", url, sha?}: full-repo clone; optional sha pin.
+//  3. "git-subdir" - {source:"git-subdir", url, path, ref?, sha?}: clone then copy subdir.
+//  4. "github"     - {source:"github", repo, ref?}: same as url but repo-shorthand.
 //
 // The installer writes to ~/.claude/plugins/cache/<mkt>/<plugin>/<version>/ and
 // records gitCommitSha + installPath in installed_plugins.json so that Claude Code's
@@ -139,7 +139,7 @@ func Install(p paths.Paths, marketplace, pluginName string) (*Result, error) {
 // installBareString copies (or symlinks) the subdir of the already-cloned marketplace repo.
 // Path containment is checked with filepath.Rel so sibling-directory prefix collisions
 // (e.g. marketplaceDir="/a/b/foo" vs src="/a/b/foo-evil") can't slip past a naïve
-// strings.HasPrefix — a malicious marketplace.json with a crafted "source" field would
+// strings.HasPrefix - a malicious marketplace.json with a crafted "source" field would
 // otherwise escape the intended root.
 func installBareString(_ paths.Paths, marketplaceDir, relPath, cacheRoot string, r *Result) (*Result, error) {
 	src := filepath.Join(marketplaceDir, relPath)
@@ -322,7 +322,7 @@ func runGit(label string, args ...string) error {
 
 func gitClone(url, dst string) error {
 	if _, err := os.Stat(filepath.Join(dst, ".git")); err == nil {
-		// already cloned — fetch to refresh
+		// already cloned - fetch to refresh
 		return runGit("fetch "+url, "-C", dst, "fetch", "--tags", "--quiet")
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
@@ -467,7 +467,7 @@ func IsMarketplaceCloned(p paths.Paths, name string) bool {
 }
 
 // CloneMarketplace clones a marketplace (github/git/local) into pluginsDir/marketplaces/<name>.
-// For "local" sources, no clone happens — the directory is expected to already exist (or be
+// For "local" sources, no clone happens - the directory is expected to already exist (or be
 // symlinked) by the user. Returns nil when the clone already exists; callers needing a refresh
 // should use UpdateMarketplace.
 func CloneMarketplace(p paths.Paths, mp config.Marketplace) error {
@@ -497,7 +497,7 @@ func CloneMarketplace(p paths.Paths, mp config.Marketplace) error {
 		if _, err := os.Stat(mp.Path); err != nil {
 			return fmt.Errorf("local marketplace path %s: %w", mp.Path, err)
 		}
-		// Ensure the parent dir exists; do nothing else — Claude Code expects local
+		// Ensure the parent dir exists; do nothing else - Claude Code expects local
 		// marketplaces to be referenced in-place via settings, not copied.
 		return os.MkdirAll(filepath.Dir(dst), 0o755)
 	default:
@@ -507,7 +507,7 @@ func CloneMarketplace(p paths.Paths, mp config.Marketplace) error {
 
 // AddMarketplace adds an entry to extraKnownMarketplaces and (for github/git source types)
 // clones the marketplace into pluginsDir/marketplaces/<name>. For "local" source type
-// it stat-checks mp.Path and creates the parent directory but does not copy — local
+// it stat-checks mp.Path and creates the parent directory but does not copy - local
 // marketplaces are referenced in-place. Caller is responsible for Backup() + Save() afterwards.
 func AddMarketplace(p paths.Paths, settings *config.Settings, mp config.Marketplace) error {
 	if err := settings.AddMarketplace(mp); err != nil {
@@ -596,7 +596,7 @@ func RemoteSourceHead(url string) (string, error) {
 
 // PluginSourceURL inspects a marketplace plugin entry and returns the upstream git URL
 // for its source (only meaningful for url/git-subdir/github sources). Empty string for
-// bare-string sources — those track the marketplace itself.
+// bare-string sources - those track the marketplace itself.
 func PluginSourceURL(entry MarketplacePlugin) string {
 	var asString string
 	if err := json.Unmarshal(entry.Source, &asString); err == nil && asString != "" {
@@ -677,10 +677,10 @@ func PullMarketplacesForPlugins(p paths.Paths, ids []string) map[string]error {
 //     caller to GC, but does NOT delete it here.
 //
 // Why return-rather-than-delete: this function only mutates the IN-MEMORY registry. The
-// matching installed_plugins.json write is deferred — to the TUI's `w`/Apply step, or to
+// matching installed_plugins.json write is deferred - to the TUI's `w`/Apply step, or to
 // the CLI's post-loop Save(). Deleting the old cache dir here would leave a window where
 // the on-disk registry still points at a vanished directory if that save is discarded,
-// interrupted, or fails — which Claude Code reports as "plugin cache does not exist".
+// interrupted, or fails - which Claude Code reports as "plugin cache does not exist".
 // Callers MUST persist installed_plugins.json first, then GCStaleCache(staleInstallPath).
 //
 // Caller is responsible for Save() + Backup() afterwards.

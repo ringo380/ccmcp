@@ -4,7 +4,7 @@ A dynamic CLI and TUI for managing Claude Code's MCP servers, plugins, and per-p
 
 ## Why
 
-Claude Code auto-loads MCP servers from at least **six** distinct places — user config, local project state, committed `.mcp.json`, bundled plugin `.mcp.json`s, claude.ai OAuth integrations, and in-memory overrides. Starting a session with all of them enabled burns hundreds of tokens of context before you type a character. The built-in `/mcp` menu lets you toggle things one row at a time; `ccmcp` lets you toggle them in bulk, by scope, or by filter, and gives you a single view that reflects what will actually load in the current project.
+Claude Code auto-loads MCP servers from at least **six** distinct places - user config, local project state, committed `.mcp.json`, bundled plugin `.mcp.json`s, claude.ai OAuth integrations, and in-memory overrides. Starting a session with all of them enabled burns hundreds of tokens of context before you type a character. The built-in `/mcp` menu lets you toggle things one row at a time; `ccmcp` lets you toggle them in bulk, by scope, or by filter, and gives you a single view that reflects what will actually load in the current project.
 
 ## Install
 
@@ -94,9 +94,9 @@ The "effective" view is the default. It lists every MCP that will load in this p
 /plugin      <enter>      N      w
 ```
 
-- `/plugin` — filter rows whose name contains "plugin" (or filter on a plugin name like `cloudflare`)
-- `N` — bulk-disable everything visible (writes to `disabledMcpServers` for this project only)
-- `w` — save
+- `/plugin` - filter rows whose name contains "plugin" (or filter on a plugin name like `cloudflare`)
+- `N` - bulk-disable everything visible (writes to `disabledMcpServers` for this project only)
+- `w` - save
 
 Undo the same way with `A`.
 
@@ -113,10 +113,10 @@ Undo the same way with `A`.
 
 The effective view's `[x]` / `[~]` / `[ ]` marks mean:
 
-- `[x]` — will load in this project
-- `[~]` — disabled here via a per-project override (easy to undo)
-- `[ ]` — not active in this project by any source
-- `[?]` — in `disabledMcpServers` but no live source found (stale); the row description
+- `[x]` - will load in this project
+- `[~]` - disabled here via a per-project override (easy to undo)
+- `[ ]` - not active in this project by any source
+- `[?]` - in `disabledMcpServers` but no live source found (stale); the row description
   explains why (plugin not installed, name deleted/renamed, etc.) and `ccmcp mcp prune`
   offers to clean it up.
 
@@ -147,7 +147,7 @@ apart from genuinely absent sources.
 |---|---|
 | `space` | toggle plugin enabled/disabled |
 | `A` / `N` | bulk enable/disable every visible plugin |
-| `B` | bulk update — re-fetch every installed plugin |
+| `B` | bulk update - re-fetch every installed plugin |
 | `F` | show last bulk-update failures (stderr + hint; `R` retries one) |
 | `x` | remove (two-step confirm); clean-removes plugins flagged `⚠ removed from marketplace`, including their cache dir |
 | `R` | refresh update probes + recheck marketplace membership (live) |
@@ -167,7 +167,7 @@ apart from genuinely absent sources.
 | `c` | clear filter |
 | `j` / `k` / arrows | navigate · `g` / `G` top / bottom · `b` / `esc` back |
 
-Browse a substantial built-in registry of curated Claude Code marketplaces (plus the awesome-list scraper and any `discoverySources` URLs), sorted by GitHub stars. By default the list shows only marketplaces you haven't installed yet — managing existing ones is the Marketplaces tab's job; press `H` to reveal installed entries (marked `[=]`). `a` adopts a marketplace without retyping it in the Marketplaces tab; `i` installs a plugin in one keystroke and enables it.
+Browse a substantial built-in registry of curated Claude Code marketplaces (plus the awesome-list scraper and any `discoverySources` URLs), sorted by GitHub stars. By default the list shows only marketplaces you haven't installed yet - managing existing ones is the Marketplaces tab's job; press `H` to reveal installed entries (marked `[=]`). `a` adopts a marketplace without retyping it in the Marketplaces tab; `i` installs a plugin in one keystroke and enables it.
 
 **Profiles tab**
 
@@ -189,7 +189,7 @@ Browse a substantial built-in registry of curated Claude Code marketplaces (plus
 | `y` / `n` / `esc` | approve / cancel in the confirm panel; `u` reverts a landed CLI fix |
 | `p` | bulk-prune orphan overrides (legacy; press twice to confirm) |
 
-Bird's-eye overview of every scope's counts, per-project overrides, and redundancies. Each actionable row (orphan override, stash redundancy, duplicate-load, slash-command conflict, plugin registration drift) is cursor-selectable and fixable in place — orphan prunes and stash drops apply directly to the in-memory state (save with `w`), and config edits hand off to `claude --print` non-interactively with an in-TUI spinner.
+Bird's-eye overview of every scope's counts, per-project overrides, and redundancies. Each actionable row (orphan override, stash redundancy, duplicate-load, slash-command conflict, plugin registration drift) is cursor-selectable and fixable in place - orphan prunes and stash drops apply directly to the in-memory state (save with `w`), and config edits hand off to `claude --print` non-interactively with an in-TUI spinner.
 
 **Doctor tab**
 
@@ -205,16 +205,16 @@ Bird's-eye overview of every scope's counts, per-project overrides, and redundan
 | `y` / `n` | approve / reject the previewed fix (in confirm panel) |
 | `u` | revert a CLI fix from its on-disk snapshot (in post-review panel) |
 
-Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pressing `f` opens a preview panel: in-TUI fixes show a unified diff of the exact change before you approve; Claude-CLI fixes show the full prompt first, then after the CLI runs, show the resulting diff and let you keep (`y`) or revert (`u`). Every fix snapshots the original file to `~/.claude-mcp-backups/doctor/` (kept: 20 newest per file, max age 30 days). `F` bulk-fixes every issue that shares the cursor's lint code in a single keystroke — programmatic codes (broken index entries, missing frontmatter fields, standalone broken links, empty MEMORY.md) are applied directly with per-file snapshots; CLI codes (line-too-long, file-too-long, content rewrites) are bundled into one `claude --print --max-turns 4` invocation with a strict-imperative envelope that forces Edit-tool calls instead of prose responses.
+Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pressing `f` opens a preview panel: in-TUI fixes show a unified diff of the exact change before you approve; Claude-CLI fixes show the full prompt first, then after the CLI runs, show the resulting diff and let you keep (`y`) or revert (`u`). Every fix snapshots the original file to `~/.claude-mcp-backups/doctor/` (kept: 20 newest per file, max age 30 days). `F` bulk-fixes every issue that shares the cursor's lint code in a single keystroke - programmatic codes (broken index entries, missing frontmatter fields, standalone broken links, empty MEMORY.md) are applied directly with per-file snapshots; CLI codes (line-too-long, file-too-long, content rewrites) are bundled into one `claude --print --max-turns 4` invocation with a strict-imperative envelope that forces Edit-tool calls instead of prose responses.
 
-ccmcp's doctor lints *content quality* (CLAUDE.md/MEMORY.md structure, skill/agent/command description and token-budget limits) — it **complements**, and does not duplicate, Claude Code's own built-in `/doctor`, which validates *config* (auto-updater health, settings/`.mcp.json` schema). The asset-lint limits calibrate to the installed Claude Code version (detected via `claude --version` and shown as `· CC <ver>` in the header); the per-skill description cap honors your `skillListingMaxDescChars` setting. To support a new Claude Code version, the version logic lives in one place — `internal/claudecode/CapabilitiesFor`.
+ccmcp's doctor lints *content quality* (CLAUDE.md/MEMORY.md structure, skill/agent/command description and token-budget limits) - it **complements**, and does not duplicate, Claude Code's own built-in `/doctor`, which validates *config* (auto-updater health, settings/`.mcp.json` schema). The asset-lint limits calibrate to the installed Claude Code version (detected via `claude --version` and shown as `· CC <ver>` in the header); the per-skill description cap honors your `skillListingMaxDescChars` setting. To support a new Claude Code version, the version logic lives in one place - `internal/claudecode/CapabilitiesFor`.
 
 **Global**
 
 | Key | Action |
 |---|---|
 | `tab` / `shift+tab` | cycle tabs |
-| `1`–`9`, `0` | jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands / Profiles / Summary / Doctor |
+| `1`-`9`, `0` | jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands / Profiles / Summary / Doctor |
 | `ctrl+g` | global search across all tabs (`enter` jumps to the row, `esc` closes) |
 | `w` | save all staged changes |
 | `q` | quit (warns if unsaved) |
@@ -294,7 +294,7 @@ Pressing `space` on an effective-view row flips the appropriate override key; `A
 
 ### Pruning stale overrides
 
-Over time, `disabledMcpServers` collects entries that no longer match any live source — e.g. an MCP that was renamed, a plugin that was uninstalled, or a server that moved into the stash. `ccmcp mcp prune` classifies every entry and removes the stale ones:
+Over time, `disabledMcpServers` collects entries that no longer match any live source - e.g. an MCP that was renamed, a plugin that was uninstalled, or a server that moved into the stash. `ccmcp mcp prune` classifies every entry and removes the stale ones:
 
 ```sh
 ccmcp mcp prune --dry-run                      # list proposed removals, no changes
@@ -302,16 +302,16 @@ ccmcp mcp prune --yes                          # go ahead, skip confirmation
 ccmcp mcp prune --include-stash-ghosts         # also sweep plain-name overrides that match a stash entry
 ```
 
-Orphan entries (plugin not installed, plain name with no source) are pruned by default. **Disabled-but-installed plugin overrides are preserved** — re-enabling the plugin would re-activate the MCP, and the user likely wanted it off per-project. Remove those explicitly with `ccmcp mcp override <key> --undo` if that's actually what you want.
+Orphan entries (plugin not installed, plain name with no source) are pruned by default. **Disabled-but-installed plugin overrides are preserved** - re-enabling the plugin would re-activate the MCP, and the user likely wanted it off per-project. Remove those explicitly with `ccmcp mcp override <key> --undo` if that's actually what you want.
 
 ## Plugin installer
 
 `ccmcp plugin install <name> --marketplace <m>` fetches source code from the marketplace and records the install in `~/.claude/plugins/installed_plugins.json`. Four marketplace source formats are supported:
 
-- bare string path (`./plugins/foo`) — subdir of an already-cloned marketplace repo
-- `url` — full-repo clone, optional `sha` pin
-- `git-subdir` — clone a repo and copy a subpath
-- `github` — repo-shorthand (`owner/name`, optional `ref`)
+- bare string path (`./plugins/foo`) - subdir of an already-cloned marketplace repo
+- `url` - full-repo clone, optional `sha` pin
+- `git-subdir` - clone a repo and copy a subpath
+- `github` - repo-shorthand (`owner/name`, optional `ref`)
 
 `--register-only` skips the fetch if the cache dir already exists. `--purge` on `plugin remove` also deletes the cache.
 
@@ -364,11 +364,11 @@ main.go
 
 ccmcp uses Claude Code's native names:
 
-- **user** — `~/.claude.json#/mcpServers`
-- **local** — `~/.claude.json#/projects[<cwd>]/mcpServers` (what Claude Code calls "local")
-- **project** — `./.mcp.json` (what Claude Code calls "project" — shared via git)
-- **stash** — `~/.claude-mcp-stash.json` (ccmcp-owned)
-- **effective** — the union of what actually loads in the current project
+- **user** - `~/.claude.json#/mcpServers`
+- **local** - `~/.claude.json#/projects[<cwd>]/mcpServers` (what Claude Code calls "local")
+- **project** - `./.mcp.json` (what Claude Code calls "project" - shared via git)
+- **stash** - `~/.claude-mcp-stash.json` (ccmcp-owned)
+- **effective** - the union of what actually loads in the current project
 
 Legacy aliases `--scope project` → local and `--scope mcpjson` → project are still accepted so older scripts keep working.
 
@@ -381,11 +381,11 @@ first to align on the approach.
 
 ## License & attribution
 
-ccmcp is open source under the [MIT License](LICENSE) — free to use, fork,
+ccmcp is open source under the [MIT License](LICENSE) - free to use, fork,
 modify, and redistribute, provided you retain the copyright notice and license
 text (see [NOTICE](NOTICE)).
 
 The **"ccmcp" name and brand are reserved** and are not covered by the MIT
 grant. Forks and derivative works must use a clearly distinct name and may not
-imply official status or endorsement — see [TRADEMARK.md](TRADEMARK.md). You're
+imply official status or endorsement - see [TRADEMARK.md](TRADEMARK.md). You're
 welcome to refer to the project by name accurately (e.g. "a fork of ccmcp").

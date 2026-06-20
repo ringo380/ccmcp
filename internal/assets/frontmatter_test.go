@@ -44,7 +44,7 @@ body goes here
 		t.Errorf("model=%q", fm.Model)
 	}
 	if _, ok := fm.Raw["triggers"]; ok {
-		t.Error("triggers is a list — should not land in Raw")
+		t.Error("triggers is a list - should not land in Raw")
 	}
 }
 

@@ -27,7 +27,7 @@ type RemoteMarketplace struct {
 	Name string `json:"name"`
 	// Description is a one-line summary. May be empty for awesome-list scrapes.
 	Description string `json:"description,omitempty"`
-	// Source is one of "github" | "git" | "url" — matching the existing
+	// Source is one of "github" | "git" | "url" - matching the existing
 	// Marketplace.SourceType vocabulary so the install path can adopt it
 	// without translation.
 	Source string `json:"source"`
@@ -40,9 +40,9 @@ type RemoteMarketplace struct {
 	// section names, registry tags, etc.
 	Tags []string `json:"tags,omitempty"`
 	// Stars is an optional GitHub star count when the source can cheaply
-	// supply it. Zero means "unknown" — UIs should not render a "0 ★" pill.
+	// supply it. Zero means "unknown" - UIs should not render a "0 ★" pill.
 	Stars int `json:"stars,omitempty"`
-	// Origin records which discovery source surfaced this entry — useful for
+	// Origin records which discovery source surfaced this entry - useful for
 	// debugging duplicates and for the TUI footer per-source error display.
 	// Examples: "embedded", "user:https://example.com/registry.json",
 	// "awesome-list:hesreallyhim/awesome-claude-code", "anthropic".
@@ -65,7 +65,7 @@ type RemotePlugin struct {
 }
 
 // DiscoveryResult is the merged output of a Discover() call. Errors are
-// retained per-source so partial failures don't lose successful results — the
+// retained per-source so partial failures don't lose successful results - the
 // UI surfaces them in a footer.
 type DiscoveryResult struct {
 	Marketplaces []RemoteMarketplace `json:"marketplaces"`
@@ -125,6 +125,6 @@ type Conflict struct {
 	// attributed.
 	ExistingSource string
 	// IncomingPath is the file inside the preview clone that introduces the
-	// conflicting item — useful so the user can grep it.
+	// conflicting item - useful so the user can grep it.
 	IncomingPath string
 }

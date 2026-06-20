@@ -46,7 +46,7 @@ func Run(p paths.Paths, projectPath string) error {
 //
 // Note: lazy-loaded update probes (plugins/marketplaces/MCPs "↑ update available"
 // indicators) and Discover-tab registry fetches fire from update(), not render(),
-// so Dump() will not show them — by design, since Dump is a one-shot diagnostic
+// so Dump() will not show them - by design, since Dump is a one-shot diagnostic
 // and shouldn't fire network calls.
 func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 	st, err := loadState(p, projectPath)
@@ -139,12 +139,12 @@ type state struct {
 	// pendingCacheGC holds superseded plugin cache dirs from in-memory UpdateInstall calls.
 	// They are deleted ONLY after installed_plugins.json saves successfully (see save()),
 	// so a discarded/failed apply never strands the on-disk registry pointing at a deleted
-	// directory — the "plugin cache does not exist" failure mode.
+	// directory - the "plugin cache does not exist" failure mode.
 	pendingCacheGC []string
 }
 
 // rescanPluginMCPs refreshes pluginMCPs from the current enabledPlugins + installed_plugins state.
-// Uses ScanAllInstalledPluginMCPs so disabled-but-installed plugins are still represented —
+// Uses ScanAllInstalledPluginMCPs so disabled-but-installed plugins are still represented -
 // consumers that care about "what will actually load" filter by PluginMCPSource.Enabled.
 func (s *state) rescanPluginMCPs() {
 	s.pluginMCPs = config.ScanAllInstalledPluginMCPs(s.settings, s.installed, s.paths.PluginsDir)

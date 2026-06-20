@@ -14,7 +14,7 @@ import (
 
 // ConflictState is the snapshot of installed Claude Code state that conflict
 // detection compares the incoming preview against. Constructing it from
-// existing scanner outputs keeps the detector a pure function — easy to test.
+// existing scanner outputs keeps the detector a pure function - easy to test.
 type ConflictState struct {
 	// SkillNames maps a skill name to a one-line "where it comes from"
 	// description (e.g. "user", "project", or "plugin:foo@official").

@@ -84,7 +84,7 @@ func LintSkills(sks []skills.Skill) []Issue {
 }
 
 // LintSkillsWithConfig validates every discovered skill against cfg's limits.
-// Plugin-sourced skills are still scanned — users sometimes copy a plugin skill
+// Plugin-sourced skills are still scanned - users sometimes copy a plugin skill
 // into their own scope and inherit the violation.
 func LintSkillsWithConfig(sks []skills.Skill, cfg LintConfig) []Issue {
 	var out []Issue
@@ -115,7 +115,7 @@ func LintSkillsWithConfig(sks []skills.Skill, cfg LintConfig) []Issue {
 				})
 			}
 		}
-		// Combined description + when_to_use — the doc-documented display truncation
+		// Combined description + when_to_use - the doc-documented display truncation
 		// applies to their concatenation, not each field individually.
 		desc := fm.Description
 		if wtu, ok := fm.Raw["when_to_use"]; ok {
@@ -131,7 +131,7 @@ func LintSkillsWithConfig(sks []skills.Skill, cfg LintConfig) []Issue {
 				File:     file,
 				Severity: SeverityError,
 				Code:     "SKILL003",
-				Message:  fmt.Sprintf("skill description+when_to_use length %d exceeds %d-character display limit — content past the cap is silently dropped", len(desc), cfg.MaxSkillDescChars),
+				Message:  fmt.Sprintf("skill description+when_to_use length %d exceeds %d-character display limit - content past the cap is silently dropped", len(desc), cfg.MaxSkillDescChars),
 			})
 		case len(desc) > cfg.WarnSkillDescChars:
 			out = append(out, Issue{
@@ -220,7 +220,7 @@ func getTokenEncoder() (*tiktoken.Tiktoken, error) {
 
 // agentBodyTokenCount reads `path`, strips the leading YAML frontmatter
 // block (if any), and returns the BPE token count of the remainder. Returns
-// an error only on read or encoder-init failure — empty bodies are 0 tokens.
+// an error only on read or encoder-init failure - empty bodies are 0 tokens.
 func agentBodyTokenCount(path string) (int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -274,7 +274,7 @@ func LintCommandsWithConfig(cmds []commands.Command, cfg LintConfig) []Issue {
 				File:     c.File,
 				Severity: SeverityWarning,
 				Code:     "CMD001",
-				Message:  fmt.Sprintf("command description length %d exceeds %d-character soft limit — shorten for palette readability", len(c.Description), cfg.WarnCommandDescChars),
+				Message:  fmt.Sprintf("command description length %d exceeds %d-character soft limit - shorten for palette readability", len(c.Description), cfg.WarnCommandDescChars),
 			})
 		}
 	}
@@ -283,7 +283,7 @@ func LintCommandsWithConfig(cmds []commands.Command, cfg LintConfig) []Issue {
 
 // LintCommandShadows emits CMD002 for every command that a same-named skill
 // silently shadows. Claude Code resolves `/name` to the skill when both a
-// command and a skill register it, so the command never runs — a quiet
+// command and a skill register it, so the command never runs - a quiet
 // foot-gun. `conflicts` comes from commands.FindConflicts; only the
 // SkillVsCommand kind is relevant here. This is the CI/`doctor assets` surface
 // for the same collisions the TUI Commands tab shows interactively.
@@ -301,7 +301,7 @@ func LintCommandShadows(conflicts []commands.Conflict) []Issue {
 				File:     p.File,
 				Severity: SeverityWarning,
 				Code:     "CMD002",
-				Message:  fmt.Sprintf("command /%s is shadowed by a skill of the same name — Claude Code runs the skill, so this command never executes", c.Effective),
+				Message:  fmt.Sprintf("command /%s is shadowed by a skill of the same name - Claude Code runs the skill, so this command never executes", c.Effective),
 			})
 		}
 	}

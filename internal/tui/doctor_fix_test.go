@@ -21,7 +21,7 @@ func seedBadMemory(t *testing.T, st *state) string {
 		t.Fatal(err)
 	}
 	mem := filepath.Join(memDir, "MEMORY.md")
-	body := "# MEMORY\n\n- [Good](good.md) — kept\n- [Broken](missing.md) — broken target\n"
+	body := "# MEMORY\n\n- [Good](good.md) - kept\n- [Broken](missing.md) - broken target\n"
 	if err := os.WriteFile(mem, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestDoctorInTUIFixShowsDiffAndRequiresApproval(t *testing.T) {
 	origBytes, _ := os.ReadFile(mem)
 
 	m := newModel(st)
-	// Doctor tab is "0" (key dispatch in model.go — Discover sits at 9).
+	// Doctor tab is "0" (key dispatch in model.go - Discover sits at 9).
 	out := drive(m, "0")
 	if !strings.Contains(stripANSI(out), "MEMORY.md") {
 		t.Fatalf("doctor tab did not render MEMORY.md group:\n%s", out)
@@ -55,7 +55,7 @@ func TestDoctorInTUIFixShowsDiffAndRequiresApproval(t *testing.T) {
 		t.Fatalf("expected the broken line in the diff, got:\n%s", clean)
 	}
 
-	// Press 'n' — file must be unchanged.
+	// Press 'n' - file must be unchanged.
 	out = drive(m, "0", "G", "f", "n")
 	got, _ := os.ReadFile(mem)
 	if string(got) != string(origBytes) {
@@ -65,7 +65,7 @@ func TestDoctorInTUIFixShowsDiffAndRequiresApproval(t *testing.T) {
 		t.Fatalf("panel should be gone after 'n'")
 	}
 
-	// Press 'f' then 'y' — file must be modified and snapshot must exist.
+	// Press 'f' then 'y' - file must be modified and snapshot must exist.
 	out = drive(m, "0", "G", "f", "y")
 	got, _ = os.ReadFile(mem)
 	if string(got) == string(origBytes) {
@@ -244,7 +244,7 @@ func TestDoctorApplyReviewBuildsCLIProposal(t *testing.T) {
 		t.Fatalf("expected pre-apply panel in view:\n%s", view)
 	}
 
-	// Cancel with 'n' — review must NOT be marked applied, showLLM must restore,
+	// Cancel with 'n' - review must NOT be marked applied, showLLM must restore,
 	// and 'a' must reopen the same review.
 	im, _ = im.Update(key("n"))
 	if dv.llmResults[0].applied {
@@ -304,7 +304,7 @@ func snapshotCount(t *testing.T, dir string) int {
 	return len(entries)
 }
 
-// TestDoctorCLINoChangeCleansSnapshot — when claude exits 0 but writes the same
+// TestDoctorCLINoChangeCleansSnapshot - when claude exits 0 but writes the same
 // bytes back, the pre-fix snapshot is orphaned and must be cleaned.
 func TestDoctorCLINoChangeCleansSnapshot(t *testing.T) {
 	st, _ := buildState(t)
@@ -347,7 +347,7 @@ func TestDoctorCLINoChangeCleansSnapshot(t *testing.T) {
 	}
 }
 
-// TestDoctorRevertFallsBackToBeforeBytes — when the on-disk snapshot is missing,
+// TestDoctorRevertFallsBackToBeforeBytes - when the on-disk snapshot is missing,
 // revert must still succeed using the in-memory beforeBytes copy.
 func TestDoctorRevertFallsBackToBeforeBytes(t *testing.T) {
 	st, _ := buildState(t)
@@ -368,7 +368,7 @@ func TestDoctorRevertFallsBackToBeforeBytes(t *testing.T) {
 		summary:      "stub fallback",
 		kind:         fixClaudeCLI,
 		target:       mem,
-		snapshotPath: bogusSnap, // unreadable — forces beforeBytes fallback
+		snapshotPath: bogusSnap, // unreadable - forces beforeBytes fallback
 		beforeBytes:  origBytes,
 	}
 	m.doctor.postReview = prop
@@ -387,7 +387,7 @@ func TestDoctorRevertFallsBackToBeforeBytes(t *testing.T) {
 	}
 }
 
-// TestDoctorRevertDeletesSnapshot — after successful revert, the snapshot is
+// TestDoctorRevertDeletesSnapshot - after successful revert, the snapshot is
 // redundant and must be removed.
 func TestDoctorRevertDeletesSnapshot(t *testing.T) {
 	st, _ := buildState(t)
@@ -435,7 +435,7 @@ func TestDoctorRevertDeletesSnapshot(t *testing.T) {
 	}
 }
 
-// TestDoctorInTUIWriteFailureCleansSnapshot — when the in-TUI write fails after
+// TestDoctorInTUIWriteFailureCleansSnapshot - when the in-TUI write fails after
 // a snapshot was taken, the orphan snapshot must be cleaned.
 func TestDoctorInTUIWriteFailureCleansSnapshot(t *testing.T) {
 	st, _ := buildState(t)
@@ -460,7 +460,7 @@ func TestDoctorInTUIWriteFailureCleansSnapshot(t *testing.T) {
 	}
 }
 
-// TestDoctorReLintClearsStaleState — pressing 'r' must clear flash, lastFix,
+// TestDoctorReLintClearsStaleState - pressing 'r' must clear flash, lastFix,
 // lastFixErr, and appliedReviewIdx so old state doesn't bleed into the new lint.
 func TestDoctorReLintClearsStaleState(t *testing.T) {
 	st, _ := buildState(t)
@@ -497,7 +497,7 @@ func (errStale) Error() string { return "stale" }
 // TestDoctorBulkFixProgrammaticAppliesEveryFile asserts that pressing F on a
 // category with multiple programmatic-fixable issues applies them all in one
 // keystroke without spawning the CLI. Seeded with two broken MEM002 links in
-// the same MEMORY.md plus a missing-frontmatter MEM004 in a sibling file —
+// the same MEMORY.md plus a missing-frontmatter MEM004 in a sibling file -
 // only the MEM002s share a code, so F on the MEM002 row must clean both
 // broken-link lines (one disk write per line, line numbers handled correctly).
 func TestDoctorBulkFixProgrammaticAppliesEveryFile(t *testing.T) {
@@ -507,7 +507,7 @@ func TestDoctorBulkFixProgrammaticAppliesEveryFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	mem := filepath.Join(memDir, "MEMORY.md")
-	body := "# MEMORY\n\n- [Good](good.md) — kept\n- [Broken1](missing1.md) — first dead\n- [Broken2](missing2.md) — second dead\n"
+	body := "# MEMORY\n\n- [Good](good.md) - kept\n- [Broken1](missing1.md) - first dead\n- [Broken2](missing2.md) - second dead\n"
 	if err := os.WriteFile(mem, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +522,7 @@ func TestDoctorBulkFixProgrammaticAppliesEveryFile(t *testing.T) {
 		t.Fatalf("expected MEM002 issues to render, got:\n%s", out)
 	}
 	// Find a cursor index on a MEM002 issue. Simpler: navigate to first
-	// MEM002 with 'g' (which puts cursor on first issue — depends on layout).
+	// MEM002 with 'g' (which puts cursor on first issue - depends on layout).
 	// For determinism, set cursor by scanning v.allIssues.
 	dv := m.doctor
 	cursorIdx := -1
@@ -566,7 +566,7 @@ func TestDoctorBulkFixProgrammaticAppliesEveryFile(t *testing.T) {
 
 // TestDoctorBulkCLIPromptIsNotDoubleWrapped: the bundled CLI prompt must use
 // each per-issue body once (cliPromptRaw), not the already-envelope-wrapped
-// cliPrompt — otherwise every fix carries a redundant inner "You MUST use the
+// cliPrompt - otherwise every fix carries a redundant inner "You MUST use the
 // Edit tool" preamble inside the outer envelope, wasting tokens and giving
 // the model contradictory target instructions.
 func TestDoctorBulkCLIPromptIsNotDoubleWrapped(t *testing.T) {
@@ -599,7 +599,7 @@ func TestCommandViewCapturingInputIncludesResolveActive(t *testing.T) {
 	}
 	cv.resolveActive = true
 	if !cv.capturingInput() {
-		t.Fatalf("capturingInput() must return true while resolveActive — otherwise global q/esc consumes the key first")
+		t.Fatalf("capturingInput() must return true while resolveActive - otherwise global q/esc consumes the key first")
 	}
 	cv.resolveActive = false
 	if cv.capturingInput() {
@@ -609,7 +609,7 @@ func TestCommandViewCapturingInputIncludesResolveActive(t *testing.T) {
 
 // TestDoctorBulkFixRefusesSingletonCategory: F is a no-op when only one issue
 // shares the cursor's code. The plan-time decision was "no point bulk-fixing
-// one issue" — confirm that path surfaces the explanatory flash.
+// one issue" - confirm that path surfaces the explanatory flash.
 func TestDoctorBulkFixRefusesSingletonCategory(t *testing.T) {
 	st, _ := buildState(t)
 	seedBadMemory(t, st) // single MEM002 only

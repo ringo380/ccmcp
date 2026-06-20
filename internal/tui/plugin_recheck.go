@@ -17,7 +17,7 @@ type pluginRecheckMsg struct {
 }
 
 // recheckRemovedCmd fetches live marketplace manifests for the marketplaces backing
-// installed plugins and returns the set of ids no longer present. Membership-only —
+// installed plugins and returns the set of ids no longer present. Membership-only -
 // no disk writes. Marketplaces whose remote source can't be resolved or fetched are
 // skipped (their ids stay un-flagged) so a transient network/registration gap never
 // produces a false "removed" warning.

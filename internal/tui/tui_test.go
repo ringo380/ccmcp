@@ -172,7 +172,7 @@ func TestTUIEffectiveSpaceTogglesPerProjectOverride(t *testing.T) {
 	if !found {
 		t.Errorf("expected %q in disabledMcpServers, got %v", first.OverrideKey, disabled)
 	}
-	// Toggle again — should remove
+	// Toggle again - should remove
 	drive(m, " ")
 	disabled = st.cj.ProjectDisabledMcpServers(st.project)
 	for _, k := range disabled {
@@ -185,7 +185,7 @@ func TestTUIEffectiveSpaceTogglesPerProjectOverride(t *testing.T) {
 func TestTUIEffectiveSpaceOnStashHints(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
-	// Stash rows are hidden in the effective view by default — reveal them so this
+	// Stash rows are hidden in the effective view by default - reveal them so this
 	// "space on a stash row is a no-op" assertion can actually reach a stash row.
 	m.mcps.showHidden = true
 	// find a stash row and place cursor there (use visible-row index so update() sees it)
@@ -253,7 +253,7 @@ func TestTUIBulkDisableInEffective(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	// Default scope is effective. Press N — should add every effective row's OverrideKey
+	// Default scope is effective. Press N - should add every effective row's OverrideKey
 	// to disabledMcpServers. In the sandbox that's "shared" + "user-only" (both user-scope).
 	drive(m, "N")
 
@@ -272,7 +272,7 @@ func TestTUIBulkDisableInEffective(t *testing.T) {
 			t.Errorf("expected %q in disabledMcpServers, got %v", k, disabled)
 		}
 	}
-	// Now bulk-enable — should clear all
+	// Now bulk-enable - should clear all
 	drive(m, "A")
 	disabled = st.cj.ProjectDisabledMcpServers(st.project)
 	if len(disabled) != 0 {
@@ -329,7 +329,7 @@ func TestTUIHelpOverlay(t *testing.T) {
 	if m.showHelp {
 		t.Error("esc should close the overlay")
 	}
-	// `q` while help is open should NOT close it — matches footer hint of `?/esc` only,
+	// `q` while help is open should NOT close it - matches footer hint of `?/esc` only,
 	// and avoids surprising a user who hits `q` expecting to quit the whole app.
 	drive(m, "?")
 	if !m.showHelp {
@@ -364,7 +364,7 @@ func TestTUIStashShortcut(t *testing.T) {
 func TestTUIUnstashShortcut(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
-	// Stash rows are hidden in the effective scope by default — reveal them so the
+	// Stash rows are hidden in the effective scope by default - reveal them so the
 	// filter can land on `stashed-a`.
 	m.mcps.showHidden = true
 
@@ -444,7 +444,7 @@ func TestTUIEffectiveHidesNoise(t *testing.T) {
 		t.Errorf("title should include hidden count and `H` hint; got:\n%s", view)
 	}
 
-	// Press H — everything reappears
+	// Press H - everything reappears
 	view = drive(m, "H")
 	for _, want := range []string{"stashed-a", "stashed-b", "ghost-orphan"} {
 		if !strings.Contains(view, want) {
@@ -452,7 +452,7 @@ func TestTUIEffectiveHidesNoise(t *testing.T) {
 		}
 	}
 
-	// Press H again — back to hidden
+	// Press H again - back to hidden
 	view = drive(m, "H")
 	if strings.Contains(view, "stashed-a") {
 		t.Error("second H should re-hide stash rows")
@@ -473,7 +473,7 @@ func TestTUIEffectiveHidesNoise(t *testing.T) {
 // rows[]; this one drives via visibleRows().
 func TestTUIEffectiveSpaceMapsToFilteredVisibleRow(t *testing.T) {
 	st, _ := buildState(t)
-	// Inject an orphan to ensure the filter is actually dropping rows from view —
+	// Inject an orphan to ensure the filter is actually dropping rows from view -
 	// otherwise the test could pass against an unfiltered visible list.
 	st.cj.AddProjectDisabledMcpServer(st.project, "ghost-mapping-test")
 	m := newModel(st)
@@ -482,14 +482,14 @@ func TestTUIEffectiveSpaceMapsToFilteredVisibleRow(t *testing.T) {
 	if len(visible) == 0 {
 		t.Fatal("precondition: at least one visible row in default effective view")
 	}
-	// Confirm the orphan is hidden — guards the regression direction.
+	// Confirm the orphan is hidden - guards the regression direction.
 	for _, r := range visible {
 		if r.Name == "ghost-mapping-test" {
 			t.Fatal("orphan should be hidden from default effective view")
 		}
 	}
 
-	// Position cursor on the last visible row and press space — should toggle THAT row's
+	// Position cursor on the last visible row and press space - should toggle THAT row's
 	// override key, not anything from the unfiltered v.rows.
 	target := visible[len(visible)-1]
 	m.mcps.index = len(visible) - 1
@@ -671,7 +671,7 @@ func TestTUIPluginRemoveTwoStepConfirm(t *testing.T) {
 	}
 	target := visible[0]
 	if target.IsRemote {
-		t.Skip("first row is remote — skipping remove test")
+		t.Skip("first row is remote - skipping remove test")
 	}
 
 	// First x: sets pendingRemove, no removal yet.
@@ -847,7 +847,7 @@ func TestTUISaveFlushesToDisk(t *testing.T) {
 	m := newModel(st)
 
 	// Toggle something to dirty the state, then save with 'w'.
-	// Cycle to 'local' scope first — the effective-view toggle writes to
+	// Cycle to 'local' scope first - the effective-view toggle writes to
 	// disabledMcpServers (per-project override), but this test asserts a direct
 	// mutation of projects[...].mcpServers, which only the local-scope toggle produces.
 	_ = drive(m, "s", " ", "w")
@@ -933,7 +933,7 @@ func TestTUISkillsTabToggleNoop(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	// Switch to skills, attempt toggle — with empty rows should be a no-op
+	// Switch to skills, attempt toggle - with empty rows should be a no-op
 	_ = drive(m, "5", " ")
 	if st.dirtySettings {
 		t.Error("toggling in empty skills view should not dirty settings")
@@ -1022,7 +1022,7 @@ func TestTUIFilterNarrowsVisible(t *testing.T) {
 	if !m.mcps.filterActive {
 		t.Fatal("filter should be active after /")
 	}
-	// Simulate typing characters — textinput.Model handles runes
+	// Simulate typing characters - textinput.Model handles runes
 	for _, r := range "stashed" {
 		m.mcps.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
@@ -1507,7 +1507,7 @@ func TestTUIPluginBulkResultHandlerStillAppliesForDirectSender(t *testing.T) {
 				QualifiedID: "plug-one@mkt", InstallPath: "/x/1-new", Version: "2.0", GitCommitSha: "new",
 			}, oldInstPath: "/x/1"},
 		},
-		// streamed: false (zero value) — handler runs full apply loop
+		// streamed: false (zero value) - handler runs full apply loop
 	})
 	_ = im
 	if !st.dirtyPlugins {
@@ -1525,7 +1525,7 @@ func TestTUIPluginBulkResultHandlerStillAppliesForDirectSender(t *testing.T) {
 func TestTUIPluginBulkNilResultIsTreatedAsFailure(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
-	_ = drive(m, "2") // plugins tab — routes pluginBulkItemDoneMsg to m.plugins.update
+	_ = drive(m, "2") // plugins tab - routes pluginBulkItemDoneMsg to m.plugins.update
 	m.plugins.bulkUpdating = true
 	m.plugins.bulkTargets = []bulkUpdateTarget{
 		{id: "plug-x@mkt", name: "plug-x", mkt: "mkt"},
@@ -1594,7 +1594,7 @@ func TestFreshUpdateCheckLandsInCache(t *testing.T) {
 
 	id := "plug-one@mkt"
 	// On-disk SHA stays empty (buildState doesn't set one). The check's Local should
-	// also be empty to be considered fresh — the stale guard only triggers when
+	// also be empty to be considered fresh - the stale guard only triggers when
 	// status.Local is non-empty AND mismatches.
 	var im tea.Model = m
 	im, _ = im.Update(pluginUpdateCheckMsg{

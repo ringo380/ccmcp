@@ -155,7 +155,7 @@ func TestLintAgentsBodyOverBudget(t *testing.T) {
 	tmp := t.TempDir()
 	file := filepath.Join(tmp, "fat-agent.md")
 	// Each "lorem ipsum " is 2 tokens in cl100k_base, so 8000 repeats
-	// ≈ 16k tokens — comfortably over the 15k error threshold.
+	// ≈ 16k tokens - comfortably over the 15k error threshold.
 	body := "---\nname: fat\ndescription: short\n---\n" + strings.Repeat("lorem ipsum ", 8000)
 	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
 		t.Fatal(err)

@@ -191,7 +191,7 @@ func (v *pluginView) rebuild() {
 
 	// Detect plugins whose marketplace is cached locally but no longer lists them.
 	// Computed once (cached) and consumed below to flag rows; recomputed after any
-	// state-changing op sets v.removed = nil. Local-cache read only — cheap disk
+	// state-changing op sets v.removed = nil. Local-cache read only - cheap disk
 	// I/O over a handful of marketplace.json files, and not on the per-frame path
 	// (rebuild runs on construction + mutations, not every render). A live remote
 	// recheck (R key) overwrites v.removed with a non-nil map, so this no-ops then.
@@ -300,7 +300,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		t := m.target
 		switch {
 		case m.err != nil || m.result == nil:
-			// Treat a nil result as a failure even when err is nil — should never
+			// Treat a nil result as a failure even when err is nil - should never
 			// happen given install.Install's contract, but a defensive guard keeps
 			// the switch from dereferencing nil in the SHA comparison below.
 			errText := ""
@@ -351,7 +351,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		v.bulkSkipped = nil
 		v.bulkFailed = nil
 		// Apply UpdateInstall on the main goroutine to avoid racing with rebuild()'s
-		// reads of v.st.installed. Skipped when streamed=true — the per-item handler
+		// reads of v.st.installed. Skipped when streamed=true - the per-item handler
 		// already landed each entry, and re-applying would just churn timestamps and
 		// queue redundant cache GC for already-superseded paths. Direct senders
 		// (tests, future callers) leave streamed=false so this loop runs.
@@ -454,7 +454,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		}
 		v.removed = m.removed
 		v.rebuild()
-		v.flash = styleOK.Render(fmt.Sprintf("rechecked marketplaces — %d removed", len(m.removed)))
+		v.flash = styleOK.Render(fmt.Sprintf("rechecked marketplaces - %d removed", len(m.removed)))
 		return nil
 
 	case availLoadedMsg:
@@ -470,7 +470,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 	case pluginUpdateCheckMsg:
 		// Discard stale checks. The probe was scheduled before some intervening
 		// update (single or bulk) landed a new local SHA on disk. Trusting it would
-		// re-poison the cache with Outdated=true for a plugin we just upgraded —
+		// re-poison the cache with Outdated=true for a plugin we just upgraded -
 		// that's the visible symptom of "10 updates available" sticking after a
 		// successful bulk update. Re-fire the probe against current state instead.
 		if m.status.Local != "" {
@@ -598,7 +598,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		}
 		r := visible[v.index]
 		if r.IsRemote {
-			v.flash = styleDim.Render("claude.ai integrations are managed at claude.ai — cannot update here")
+			v.flash = styleDim.Render("claude.ai integrations are managed at claude.ai - cannot update here")
 			return nil
 		}
 		if !r.Installed {
@@ -607,7 +607,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		}
 		name, mkt := config.ParsePluginID(r.ID)
 		if mkt == "" {
-			v.flash = styleErr.Render(r.ID + ": unqualified ID — cannot update")
+			v.flash = styleErr.Render(r.ID + ": unqualified ID - cannot update")
 			return nil
 		}
 		// Capture snapshot of current state for comparison in result handler.
@@ -636,7 +636,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		}
 		r := visible[v.index]
 		if r.IsRemote {
-			v.flash = styleDim.Render("claude.ai integrations cannot be removed here — disconnect at claude.ai")
+			v.flash = styleDim.Render("claude.ai integrations cannot be removed here - disconnect at claude.ai")
 			v.pendingRemove = ""
 			return nil
 		}
@@ -650,7 +650,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			v.pendingRemove = ""
 			v.removed = nil
 			// Clean removal for plugins gone from their marketplace: also delete the
-			// on-disk cache — the marketplace can no longer re-provide it anyway.
+			// on-disk cache - the marketplace can no longer re-provide it anyway.
 			if r.RemovedFromMkt && instPath != "" {
 				_ = os.RemoveAll(instPath)
 				v.rebuild()
@@ -845,7 +845,7 @@ func (v *pluginView) initialCheckCmd() tea.Cmd {
 	return v.buildCheckCmd()
 }
 
-// initialCheckCmdForce ignores the loaded flag (R key — manual refresh).
+// initialCheckCmdForce ignores the loaded flag (R key - manual refresh).
 func (v *pluginView) initialCheckCmdForce() tea.Cmd {
 	v.loaded = true
 	for _, ip := range v.st.installed.List() {
@@ -1006,7 +1006,7 @@ func (v *pluginView) render() string {
 			outdated++
 		}
 	}
-	title := fmt.Sprintf("Plugins — %s  (showing %d/%d local, %d remote; %d enabled, %d disabled)",
+	title := fmt.Sprintf("Plugins - %s  (showing %d/%d local, %d remote; %d enabled, %d disabled)",
 		mode, localCount, len(v.rows)-remoteCount, remoteVis, enabled, disabled)
 	if outdated > 0 {
 		title += "  " + styleWarn.Render(fmt.Sprintf("(%d update available)", outdated))
@@ -1122,24 +1122,24 @@ func (v *pluginView) render() string {
 func (v *pluginView) renderAvailable() string {
 	var b strings.Builder
 	if v.availLoading {
-		b.WriteString("Plugins — available  (loading…)\n")
+		b.WriteString("Plugins - available  (loading…)\n")
 		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("fetching marketplace catalogs…"))
 		return b.String()
 	}
 	if v.availErr != "" {
-		b.WriteString("Plugins — available  (error)\n")
+		b.WriteString("Plugins - available  (error)\n")
 		b.WriteString(styleErr.Render("  " + v.availErr + "\n"))
 		b.WriteString(styleDim.Render("  esc: back"))
 		return b.String()
 	}
 	if len(v.availRows) == 0 {
-		b.WriteString("Plugins — available  (none)\n")
+		b.WriteString("Plugins - available  (none)\n")
 		b.WriteString(styleDim.Render("  All marketplace plugins are already installed, or no marketplaces are cloned.\n"))
 		b.WriteString(styleDim.Render("  esc: back"))
 		return b.String()
 	}
 
-	b.WriteString(fmt.Sprintf("Plugins — available  (%d not installed)\n", len(v.availRows)))
+	b.WriteString(fmt.Sprintf("Plugins - available  (%d not installed)\n", len(v.availRows)))
 	if v.installing {
 		b.WriteString("  " + v.st.spinnerFrame + styleProgress.Render("install in progress…") + "\n")
 	}

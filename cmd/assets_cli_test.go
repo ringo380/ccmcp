@@ -123,13 +123,13 @@ func TestCLISkillEnableDisableRoundtrip(t *testing.T) {
 	}
 	settings := readJSON(t, filepath.Join(home, ".claude", "settings.json"))
 	if _, ok := settings["skillOverrides"]; ok {
-		// If present, it should be empty — SetSkillOverride deletes when last key goes.
+		// If present, it should be empty - SetSkillOverride deletes when last key goes.
 		m, _ := settings["skillOverrides"].(map[string]any)
 		if _, still := m["off-me"]; still {
 			t.Errorf("off-me should be removed from skillOverrides, got %v", m)
 		}
 	}
-	// Now disable alpha — should add an override entry.
+	// Now disable alpha - should add an override entry.
 	if _, err := runCLI(t, home, "skill", "disable", "alpha"); err != nil {
 		t.Fatal(err)
 	}

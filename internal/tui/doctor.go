@@ -58,7 +58,7 @@ type doctorView struct {
 
 	// claudeOnPath is cached at view init: when false, LLM review and fix-via-CLI
 	// are unavailable and the keys 'l' / 'f' / 'a' / 'F' surface a friendly
-	// hint instead (the bulk F path gates only on fixClaudeCLI proposals — an
+	// hint instead (the bulk F path gates only on fixClaudeCLI proposals - an
 	// all-programmatic bulk works without the CLI).
 	claudeOnPath bool
 
@@ -116,7 +116,7 @@ func (v *doctorView) runLint() {
 	v.loaded = true
 	v.top = 0
 
-	// Fire-and-forget snapshot GC. Errors are silent — they affect cleanup,
+	// Fire-and-forget snapshot GC. Errors are silent - they affect cleanup,
 	// not correctness of the lint or any fix.
 	go gcDoctorSnapshots(doctorSnapshotDir(v.st.paths.BackupsDir), doctorSnapshotKeep, doctorSnapshotMaxAge)
 
@@ -143,7 +143,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		if done.err != nil {
 			v.flash = styleErr.Render("chat session ended: " + done.err.Error())
 		} else {
-			v.flash = styleOK.Render("chat session ended — re-linting")
+			v.flash = styleOK.Render("chat session ended - re-linting")
 		}
 		v.loaded = false
 		return nil
@@ -166,19 +166,19 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			v.loaded = false // re-lint to show current state
 			return nil
 		}
-		// CLI fix landed — compute post-apply diff and enter postReview gate.
+		// CLI fix landed - compute post-apply diff and enter postReview gate.
 		if done.proposal != nil && done.proposal.kind == fixClaudeCLI {
 			after, err := os.ReadFile(done.proposal.target)
 			if err != nil {
 				v.flash = styleErr.Render(fmt.Sprintf(
-					"read post-fix %s: %s — snapshot kept at %s",
+					"read post-fix %s: %s - snapshot kept at %s",
 					filepath.Base(done.proposal.target), err.Error(), done.proposal.snapshotPath,
 				))
 				v.loaded = false
 				return nil
 			}
 			diff := unifiedDiff(string(done.proposal.beforeBytes), string(after), 3)
-			// For bulk CLI fixes, also check every other target — Claude can
+			// For bulk CLI fixes, also check every other target - Claude can
 			// reorder or skip files, so a clean primary doesn't mean the
 			// whole batch was a no-op. If ANY target changed, treat the run
 			// as successful and surface the primary diff (the other targets
@@ -203,13 +203,13 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 					}
 					if d := unifiedDiff(string(before), string(afterT), 3); d != "" {
 						bulkChanged = true
-						diff = fmt.Sprintf("@@ primary %s unchanged — secondary %s edited @@\n", filepath.Base(done.proposal.target), filepath.Base(t)) + d
+						diff = fmt.Sprintf("@@ primary %s unchanged - secondary %s edited @@\n", filepath.Base(done.proposal.target), filepath.Base(t)) + d
 						break
 					}
 				}
 			}
 			if diff == "" && !bulkChanged {
-				// Claude exited 0 but didn't change anything — costly no-op.
+				// Claude exited 0 but didn't change anything - costly no-op.
 				// Surface the tail of stdout/stderr so the user can see WHY
 				// (model declined, prompt mis-shaped, etc.) instead of getting
 				// a silent shrug. Also drop bulk snapshots so we don't leak.
@@ -219,7 +219,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 						deleteSnapshot(snap)
 					}
 				}
-				flash := styleErr.Render("claude CLI exited 0 but made no edits — token spend wasted")
+				flash := styleErr.Render("claude CLI exited 0 but made no edits - token spend wasted")
 				if tail := tailOutput(done.output, 8); tail != "" {
 					flash += "\n" + styleDim.Render(tail)
 				}
@@ -252,7 +252,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			// Keep the change. The primary snapshot is preserved by default
 			// so the user can still copy back from disk if they reconsider
 			// later (GC sweeps 30-day-old entries). Bulk snapshots are also
-			// kept on the same retention policy — listing them in the flash
+			// kept on the same retention policy - listing them in the flash
 			// would be noisy, so just count them.
 			path := v.postReview.snapshotPath
 			extra := len(v.postReview.bulkSnapshots)
@@ -275,7 +275,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			if err := v.revertFromSnapshot(v.postReview); err != nil {
 				v.flash = styleErr.Render("revert failed: " + err.Error())
 			} else {
-				// Files are restored — snapshots are redundant, drop them all so GC has less to sweep.
+				// Files are restored - snapshots are redundant, drop them all so GC has less to sweep.
 				deleteSnapshot(v.postReview.snapshotPath)
 				for _, snap := range v.postReview.bulkSnapshots {
 					if snap != "" {
@@ -307,7 +307,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		switch key.String() {
 		case "y":
 			// If this proposal originated from the apply-review path, the user is now
-			// committing — mark the source review applied so it isn't re-offered.
+			// committing - mark the source review applied so it isn't re-offered.
 			if v.appliedReviewIdx >= 0 && v.appliedReviewIdx < len(v.llmResults) {
 				v.llmResults[v.appliedReviewIdx].applied = true
 				v.appliedReviewIdx = -1
@@ -352,7 +352,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		if !v.claudeOnPath {
-			v.flash = styleWarn.Render("apply review unavailable — claude CLI not found in PATH")
+			v.flash = styleWarn.Render("apply review unavailable - claude CLI not found in PATH")
 			return nil
 		}
 		proposal := buildReviewApplyProposal(v.llmResults[idx])
@@ -368,7 +368,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 	case "L":
 		v.showLog = !v.showLog
 		if v.showLog && len(v.cliLog) == 0 && !v.fixRunning {
-			v.flash = styleDim.Render("(no CLI activity yet — log will populate once a fix runs)")
+			v.flash = styleDim.Render("(no CLI activity yet - log will populate once a fix runs)")
 		}
 	case "c":
 		// Drop into an interactive `claude` session in the project root so
@@ -376,7 +376,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		// model questions, and apply manual follow-up edits. The TUI
 		// suspends; on exit chatDoneMsg re-lints.
 		if !v.claudeOnPath {
-			v.flash = styleWarn.Render("chat follow-up unavailable — claude CLI not found in PATH")
+			v.flash = styleWarn.Render("chat follow-up unavailable - claude CLI not found in PATH")
 			return nil
 		}
 		ctx := v.chatContextPrompt()
@@ -394,7 +394,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		if !v.canRunLLM() {
-			v.flash = styleWarn.Render("LLM review unavailable — install the claude CLI or set ANTHROPIC_API_KEY/OPENAI_API_KEY")
+			v.flash = styleWarn.Render("LLM review unavailable - install the claude CLI or set ANTHROPIC_API_KEY/OPENAI_API_KEY")
 			return nil
 		}
 		v.llmRunning = true
@@ -406,7 +406,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		return func() tea.Msg {
 			// Bundle every reviewable file into one Claude call. Per-file
 			// iteration used to multiply the token bill for no marginal
-			// benefit — a combined prompt asks Haiku to scan everything at
+			// benefit - a combined prompt asks Haiku to scan everything at
 			// once and emit one structured response with per-file sections.
 			opts := doctor.ReviewOptions{}
 			var entries []doctor.BundleEntry
@@ -414,7 +414,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			for _, p := range []string{claudePath, memPath} {
 				data, err := os.ReadFile(p)
 				if err != nil {
-					// Missing file is not a hard error — include a stub so
+					// Missing file is not a hard error - include a stub so
 					// the model can comment on its absence if relevant.
 					continue
 				}
@@ -445,7 +445,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		if proposal.kind == fixClaudeCLI && !v.claudeOnPath {
-			v.flash = styleWarn.Render("bulk-fix unavailable — claude CLI not found in PATH")
+			v.flash = styleWarn.Render("bulk-fix unavailable - claude CLI not found in PATH")
 			return nil
 		}
 		if v.showLLM {
@@ -460,10 +460,10 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 		v.pendingFix = proposal
 	case "f":
 		if !v.llmRunning && numIssues > 0 {
-			// 'f' fixes the issue under the cursor — allowed from both lint view
+			// 'f' fixes the issue under the cursor - allowed from both lint view
 			// and the LLM-results view (since the cursor still tracks the lint set).
 			if v.showLLM {
-				// The cursor reflects the lint list, not the review list — drop back
+				// The cursor reflects the lint list, not the review list - drop back
 				// so the diff panel renders cleanly and the user sees what they're fixing.
 				v.showLLM = false
 			}
@@ -473,7 +473,7 @@ func (v *doctorView) update(msg tea.Msg) tea.Cmd {
 				return nil
 			}
 			if proposal.kind == fixClaudeCLI && !v.claudeOnPath {
-				v.flash = styleWarn.Render("auto-fix unavailable — claude CLI not found in PATH")
+				v.flash = styleWarn.Render("auto-fix unavailable - claude CLI not found in PATH")
 				return nil
 			}
 			// Build the preview content shown before approval.
@@ -580,7 +580,7 @@ func (v *doctorView) executeFix() tea.Cmd {
 		}
 	}
 	// Bulk fixes snapshot every additional target so revert restores the
-	// whole batch. A failure mid-snapshot aborts the run — partial coverage
+	// whole batch. A failure mid-snapshot aborts the run - partial coverage
 	// would silently lose the ability to revert one of the files.
 	if len(p.bulkTargets) > 0 {
 		p.bulkSnapshots = make(map[string]string, len(p.bulkTargets))
@@ -602,7 +602,7 @@ func (v *doctorView) executeFix() tea.Cmd {
 		// Programmatic bulk: hand off to the closure that walks every same-code
 		// proposal. The closure takes its own snapshots and returns the path
 		// map, which we fold into bulkSnapshots so the 'u' revert key works
-		// on all files. The primary single-file snapshot taken above stays —
+		// on all files. The primary single-file snapshot taken above stays -
 		// applyDoctorBulkProgrammaticFix will re-snapshot the primary target
 		// (harmless, second snap just gets a sibling counter suffix); we
 		// prefer that over teaching the closure to skip the primary because
@@ -627,7 +627,7 @@ func (v *doctorView) executeFix() tea.Cmd {
 			}
 			// Enter the postReview gate so the user can still 'u' to revert
 			// the whole batch. Without this, the CHANGELOG's revert claim is
-			// false for programmatic bulks — snapshots exist on disk but
+			// false for programmatic bulks - snapshots exist on disk but
 			// have no in-TUI undo path. Synthesise a textual preview body
 			// since there's no single-file diff to show.
 			var preview strings.Builder
@@ -638,13 +638,13 @@ func (v *doctorView) executeFix() tea.Cmd {
 			v.postReview = p
 			v.previewDiff = preview.String()
 			v.previewScroll = 0
-			v.flash = styleOK.Render(fmt.Sprintf("bulk-fixed %d file(s) — y keep / u revert", applied))
+			v.flash = styleOK.Render(fmt.Sprintf("bulk-fixed %d file(s) - y keep / u revert", applied))
 			v.loaded = false
 			return nil
 		}
 		if err := os.WriteFile(p.target, p.proposed, 0o644); err != nil {
 			v.lastFixErr = err
-			// Write failed — the file is unchanged, so the snapshot we took is orphan junk.
+			// Write failed - the file is unchanged, so the snapshot we took is orphan junk.
 			deleteSnapshot(p.snapshotPath)
 			p.snapshotPath = ""
 			v.flash = styleErr.Render("fix failed: " + err.Error())
@@ -672,7 +672,7 @@ func (v *doctorView) executeFix() tea.Cmd {
 	if err != nil {
 		if !v.claudeOnPath {
 			v.lastFixErr = doctor.ErrClaudeCLINotFound
-			v.flash = styleErr.Render("claude CLI not found in PATH — install it or run the fix manually")
+			v.flash = styleErr.Render("claude CLI not found in PATH - install it or run the fix manually")
 			return nil
 		}
 		cliPath = "claude"
@@ -721,7 +721,7 @@ func (v *doctorView) revertFromSnapshot(p *fixProposal) error {
 		if snap == "" {
 			// snapshotForFix returns "" when the target didn't exist at
 			// snapshot time (e.g. MEM001 bulk on a missing MEMORY.md). No
-			// pre-state to restore — the right "revert" is to delete the
+			// pre-state to restore - the right "revert" is to delete the
 			// file we wrote. Best-effort; missing files are fine.
 			_ = os.Remove(path)
 			continue
@@ -828,7 +828,7 @@ func (v *doctorView) render() string {
 		if target == "" || target == "." {
 			target = "selected file"
 		}
-		head := "Doctor — " + v.st.spinnerFrame +
+		head := "Doctor - " + v.st.spinnerFrame +
 			styleProgress.Render(fmt.Sprintf("Applying LLM fix to %s… (%s)", target, fixElapsed(v.fixStartedAt))) +
 			"\n" + styleDim.Render("running claude --print non-interactively; L: toggle live log, q to quit") +
 			"\n" + v.flash
@@ -839,7 +839,7 @@ func (v *doctorView) render() string {
 	}
 
 	if v.llmRunning {
-		return "Doctor — " + v.st.spinnerFrame + styleProgress.Render("LLM review in progress…") + "\n" + v.flash
+		return "Doctor - " + v.st.spinnerFrame + styleProgress.Render("LLM review in progress…") + "\n" + v.flash
 	}
 
 	if v.showLLM {
@@ -853,22 +853,22 @@ func (v *doctorView) render() string {
 
 	var b strings.Builder
 	if !v.claudeOnPath {
-		b.WriteString(styleWarn.Render("claude CLI not found in PATH — LLM review and auto-fix unavailable"))
+		b.WriteString(styleWarn.Render("claude CLI not found in PATH - LLM review and auto-fix unavailable"))
 		b.WriteString("\n")
 	}
 	if total == 0 {
-		fmt.Fprintf(&b, "Doctor — ")
+		fmt.Fprintf(&b, "Doctor - ")
 		b.WriteString(styleOK.Render("all clear"))
 	} else {
-		fmt.Fprintf(&b, "Doctor — ")
+		fmt.Fprintf(&b, "Doctor - ")
 		b.WriteString(styleWarn.Render(fmt.Sprintf("%d issue(s)", total)))
 	}
 	b.WriteString("\n")
 
 	lines, issueLineIndices := v.buildLintLines()
 
-	// Build any sticky-below panel first, capped to a budget so the panel — and
-	// crucially its action-prompt footer — always fits. The model-level clamp
+	// Build any sticky-below panel first, capped to a budget so the panel - and
+	// crucially its action-prompt footer - always fits. The model-level clamp
 	// trims from the BOTTOM, so an un-capped panel would lose its confirm prompt
 	// on a short terminal. The budget leaves room for the header chrome that
 	// pageHeight() already accounts for plus a few list rows.
@@ -1010,7 +1010,7 @@ func (v *doctorView) buildLintLines() (lines []string, issueLineIndices []int) {
 					cursor = styleOK.Render("▶ ")
 				}
 				issueLineIndices = append(issueLineIndices, len(lines))
-				lines = append(lines, fmt.Sprintf("%s%s [%s] %s — %s",
+				lines = append(lines, fmt.Sprintf("%s%s [%s] %s - %s",
 					cursor,
 					icon,
 					styleDim.Render(iss.Code),
@@ -1027,7 +1027,7 @@ func (v *doctorView) buildLintLines() (lines []string, issueLineIndices []int) {
 
 func (v *doctorView) renderLLM() string {
 	var b strings.Builder
-	b.WriteString("Doctor — LLM review\n")
+	b.WriteString("Doctor - LLM review\n")
 
 	var lines []string
 	for _, r := range v.llmResults {
@@ -1078,7 +1078,7 @@ func (v *doctorView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *doctorView) helpText() string {
 	if v.fixRunning {
-		return "applying LLM fix — please wait"
+		return "applying LLM fix - please wait"
 	}
 	if v.llmRunning {
 		return "LLM review in progress…"
@@ -1103,7 +1103,7 @@ func (v *doctorView) capturingInput() bool { return false }
 
 // chatContextPrompt builds a short context block appended to the system
 // prompt of the follow-up interactive claude session, so the model knows
-// what the user was just doing in ccmcp. Best-effort — when there's no
+// what the user was just doing in ccmcp. Best-effort - when there's no
 // fresh fix context, an empty string is returned and the chat session
 // starts unprimed.
 func (v *doctorView) chatContextPrompt() string {
@@ -1230,7 +1230,7 @@ func buildFixProposal(issue doctor.Issue, projectPath string) (*fixProposal, boo
 	case "MD004":
 		// Programmatic: when the broken link's line is a self-contained list
 		// entry whose only purpose is to point at the missing file (matches
-		// `^\s*-\s+\[.*]\(.*\)\s*(—.*)?$`), drop the line. Anything else (inline
+		// `^\s*-\s+\[.*]\(.*\)\s*(-.*)?$`), drop the line. Anything else (inline
 		// reference inside a paragraph, multi-link line) falls back to the CLI.
 		if line := readLineContent(issue.File, issue.Line); isStandaloneLinkLine(line) {
 			proposed, err := removeFileLineBytes(issue.File, issue.Line)
@@ -1251,7 +1251,7 @@ func buildFixProposal(issue doctor.Issue, projectPath string) (*fixProposal, boo
 
 	case "MD005":
 		prompt := contextPreamble() + fmt.Sprintf(
-			"%s is too long (%s). Trim it to under 500 lines while preserving all critical content — build/test/release commands, gotchas, project-specific conventions, and any 'never do X' rules. When in doubt about whether a section is load-bearing, check whether it's referenced elsewhere in the project before removing it. Prefer tightening prose and consolidating duplicated guidance over deleting whole topics.",
+			"%s is too long (%s). Trim it to under 500 lines while preserving all critical content - build/test/release commands, gotchas, project-specific conventions, and any 'never do X' rules. When in doubt about whether a section is load-bearing, check whether it's referenced elsewhere in the project before removing it. Prefer tightening prose and consolidating duplicated guidance over deleting whole topics.",
 			issue.File, issue.Message,
 		)
 		return cli(fmt.Sprintf("Trim %s to under 500 lines", filepath.Base(issue.File)), issue.File, prompt), true
@@ -1259,13 +1259,13 @@ func buildFixProposal(issue doctor.Issue, projectPath string) (*fixProposal, boo
 	case "MD002":
 		claudePath := filepath.Join(projectPath, "CLAUDE.md")
 		prompt := fmt.Sprintf(
-			"%s is empty. Inspect this project (README.md, package.json/go.mod/pyproject.toml, top-level directory layout, recent git history) and write a CLAUDE.md that captures: a one-paragraph project overview, the build/test/run commands, the project layout, and any conventions a contributor would need on day one. Keep it terse and accurate — do not invent features or guidelines that aren't supported by what's in the repo.",
+			"%s is empty. Inspect this project (README.md, package.json/go.mod/pyproject.toml, top-level directory layout, recent git history) and write a CLAUDE.md that captures: a one-paragraph project overview, the build/test/run commands, the project layout, and any conventions a contributor would need on day one. Keep it terse and accurate - do not invent features or guidelines that aren't supported by what's in the repo.",
 			claudePath,
 		)
 		return cli("Populate empty CLAUDE.md", claudePath, prompt), true
 
 	case "MEM001":
-		// Programmatic — the lint accepts any non-empty MEMORY.md, so writing
+		// Programmatic - the lint accepts any non-empty MEMORY.md, so writing
 		// a single-heading skeleton is enough to clear it. No LLM judgment
 		// needed; the file genuinely starts empty.
 		return &fixProposal{
@@ -1285,7 +1285,7 @@ func buildFixProposal(issue doctor.Issue, projectPath string) (*fixProposal, boo
 
 	case "MEM004":
 		// Programmatic when the lint reports "missing frontmatter (expected
-		// --- at line 1)" — we can prepend a minimal block derived from the
+		// --- at line 1)" - we can prepend a minimal block derived from the
 		// filename. Other MEM004 messages ("cannot read", "frontmatter block
 		// not closed") need human judgment.
 		if strings.Contains(issue.Message, "missing frontmatter") {
@@ -1307,7 +1307,7 @@ func buildFixProposal(issue doctor.Issue, projectPath string) (*fixProposal, boo
 
 	case "MEM006":
 		prompt := contextPreamble("./MEMORY.md") + fmt.Sprintf(
-			"Fix the 'type' field in %s — must be one of: user, feedback, project, reference. %s. Pick the value that best matches the memory's actual content; don't change the body.",
+			"Fix the 'type' field in %s - must be one of: user, feedback, project, reference. %s. Pick the value that best matches the memory's actual content; don't change the body.",
 			issue.File, issue.Message,
 		)
 		return cli(fmt.Sprintf("Fix invalid type in %s", filepath.Base(issue.File)), issue.File, prompt), true
@@ -1435,7 +1435,7 @@ func buildDoctorBulkFixProposal(cursor doctor.Issue, allIssues []doctor.Issue, p
 			previewLines: preview,
 		}, true
 	}
-	// Mixed (some programmatic, some CLI) — refuse rather than silently
+	// Mixed (some programmatic, some CLI) - refuse rather than silently
 	// degrade. The user can press `f` per row to walk through them.
 	return nil, false
 }
@@ -1515,7 +1515,7 @@ func nextApplicableReview(results []llmReviewResult) int {
 // per-issue fixes.
 func buildReviewApplyProposal(r llmReviewResult) *fixProposal {
 	prompt := fmt.Sprintf(
-		"You previously produced this review of %s. Apply the actionable suggestions while preserving meaning and the file's existing structure.\n\nBefore editing, read ./CLAUDE.md (and ./MEMORY.md if the target is a memory file) so tone, scope, and conventions match the rest of the project. Do not delete content that's load-bearing for the project just because a suggestion is terse — when in doubt, tighten rather than remove.\n\nReview feedback:\n\n%s",
+		"You previously produced this review of %s. Apply the actionable suggestions while preserving meaning and the file's existing structure.\n\nBefore editing, read ./CLAUDE.md (and ./MEMORY.md if the target is a memory file) so tone, scope, and conventions match the rest of the project. Do not delete content that's load-bearing for the project just because a suggestion is terse - when in doubt, tighten rather than remove.\n\nReview feedback:\n\n%s",
 		r.path, r.content,
 	)
 	wrapped := wrapImperativeFixPrompt(r.path, prompt)
@@ -1583,7 +1583,7 @@ func addFrontmatterFieldBytes(path, field string) ([]byte, error) {
 }
 
 // isStandaloneLinkLine reports whether a markdown line is "just a link entry"
-// safe to delete on broken-link cleanup — a list-item line whose interesting
+// safe to delete on broken-link cleanup - a list-item line whose interesting
 // content is one `[text](target)` reference, optionally followed by a short
 // dash-separated description. Defensively requires the line to start with
 // list-bullet whitespace so we don't nuke prose paragraphs.

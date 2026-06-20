@@ -96,7 +96,7 @@ func (c *ClaudeJSON) ProjectPaths() []string {
 }
 
 // ProjectMCPs returns the live .projects[path].mcpServers map (or an empty map when
-// absent — never nil). Shared storage; read-only from the caller's perspective. Use
+// absent - never nil). Shared storage; read-only from the caller's perspective. Use
 // SetProjectMCP / DeleteProjectMCP / ClearProjectMCPs to mutate.
 func (c *ClaudeJSON) ProjectMCPs(path string) map[string]any {
 	node := c.projectNode(path, false)
@@ -229,9 +229,9 @@ func (c *ClaudeJSON) RemoveProjectDisabledMcpServer(path, key string) bool {
 // --- per-project MCP enable list (enabledMcpServers) -----------------------
 //
 // The positive counterpart to disabledMcpServers. Claude Code's /mcp dialog writes
-// here when you turn ON an MCP that is OFF by default at a higher scope — most
+// here when you turn ON an MCP that is OFF by default at a higher scope - most
 // commonly a built-in like "computer-use" (Claude-in-Chrome) that ships disabled.
-// Entries are plain server names (no prefix scheme — built-ins and externally-managed
+// Entries are plain server names (no prefix scheme - built-ins and externally-managed
 // servers have no source ccmcp enumerates, so there's nothing to disambiguate).
 //
 // ccmcp reads this so the effective view (which claims to "match /mcp") doesn't omit
@@ -283,7 +283,7 @@ func (c *ClaudeJSON) RemoveProjectEnabledMcpServer(path, name string) bool {
 
 // --- claude.ai integrations history ----------------------------------------
 
-// ClaudeAiEverConnected returns the top-level .claudeAiMcpEverConnected array —
+// ClaudeAiEverConnected returns the top-level .claudeAiMcpEverConnected array -
 // a history of every claude.ai remote MCP the user has ever authorized. It's our
 // best local signal for enumerating remote integrations (we can't enumerate them
 // from claude.ai at runtime without OAuth).

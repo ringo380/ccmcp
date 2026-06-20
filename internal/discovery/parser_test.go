@@ -11,11 +11,11 @@ func TestExtractGitHubReposFromBullets(t *testing.T) {
 		"# Awesome Claude Code\n\n" +
 		"badge: [![Build](https://github.com/anthropics/claude-code)](...)\n\n" +
 		"## Marketplaces\n\n" +
-		"- [davila7](https://github.com/davila7/claude-code-templates) — templates galore\n" +
+		"- [davila7](https://github.com/davila7/claude-code-templates) - templates galore\n" +
 		"- wshobson/agents at https://github.com/wshobson/agents.git\n" +
 		"- duplicate: https://github.com/davila7/claude-code-templates/tree/main\n" +
-		"- 1. [stoplisted](https://github.com/sindresorhus/awesome) — should be ignored\n" +
-		"text outside a list with https://github.com/should/skip — ignored.\n"
+		"- 1. [stoplisted](https://github.com/sindresorhus/awesome) - should be ignored\n" +
+		"text outside a list with https://github.com/should/skip - ignored.\n"
 	got := discovery.ExtractGitHubRepos(md)
 	wantRepos := map[string]bool{
 		"davila7/claude-code-templates": true,
@@ -42,7 +42,7 @@ func TestExtractGitHubReposEmpty(t *testing.T) {
 }
 
 func TestExtractGitHubReposStripsTrailingPath(t *testing.T) {
-	md := "- https://github.com/foo/bar/tree/main/sub — note\n"
+	md := "- https://github.com/foo/bar/tree/main/sub - note\n"
 	got := discovery.ExtractGitHubRepos(md)
 	if len(got) != 1 || got[0].Repo != "bar" || got[0].Owner != "foo" {
 		t.Fatalf("expected foo/bar, got %+v", got)
