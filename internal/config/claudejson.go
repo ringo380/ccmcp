@@ -226,6 +226,61 @@ func (c *ClaudeJSON) RemoveProjectDisabledMcpServer(path, key string) bool {
 	return true
 }
 
+// --- per-project MCP enable list (enabledMcpServers) -----------------------
+//
+// The positive counterpart to disabledMcpServers. Claude Code's /mcp dialog writes
+// here when you turn ON an MCP that is OFF by default at a higher scope — most
+// commonly a built-in like "computer-use" (Claude-in-Chrome) that ships disabled.
+// Entries are plain server names (no prefix scheme — built-ins and externally-managed
+// servers have no source ccmcp enumerates, so there's nothing to disambiguate).
+//
+// ccmcp reads this so the effective view (which claims to "match /mcp") doesn't omit
+// explicitly-enabled built-ins, and offers a toggle to remove an entry (re-hiding it).
+
+func (c *ClaudeJSON) ProjectEnabledMcpServers(path string) []string {
+	return strSlice(c.projectNode(path, false), "enabledMcpServers")
+}
+
+func (c *ClaudeJSON) SetProjectEnabledMcpServers(path string, names []string) {
+	node := c.projectNode(path, true)
+	if len(names) == 0 {
+		delete(node, "enabledMcpServers")
+		return
+	}
+	node["enabledMcpServers"] = toAny(names)
+}
+
+// AddProjectEnabledMcpServer appends name if not already present. Returns true if added.
+func (c *ClaudeJSON) AddProjectEnabledMcpServer(path, name string) bool {
+	cur := c.ProjectEnabledMcpServers(path)
+	for _, n := range cur {
+		if n == name {
+			return false
+		}
+	}
+	c.SetProjectEnabledMcpServers(path, append(cur, name))
+	return true
+}
+
+// RemoveProjectEnabledMcpServer drops name from the list. Returns true if removed.
+func (c *ClaudeJSON) RemoveProjectEnabledMcpServer(path, name string) bool {
+	cur := c.ProjectEnabledMcpServers(path)
+	out := cur[:0]
+	found := false
+	for _, n := range cur {
+		if n == name {
+			found = true
+			continue
+		}
+		out = append(out, n)
+	}
+	if !found {
+		return false
+	}
+	c.SetProjectEnabledMcpServers(path, out)
+	return true
+}
+
 // --- claude.ai integrations history ----------------------------------------
 
 // ClaudeAiEverConnected returns the top-level .claudeAiMcpEverConnected array —

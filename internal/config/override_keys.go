@@ -15,6 +15,7 @@ const (
 	SourcePlugin  MCPSource = "plugin"   // bundled in an enabled plugin
 	SourceClaude  MCPSource = "claudeai" // claude.ai remote integration (OAuth)
 	SourceStash   MCPSource = "stash"    // ccmcp-only parked
+	SourceBuiltin MCPSource = "builtin"  // off-by-default built-in/external MCP turned on via projects[<cwd>].enabledMcpServers
 	SourceUnknown MCPSource = "unknown"  // leftover in disabledMcpServers with no matching source
 )
 
