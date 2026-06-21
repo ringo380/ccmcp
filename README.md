@@ -209,12 +209,26 @@ Runs structural lint on `CLAUDE.md` and `MEMORY.md` for the current project. Pre
 
 ccmcp's doctor lints *content quality* (CLAUDE.md/MEMORY.md structure, skill/agent/command description and token-budget limits) - it **complements**, and does not duplicate, Claude Code's own built-in `/doctor`, which validates *config* (auto-updater health, settings/`.mcp.json` schema). The asset-lint limits calibrate to the installed Claude Code version (detected via `claude --version` and shown as `· CC <ver>` in the header); the per-skill description cap honors your `skillListingMaxDescChars` setting. To support a new Claude Code version, the version logic lives in one place - `internal/claudecode/CapabilitiesFor`.
 
+**Tweaks tab** (`t` to open)
+
+The Tweaks tab consolidates app-level controls into five sub-views, cycled with `[` / `]` (or left/right arrows):
+
+- **Settings** - toggle ccmcp preferences (offline discovery mode, etc.) with `space`/`enter`. Settings are persisted to `~/.ccmcp-prefs.json` and honored on the next launch.
+- **Maintenance** - one-keystroke ops: snapshot the current config, prune stale overrides, GC orphaned plugin caches, and run a health-check. Press `enter` on any action to run it.
+- **Summary** - the bird's-eye overview (same content as the former top-level Summary tab).
+- **Doctor** - the CLAUDE.md/MEMORY.md linter (same content as the former top-level Doctor tab).
+- **Profiles** - save/apply MCP profiles (same content as the former top-level Profiles tab).
+
+Digits 8/9/0 are unbound; all former numeric shortcuts for Profiles/Summary/Doctor are replaced by `t` + `[`/`]` navigation.
+
 **Global**
 
 | Key | Action |
 |---|---|
 | `tab` / `shift+tab` | cycle tabs |
-| `1`-`9`, `0` | jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands / Profiles / Summary / Doctor |
+| `1`-`7` | jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands |
+| `t` | jump to Tweaks tab (Settings sub-view) |
+| `[` / `]` or arrows | switch Tweaks sub-sections: Settings / Maintenance / Summary / Doctor / Profiles |
 | `ctrl+g` | global search across all tabs (`enter` jumps to the row, `esc` closes) |
 | `w` | save all staged changes |
 | `q` | quit (warns if unsaved) |
@@ -328,7 +342,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-401 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, plugin MCP scanning (.mcp.json + plugin.json manifest merge), doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+410 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, plugin MCP scanning (.mcp.json + plugin.json manifest merge), doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 
@@ -353,9 +367,10 @@ internal/
                   dispatch (oh-my-zsh style)
   skills/         skill CRUD + file-backed store
   stringslice/    shared slice helpers
-  tui/            bubbletea app: 10 tabs (MCPs, Plugins, Marketplaces,
-                  Discover, Skills, Agents, Commands, Profiles, Summary,
-                  Doctor)
+  tui/            bubbletea app: 8 top-level tabs (MCPs, Plugins, Marketplaces,
+                  Discover, Skills, Agents, Commands, Tweaks); Tweaks folds
+                  Settings, Maintenance, Summary, Doctor, and Profiles as
+                  sub-views cycled with [ / ]
   updates/        upstream version probes for marketplaces, plugins, MCPs
 main.go
 ```

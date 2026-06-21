@@ -313,7 +313,9 @@ func TestTUIHelpOverlay(t *testing.T) {
 		"[u]", "[l]", "[p]", "[P]", "[@]", "[s]", "[?]",
 		"Row marks",
 		"[x]", "[~]", "[!]",
-		"MCPs tab", "Plugins tab", "Skills tab", "Agents tab", "Commands tab", "Profiles tab", "Summary tab", "Doctor tab", "Global",
+		"MCPs tab", "Plugins tab", "Skills tab", "Agents tab", "Commands tab",
+		"Tweaks tab", "Tweaks - Summary sub-view", "Tweaks - Profiles sub-view", "Tweaks - Doctor sub-view",
+		"Global",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("help overlay missing %q; got:\n%s", want, view)

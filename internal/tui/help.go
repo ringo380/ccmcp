@@ -112,13 +112,25 @@ func renderHelp(width int) string {
 	kbd("/", "filter by substring; c clears")
 	kbd("j/k or ↑/↓", "navigate; g/G top/bottom")
 
-	section("Profiles tab")
+	section("Tweaks tab")
+	kbd("t", "jump to Tweaks tab (lands on Settings sub-view)")
+	kbd("[ / ]  or  ← / →", "switch Tweaks sub-section: Settings / Maintenance / Summary / Doctor / Profiles")
+
+	section("Tweaks - Settings sub-view")
+	kbd("space / enter", "toggle the focused setting on/off")
+	kbd("j/k or ↑/↓", "navigate settings")
+
+	section("Tweaks - Maintenance sub-view")
+	kbd("enter", "run the focused maintenance action (snapshot / prune / GC / health-check)")
+	kbd("j/k or ↑/↓", "navigate actions")
+
+	section("Tweaks - Profiles sub-view")
 	kbd("enter / space", "apply profile (replaces current project's MCPs)")
 	kbd("n", "create profile from current project")
 	kbd("d", "delete profile")
 	kbd("j/k or ↑/↓", "navigate; g/G top/bottom; pgup/pgdn page")
 
-	section("Summary tab")
+	section("Tweaks - Summary sub-view")
 	kbd("j/k or ↑/↓", "navigate fixable issues; ↑/↓ past the ends scrolls")
 	kbd("pgup / pgdn", "page")
 	kbd("g / home", "jump to top")
@@ -130,7 +142,7 @@ func renderHelp(width int) string {
 	kbd("y / n / esc", "approve / cancel in confirm panel; u also reverts a CLI fix")
 	kbd("p", "bulk-prune orphan overrides (legacy; press twice to confirm)")
 
-	section("Doctor tab")
+	section("Tweaks - Doctor sub-view")
 	kbd("r", "re-run lint checks")
 	kbd("l", "run one bundled LLM review across CLAUDE.md + MEMORY.md (Haiku)")
 	kbd("a", "apply the bundled review back to disk (single Claude call)")
@@ -144,7 +156,9 @@ func renderHelp(width int) string {
 
 	section("Global")
 	kbd("tab / shift+tab", "cycle tabs")
-	kbd("1-9, 0", "jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands / Profiles / Summary / Doctor")
+	kbd("1-7", "jump to MCPs / Plugins / Marketplaces / Discover / Skills / Agents / Commands")
+	kbd("t", "jump to Tweaks tab")
+	kbd("[ / ] or ← / →", "switch Tweaks sub-sections (Settings / Maintenance / Summary / Doctor / Profiles)")
 	kbd("ctrl+g", "global search across all tabs (enter jumps to the row)")
 	kbd("w", "save staged changes (atomic + backup)")
 	kbd("q", "quit (warns if unsaved)")
