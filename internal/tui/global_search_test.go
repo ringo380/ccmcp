@@ -14,8 +14,8 @@ func TestGlobalSearchOpensAndFilters(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	// Open from the Profiles tab (8) to prove it works from any tab.
-	out := drive(m, "8", "ctrl+g")
+	// Open from the Tweaks/Profiles sub-tab to prove it works from any tab.
+	out := drive(m, "t", "]", "]", "]", "]", "ctrl+g")
 	if !m.globalSearch.active {
 		t.Fatal("ctrl+g should activate the global search overlay")
 	}
@@ -27,7 +27,7 @@ func TestGlobalSearchOpensAndFilters(t *testing.T) {
 	// the keys aren't replayed into an already-open overlay.
 	st2, _ := buildState(t)
 	m2 := newModel(st2)
-	out = drive(m2, "8", "ctrl+g", "u", "s", "e", "r")
+	out = drive(m2, "t", "]", "]", "]", "]", "ctrl+g", "u", "s", "e", "r")
 	clean := stripANSI(out)
 	if !strings.Contains(clean, "user-only") {
 		t.Errorf("expected user-only in results; got:\n%s", clean)
@@ -47,8 +47,8 @@ func TestGlobalSearchEnterJumpsToTab(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	// Start on Profiles (8), search for an MCP, select it.
-	drive(m, "8", "ctrl+g", "u", "s", "e", "r")
+	// Start on Tweaks/Profiles, search for an MCP, select it.
+	drive(m, "t", "]", "]", "]", "]", "ctrl+g", "u", "s", "e", "r")
 	var im tea.Model = m
 	im, _ = im.Update(key("enter"))
 	mm := im.(*model)
@@ -75,7 +75,8 @@ func TestGlobalSearchEscCloses(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	drive(m, "8", "ctrl+g", "d", "e", "v")
+	drive(m, "t", "]", "]", "]", "]") // navigate to Tweaks -> Profiles sub-tab
+	drive(m, "ctrl+g", "d", "e", "v")
 	if !m.globalSearch.active {
 		t.Fatal("overlay should be active before esc")
 	}
@@ -85,7 +86,7 @@ func TestGlobalSearchEscCloses(t *testing.T) {
 	if mm.globalSearch.active {
 		t.Error("esc should close the overlay")
 	}
-	if mm.tab != tabProfiles {
+	if mm.tab != tabTweaks {
 		t.Errorf("esc should leave the active tab unchanged; got %d", mm.tab)
 	}
 }
@@ -104,9 +105,9 @@ func TestGlobalSearchIndexesMultipleTabs(t *testing.T) {
 	if len(tabsSeen) < 2 {
 		t.Errorf("expected entries from multiple tabs; saw %d", len(tabsSeen))
 	}
-	// Profiles fixture has "dev"; MCPs has "user-only".
-	if !tabsSeen[tabMCPs] || !tabsSeen[tabProfiles] {
-		t.Errorf("expected both mcps and profiles indexed; saw %v", tabsSeen)
+	// MCPs has "user-only"; Tweaks hub aggregates profiles (has "dev").
+	if !tabsSeen[tabMCPs] || !tabsSeen[tabTweaks] {
+		t.Errorf("expected both mcps and tweaks indexed; saw %v", tabsSeen)
 	}
 }
 

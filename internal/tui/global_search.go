@@ -46,8 +46,9 @@ func newGlobalSearchState() globalSearchState {
 	return globalSearchState{input: ti}
 }
 
-// searchProviders returns the views in tab order so a result's badge/tab can be
-// derived from its position. Every view implements searchProvider.
+// searchProviders returns the views in top-level tab order so a result's
+// badge/tab can be derived from its position. Every top-level view implements
+// searchProvider; tweaksView aggregates its sub-views (profiles/summary/doctor).
 func (m *model) searchProviders() []searchProvider {
 	return []searchProvider{
 		tabMCPs:         m.mcps,
@@ -57,9 +58,7 @@ func (m *model) searchProviders() []searchProvider {
 		tabSkills:       m.skills,
 		tabAgents:       m.agents,
 		tabCommands:     m.commands,
-		tabProfiles:     m.profiles,
-		tabSummary:      m.summary,
-		tabDoctor:       m.doctor,
+		tabTweaks:       m.tweaks,
 	}
 }
 

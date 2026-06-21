@@ -42,7 +42,8 @@ func Run(p paths.Paths, projectPath string) error {
 // Dump returns the TUI's first render for diagnostic purposes (no TTY, no interaction).
 // tab can be "mcps" | "plugins" | "marketplaces" (alias: "markets"|"mkt") |
 // "discover" (alias: "discovery") | "skills" | "agents" | "commands" |
-// "profiles" | "summary" | "doctor" | "help".
+// "tweaks" | "profiles" | "summary" | "doctor" | "help".
+// profiles/summary/doctor are sub-tabs of tweaks.
 //
 // Note: lazy-loaded update probes (plugins/marketplaces/MCPs "↑ update available"
 // indicators) and Discover-tab registry fetches fire from update(), not render(),
@@ -67,12 +68,17 @@ func Dump(p paths.Paths, projectPath, tab string) (string, error) {
 		m.tab = tabAgents
 	case "commands":
 		m.tab = tabCommands
+	case "tweaks":
+		m.tab = tabTweaks
 	case "profiles":
-		m.tab = tabProfiles
+		m.tab = tabTweaks
+		m.tweaks.sub = subProfiles
 	case "summary":
-		m.tab = tabSummary
+		m.tab = tabTweaks
+		m.tweaks.sub = subSummary
 	case "doctor":
-		m.tab = tabDoctor
+		m.tab = tabTweaks
+		m.tweaks.sub = subDoctor
 	case "help":
 		m.showHelp = true
 	default:
@@ -110,6 +116,7 @@ type state struct {
 	settings  *config.Settings
 	installed *config.InstalledPlugins
 	profiles  *config.Profiles
+	appcfg    *config.AppConfig
 
 	// pluginMCPs: map of MCP name -> every installed plugin that registers it
 	// (enabled AND disabled, each tagged via PluginMCPSource.Enabled). Disabled-but-installed
@@ -130,11 +137,12 @@ type state struct {
 	spinnerFrame string
 
 	// change tracking
-	dirtyClaude   bool
-	dirtyStash    bool
-	dirtySettings bool
-	dirtyPlugins  bool
-	dirtyProfiles bool
+	dirtyClaude     bool
+	dirtyStash      bool
+	dirtySettings   bool
+	dirtyPlugins    bool
+	dirtyProfiles   bool
+	dirtyAppConfig  bool
 
 	// pendingCacheGC holds superseded plugin cache dirs from in-memory UpdateInstall calls.
 	// They are deleted ONLY after installed_plugins.json saves successfully (see save()),
@@ -171,6 +179,7 @@ func loadState(p paths.Paths, project string) (*state, error) {
 	if err != nil {
 		return nil, err
 	}
+	appcfg := config.LoadAppConfig(p.AppConfig)
 	st := &state{
 		paths:     p,
 		project:   project,
@@ -179,6 +188,7 @@ func loadState(p paths.Paths, project string) (*state, error) {
 		settings:  settings,
 		installed: installed,
 		profiles:  profiles,
+		appcfg:    appcfg,
 		updates:   updates.NewCache(),
 	}
 	st.rescanPluginMCPs()
@@ -206,12 +216,14 @@ func (s *state) save() (summary []string, err error) {
 	do(s.dirtySettings, s.settings.Path, s.settings.Save)
 	do(s.dirtyPlugins, s.installed.Path, s.installed.Save)
 	do(s.dirtyProfiles, s.profiles.Path, s.profiles.Save)
+	do(s.dirtyAppConfig, s.appcfg.Path, s.appcfg.Save)
 	if err == nil {
 		s.dirtyClaude = false
 		s.dirtyStash = false
 		s.dirtySettings = false
 		s.dirtyPlugins = false
 		s.dirtyProfiles = false
+		s.dirtyAppConfig = false
 		// installed_plugins.json is now persisted pointing at the NEW cache dirs, so the
 		// superseded dirs are safe to delete. On a failed save we keep them queued (the
 		// registry still references them) and retry on the next save.
@@ -224,5 +236,5 @@ func (s *state) save() (summary []string, err error) {
 }
 
 func (s *state) anyDirty() bool {
-	return s.dirtyClaude || s.dirtyStash || s.dirtySettings || s.dirtyPlugins || s.dirtyProfiles
+	return s.dirtyClaude || s.dirtyStash || s.dirtySettings || s.dirtyPlugins || s.dirtyProfiles || s.dirtyAppConfig
 }

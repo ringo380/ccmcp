@@ -172,6 +172,19 @@ func TestDiscoverDoesNotClobberCacheOnFullFailure(t *testing.T) {
 	}
 }
 
+func TestDefaultSourcesWithOfflineTrueIsEmbeddedOnly(t *testing.T) {
+	srcs := discovery.DefaultSourcesWithOffline(true)
+	if len(srcs) != 1 {
+		t.Fatalf("offline=true: want 1 source, got %d", len(srcs))
+	}
+}
+
+func TestDefaultSourcesWithOfflineFalseHasMore(t *testing.T) {
+	if len(discovery.DefaultSourcesWithOffline(false)) < 1 {
+		t.Fatal("offline=false: want >=1 source")
+	}
+}
+
 type fakeSourceCounting struct {
 	count *int
 	rows  []discovery.RemoteMarketplace

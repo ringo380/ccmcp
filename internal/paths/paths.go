@@ -20,6 +20,7 @@ type Paths struct {
 	Profiles         string // ~/.claude-mcp-profiles.json
 	BackupsDir       string // ~/.claude-mcp-backups
 	Ignores          string // ~/.claude-ccmcp-ignores.json (ccmcp-owned conflict ignore list)
+	AppConfig        string // ~/.claude-mcp-config.json
 }
 
 func Resolve() (Paths, error) {
@@ -44,6 +45,7 @@ func Resolve() (Paths, error) {
 		Profiles:         filepath.Join(home, ".claude-mcp-profiles.json"),
 		BackupsDir:       filepath.Join(home, ".claude-mcp-backups"),
 		Ignores:          filepath.Join(home, ".claude-ccmcp-ignores.json"),
+		AppConfig:        filepath.Join(home, ".claude-mcp-config.json"),
 	}
 	return p, nil
 }

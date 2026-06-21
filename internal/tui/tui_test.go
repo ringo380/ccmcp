@@ -47,6 +47,7 @@ func buildState(t *testing.T) (*state, paths.Paths) {
 			"dev": []any{"stashed-a", "user-only"},
 		},
 	})
+	must(filepath.Join(home, ".claude-mcp-config.json"), map[string]any{})
 	must(filepath.Join(home, ".claude", "settings.json"), map[string]any{
 		"enabledPlugins": map[string]any{
 			"plug-one@mkt": true,
@@ -312,7 +313,10 @@ func TestTUIHelpOverlay(t *testing.T) {
 		"[u]", "[l]", "[p]", "[P]", "[@]", "[s]", "[?]",
 		"Row marks",
 		"[x]", "[~]", "[!]",
-		"MCPs tab", "Plugins tab", "Skills tab", "Agents tab", "Commands tab", "Profiles tab", "Summary tab", "Doctor tab", "Global",
+		"MCPs tab", "Plugins tab", "Skills tab", "Agents tab", "Commands tab",
+		"Tweaks tab", "Tweaks - Settings sub-view", "Tweaks - Maintenance sub-view",
+		"Tweaks - Summary sub-view", "Tweaks - Profiles sub-view", "Tweaks - Doctor sub-view",
+		"Global",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("help overlay missing %q; got:\n%s", want, view)
@@ -558,20 +562,12 @@ func TestTUITabSwitching(t *testing.T) {
 		t.Errorf("tab 6: want commands, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
-	if m.tab != tabProfiles {
-		t.Errorf("tab 7: want profiles, got %d", m.tab)
-	}
-	_ = drive(m, "tab")
-	if m.tab != tabSummary {
-		t.Errorf("tab 8: want summary, got %d", m.tab)
-	}
-	_ = drive(m, "tab")
-	if m.tab != tabDoctor {
-		t.Errorf("tab 9: want doctor, got %d", m.tab)
+	if m.tab != tabTweaks {
+		t.Errorf("tab 7: want tweaks, got %d", m.tab)
 	}
 	_ = drive(m, "tab")
 	if m.tab != tabMCPs {
-		t.Errorf("tab 10: want mcps (wrapped), got %d", m.tab)
+		t.Errorf("tab 8: want mcps (wrapped), got %d", m.tab)
 	}
 	// Numeric shortcuts
 	_ = drive(m, "3")
@@ -594,17 +590,10 @@ func TestTUITabSwitching(t *testing.T) {
 	if m.tab != tabCommands {
 		t.Errorf("numeric 7: want commands, got %d", m.tab)
 	}
-	_ = drive(m, "8")
-	if m.tab != tabProfiles {
-		t.Errorf("numeric 8: want profiles, got %d", m.tab)
-	}
-	_ = drive(m, "9")
-	if m.tab != tabSummary {
-		t.Errorf("numeric 9: want summary, got %d", m.tab)
-	}
-	_ = drive(m, "0")
-	if m.tab != tabDoctor {
-		t.Errorf("numeric 0: want doctor, got %d", m.tab)
+	// t shortcut navigates to Tweaks; digits 8/9/0 are now unbound
+	_ = drive(m, "t")
+	if m.tab != tabTweaks {
+		t.Errorf("t: want tweaks, got %d", m.tab)
 	}
 }
 
@@ -822,8 +811,8 @@ func TestTUIProfileApply(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	// Profiles tab (now key "8" after Discover insertion), cursor at first profile ("dev"), enter applies it
-	_ = drive(m, "8", "enter")
+	// Profiles is now a sub-tab under Tweaks; navigate: t -> ]]]]] (4 rights to reach Profiles) -> enter
+	_ = drive(m, "t", "]", "]", "]", "]", "enter")
 
 	if !st.dirtyClaude {
 		t.Fatal("dirtyClaude should be set after applying profile")
@@ -908,7 +897,7 @@ func TestTUISummaryDetectsRedundancy(t *testing.T) {
 	st.cj.SetProjectMCP(st.project, "shared", cfg)
 
 	m := newModel(st)
-	view := drive(m, "9") // switch to Summary tab
+	view := drive(m, "t", "]", "]") // Tweaks -> Summary (Settings + 2 rights)
 
 	if !strings.Contains(view, "BOTH user and project scope") {
 		t.Errorf("summary should flag user+project duplication; got:\n%s", view)
@@ -983,7 +972,7 @@ func TestTUIDoctorTabRenders(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
 
-	view := drive(m, "0") // Doctor tab
+	view := drive(m, "t", "]", "]", "]") // Tweaks -> Doctor (Settings + 3 rights)
 	if !strings.Contains(view, "Doctor") {
 		t.Errorf("doctor tab should contain 'Doctor'; got:\n%s", view)
 	}
@@ -994,18 +983,18 @@ func TestTUIDoctorTabRerun(t *testing.T) {
 	m := newModel(st)
 
 	// drive() calls View() at the end, which calls render(), which runs lint.
-	_ = drive(m, "0")
-	if !m.doctor.loaded {
+	_ = drive(m, "t", "]", "]", "]") // Tweaks -> Doctor
+	if !m.tweaks.doctor.loaded {
 		t.Fatal("doctor.loaded should be true after first render")
 	}
 	// 'r' resets loaded so the next render re-runs lint.
-	m.doctor.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
-	if m.doctor.loaded {
+	m.tweaks.doctor.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if m.tweaks.doctor.loaded {
 		t.Error("doctor.loaded should be false after 'r' (re-run deferred to next render)")
 	}
 	// Calling render() triggers the re-run.
-	m.doctor.render()
-	if !m.doctor.loaded {
+	m.tweaks.doctor.render()
+	if !m.tweaks.doctor.loaded {
 		t.Error("doctor.loaded should be true after render() following 'r'")
 	}
 }

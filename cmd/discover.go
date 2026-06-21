@@ -52,7 +52,7 @@ var discoverListCmd = &cobra.Command{
 			return err
 		}
 		opts := discovery.Options{
-			Sources:   buildSources(settings),
+			Sources:   buildSources(p, settings),
 			CachePath: discovery.CachePath(p.ClaudeConfigDir),
 			Refresh:   discoverRefresh,
 		}
@@ -234,7 +234,7 @@ func lookupRemote(cmd *cobra.Command, name string) (discovery.RemoteMarketplace,
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 	res, err := discovery.Discover(ctx, discovery.Options{
-		Sources:   buildSources(settings),
+		Sources:   buildSources(p, settings),
 		CachePath: discovery.CachePath(p.ClaudeConfigDir),
 		Refresh:   discoverRefresh,
 	})
@@ -250,8 +250,10 @@ func lookupRemote(cmd *cobra.Command, name string) (discovery.RemoteMarketplace,
 }
 
 // buildSources merges the default sources with any user-configured registry URLs.
-func buildSources(settings *config.Settings) []discovery.Source {
-	out := discovery.DefaultSources()
+// It resolves the offline preference from AppConfig (env > file > default).
+func buildSources(p paths.Paths, settings *config.Settings) []discovery.Source {
+	off, _ := config.LoadAppConfig(p.AppConfig).OfflineDiscovery()
+	out := discovery.DefaultSourcesWithOffline(off)
 	for _, u := range settings.DiscoverySources() {
 		out = append(out, discovery.UserURLSource(u))
 	}

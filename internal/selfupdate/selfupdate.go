@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/paths"
 )
 
@@ -355,10 +356,18 @@ func chooseRefresh(s Status, now time.Time) refreshMode {
 	return refreshNone
 }
 
+// updateDisabledByConfig returns true when the ccmcp prefs file disables the
+// update check. The env var (CCMCP_NO_UPDATE_CHECK) is handled by SkipCheck;
+// this adds the file tier below it.
+func updateDisabledByConfig(p paths.Paths) bool {
+	on, _ := config.LoadAppConfig(p.AppConfig).UpdateCheckEnabled()
+	return !on
+}
+
 // CheckOnLaunch wires together the pieces above. Pure plumbing - no business
 // logic lives here that isn't tested through the exported helpers.
 func CheckOnLaunch(ctx context.Context, p paths.Paths, currentVersion string) Decision {
-	if SkipCheck(currentVersion) {
+	if SkipCheck(currentVersion) || updateDisabledByConfig(p) {
 		return Decision{}
 	}
 	cachePath := CachePath(p)

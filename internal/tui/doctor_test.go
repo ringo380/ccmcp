@@ -15,7 +15,7 @@ func TestDoctorBannerWhenClaudeMissing(t *testing.T) {
 
 	st, _ := buildState(t)
 	m := newModel(st)
-	out := drive(m, "0") // jump to Doctor tab (key 0 since the Discover tab was inserted)
+	out := drive(m, "t", "]", "]", "]") // Tweaks -> Doctor sub-tab
 	if !strings.Contains(out, "claude CLI not found in PATH") {
 		t.Fatalf("expected missing-claude banner, got:\n%s", out)
 	}
