@@ -190,7 +190,8 @@ func (v *discoveryView) fetchCmd(refresh bool) tea.Cmd {
 	// v.st.settings.DiscoverySources() inside the closure would race with
 	// concurrent settings mutations on other tabs. Same defensive pattern
 	// landed for plugin bulk-update in PR #17.
-	sources := buildDiscoverySources(v.st.settings.DiscoverySources())
+	off, _ := v.st.appcfg.OfflineDiscovery()
+	sources := buildDiscoverySources(v.st.settings.DiscoverySources(), off)
 	cachePath := discovery.CachePath(v.st.paths.ClaudeConfigDir)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
@@ -207,9 +208,10 @@ func (v *discoveryView) fetchCmd(refresh bool) tea.Cmd {
 
 // buildDiscoverySources merges DefaultSources with a snapshot of user-
 // configured registry URLs. Takes a slice (not a *Settings) so callers must
-// snapshot on their own goroutine.
-func buildDiscoverySources(userURLs []string) []discovery.Source {
-	out := discovery.DefaultSources()
+// snapshot on their own goroutine. offline is the resolved offline preference
+// from AppConfig (env wins inside DefaultSourcesWithOffline if already set).
+func buildDiscoverySources(userURLs []string, offline bool) []discovery.Source {
+	out := discovery.DefaultSourcesWithOffline(offline)
 	for _, u := range userURLs {
 		out = append(out, discovery.UserURLSource(u))
 	}

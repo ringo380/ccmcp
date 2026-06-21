@@ -37,7 +37,15 @@ type Options struct {
 // Set CCMCP_DISCOVERY_OFFLINE=1 to restrict the default to the embedded
 // source only - useful for hermetic tests and air-gapped use.
 func DefaultSources() []Source {
-	if os.Getenv("CCMCP_DISCOVERY_OFFLINE") != "" {
+	return DefaultSourcesWithOffline(os.Getenv("CCMCP_DISCOVERY_OFFLINE") != "")
+}
+
+// DefaultSourcesWithOffline returns the default source list using the provided
+// offline flag. When offline is true, only the embedded source is returned.
+// Callers that have already resolved the offline preference (e.g. from an
+// AppConfig file) should call this directly instead of DefaultSources.
+func DefaultSourcesWithOffline(offline bool) []Source {
+	if offline {
 		return []Source{EmbeddedSource()}
 	}
 	// The embedded curated registry is the always-works backbone; the

@@ -29,6 +29,11 @@ func calibrateClaudeVersionWith(p paths.Paths, s *config.Settings) (claudecode.V
 	v := claudecode.Detect(p)
 	caps := claudecode.CapabilitiesFor(v)
 	model := caps.DefaultModel
+	if p.AppConfig != "" {
+		if m, src := config.LoadAppConfig(p.AppConfig).ClaudeModel(); m != "" && src == config.SrcConfig {
+			model = m
+		}
+	}
 	if s != nil {
 		if m, ok := s.ClaudeFixModel(); ok {
 			model = m
