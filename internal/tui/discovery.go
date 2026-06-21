@@ -208,8 +208,9 @@ func (v *discoveryView) fetchCmd(refresh bool) tea.Cmd {
 
 // buildDiscoverySources merges DefaultSources with a snapshot of user-
 // configured registry URLs. Takes a slice (not a *Settings) so callers must
-// snapshot on their own goroutine. offline is the resolved offline preference
-// from AppConfig (env wins inside DefaultSourcesWithOffline if already set).
+// snapshot on their own goroutine. offline is the already-resolved offline
+// preference from AppConfig.OfflineDiscovery() (which has honored the env var);
+// DefaultSourcesWithOffline just consumes that bool.
 func buildDiscoverySources(userURLs []string, offline bool) []discovery.Source {
 	out := discovery.DefaultSourcesWithOffline(offline)
 	for _, u := range userURLs {

@@ -29,6 +29,9 @@ func calibrateClaudeVersionWith(p paths.Paths, s *config.Settings) (claudecode.V
 	v := claudecode.Detect(p)
 	caps := claudecode.CapabilitiesFor(v)
 	model := caps.DefaultModel
+	// Fold only the file (SrcConfig) tier into the default here; the env var
+	// CCMCP_CLAUDE_MODEL is applied later by doctor.ResolvedModel, so it would
+	// win regardless and must not be baked in as the default.
 	if p.AppConfig != "" {
 		if m, src := config.LoadAppConfig(p.AppConfig).ClaudeModel(); m != "" && src == config.SrcConfig {
 			model = m

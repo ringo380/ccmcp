@@ -45,7 +45,7 @@ func Run(p paths.Paths, projectPath string) error {
 // "tweaks" | "profiles" | "summary" | "doctor" | "help".
 // profiles/summary/doctor are sub-tabs of tweaks.
 //
-// Note: lazy-loaded update probes (plugins/marketplaces/MCPs "up update available"
+// Note: lazy-loaded update probes (plugins/marketplaces/MCPs "↑ update available"
 // indicators) and Discover-tab registry fetches fire from update(), not render(),
 // so Dump() will not show them - by design, since Dump is a one-shot diagnostic
 // and shouldn't fire network calls.

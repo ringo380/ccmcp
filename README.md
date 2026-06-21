@@ -213,7 +213,7 @@ ccmcp's doctor lints *content quality* (CLAUDE.md/MEMORY.md structure, skill/age
 
 The Tweaks tab consolidates app-level controls into five sub-views, cycled with `[` / `]` (or left/right arrows):
 
-- **Settings** - toggle ccmcp preferences (offline discovery mode, etc.) with `space`/`enter`. Settings are persisted to `~/.ccmcp-prefs.json` and honored on the next launch.
+- **Settings** - toggle ccmcp preferences (offline discovery mode, etc.) with `space`/`enter`. Settings are persisted to `~/.claude-mcp-config.json` and honored on the next launch.
 - **Maintenance** - one-keystroke ops: snapshot the current config, prune stale overrides, GC orphaned plugin caches, and run a health-check. Press `enter` on any action to run it.
 - **Summary** - the bird's-eye overview (same content as the former top-level Summary tab).
 - **Doctor** - the CLAUDE.md/MEMORY.md linter (same content as the former top-level Doctor tab).
