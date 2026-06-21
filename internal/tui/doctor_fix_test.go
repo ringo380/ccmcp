@@ -39,14 +39,14 @@ func TestDoctorInTUIFixShowsDiffAndRequiresApproval(t *testing.T) {
 
 	m := newModel(st)
 	// Doctor tab is "0" (key dispatch in model.go - Discover sits at 9).
-	out := drive(m, "0")
+	out := drive(m, "t", "]", "]", "]")
 	if !strings.Contains(stripANSI(out), "MEMORY.md") {
 		t.Fatalf("doctor tab did not render MEMORY.md group:\n%s", out)
 	}
 
 	// Navigate to the MEM002 issue and press 'f' to open the preview panel.
 	// allIssues is filled in render(), so re-issue any key to be safe.
-	out = drive(m, "0", "G", "f")
+	out = drive(m, "t", "]", "]", "]", "G", "f")
 	clean := stripANSI(out)
 	if !strings.Contains(clean, "Apply? y") {
 		t.Fatalf("expected pre-apply panel, got:\n%s", clean)
@@ -56,7 +56,7 @@ func TestDoctorInTUIFixShowsDiffAndRequiresApproval(t *testing.T) {
 	}
 
 	// Press 'n' - file must be unchanged.
-	out = drive(m, "0", "G", "f", "n")
+	out = drive(m, "t", "]", "]", "]", "G", "f", "n")
 	got, _ := os.ReadFile(mem)
 	if string(got) != string(origBytes) {
 		t.Fatalf("file changed after 'n': before=%q after=%q", origBytes, got)
@@ -66,7 +66,7 @@ func TestDoctorInTUIFixShowsDiffAndRequiresApproval(t *testing.T) {
 	}
 
 	// Press 'f' then 'y' - file must be modified and snapshot must exist.
-	out = drive(m, "0", "G", "f", "y")
+	out = drive(m, "t", "]", "]", "]", "G", "f", "y")
 	got, _ = os.ReadFile(mem)
 	if string(got) == string(origBytes) {
 		t.Fatalf("file unchanged after 'y'; expected line removed")
@@ -113,7 +113,7 @@ func TestDoctorCLIFlowSimulatedPostReviewRevert(t *testing.T) {
 
 	// Force claudeOnPath true via direct field access on the view to bypass PATH lookup.
 	m := newModel(st)
-	m.doctor.claudeOnPath = true
+	m.tweaks.doctor.claudeOnPath = true
 
 	// Forge a CLI-kind issue by overriding the fix proposal source: easiest path is to
 	// build a proposal manually and assign it to pendingFix, then simulate 'y'.
@@ -124,11 +124,11 @@ func TestDoctorCLIFlowSimulatedPostReviewRevert(t *testing.T) {
 		cliPrompt: "rewrite this file",
 		cliArgs:   []string{"--print", "x"},
 	}
-	m.doctor.pendingFix = prop
-	m.doctor.previewDiff = buildCLIPromptPreview(prop)
+	m.tweaks.doctor.pendingFix = prop
+	m.tweaks.doctor.previewDiff = buildCLIPromptPreview(prop)
 
 	// Drive into the doctor tab and approve.
-	drive(m, "0")
+	drive(m, "t", "]", "]", "]")
 	// 'y' triggers executeFix, which our stub runs synchronously.
 	var im tea.Model = m
 	im, cmd := im.Update(key("y"))
@@ -175,7 +175,7 @@ func TestDoctorCLIFixRunsFromProjectRoot(t *testing.T) {
 	}
 
 	m := newModel(st)
-	m.doctor.claudeOnPath = true
+	m.tweaks.doctor.claudeOnPath = true
 	prop := &fixProposal{
 		summary:   "stub",
 		kind:      fixClaudeCLI,
@@ -184,9 +184,9 @@ func TestDoctorCLIFixRunsFromProjectRoot(t *testing.T) {
 		cliArgs:   []string{"--print", "x"},
 	}
 	_ = os.WriteFile(prop.target, []byte("# placeholder\n"), 0o644)
-	m.doctor.pendingFix = prop
+	m.tweaks.doctor.pendingFix = prop
 
-	drive(m, "0")
+	drive(m, "t", "]", "]", "]")
 	var im tea.Model = m
 	im, cmd := im.Update(key("y"))
 	if cmd != nil {
@@ -204,17 +204,17 @@ func TestDoctorApplyReviewBuildsCLIProposal(t *testing.T) {
 	mem := seedBadMemory(t, st)
 
 	m := newModel(st)
-	m.doctor.claudeOnPath = true
-	m.doctor.showLLM = true
-	m.doctor.llmResults = []llmReviewResult{
+	m.tweaks.doctor.claudeOnPath = true
+	m.tweaks.doctor.showLLM = true
+	m.tweaks.doctor.llmResults = []llmReviewResult{
 		{path: mem, content: "- Shorten the broken-link line.\n- Verdict: minor cleanup needed.\n"},
 	}
 
-	drive(m, "0")
+	drive(m, "t", "]", "]", "]")
 	var im tea.Model = m
 	im, _ = im.Update(key("a"))
 
-	dv := m.doctor
+	dv := m.tweaks.doctor
 	if dv.pendingFix == nil {
 		t.Fatalf("expected pendingFix to be set after 'a'")
 	}
@@ -267,7 +267,7 @@ func TestDoctorApplyReviewBuildsCLIProposal(t *testing.T) {
 	execFixCmd = func(_ *exec.Cmd, p *fixProposal, _ tabID) tea.Cmd {
 		return func() tea.Msg { return fixDoneMsg{err: nil, proposal: p, origin: tabDoctor} }
 	}
-	m.doctor.claudeOnPath = true
+	m.tweaks.doctor.claudeOnPath = true
 	im, cmd := im.Update(key("y"))
 	if cmd != nil {
 		_ = cmd()
@@ -280,8 +280,8 @@ func TestDoctorApplyReviewBuildsCLIProposal(t *testing.T) {
 	}
 
 	// Second 'a' with all reviews applied should flash and noop.
-	m.doctor.showLLM = true
-	m.doctor.postReview = nil
+	m.tweaks.doctor.showLLM = true
+	m.tweaks.doctor.postReview = nil
 	im, _ = im.Update(key("a"))
 	if dv.pendingFix != nil {
 		t.Fatalf("expected no pendingFix when all reviews applied")
@@ -320,7 +320,7 @@ func TestDoctorCLINoChangeCleansSnapshot(t *testing.T) {
 	}
 
 	m := newModel(st)
-	m.doctor.claudeOnPath = true
+	m.tweaks.doctor.claudeOnPath = true
 	prop := &fixProposal{
 		summary:   "stub no-op",
 		kind:      fixClaudeCLI,
@@ -328,9 +328,9 @@ func TestDoctorCLINoChangeCleansSnapshot(t *testing.T) {
 		cliPrompt: "x",
 		cliArgs:   []string{"--print", "x"},
 	}
-	m.doctor.pendingFix = prop
+	m.tweaks.doctor.pendingFix = prop
 
-	drive(m, "0")
+	drive(m, "t", "]", "]", "]")
 	var im tea.Model = m
 	im, cmd := im.Update(key("y"))
 	if cmd != nil {
@@ -363,7 +363,7 @@ func TestDoctorRevertFallsBackToBeforeBytes(t *testing.T) {
 	bogusSnap := filepath.Join(doctorSnapshotDir(st.paths.BackupsDir), "does-not-exist.md")
 
 	m := newModel(st)
-	m.doctor.claudeOnPath = true
+	m.tweaks.doctor.claudeOnPath = true
 	prop := &fixProposal{
 		summary:      "stub fallback",
 		kind:         fixClaudeCLI,
@@ -371,10 +371,10 @@ func TestDoctorRevertFallsBackToBeforeBytes(t *testing.T) {
 		snapshotPath: bogusSnap, // unreadable - forces beforeBytes fallback
 		beforeBytes:  origBytes,
 	}
-	m.doctor.postReview = prop
-	m.doctor.previewDiff = "@@\n-old\n+new\n"
+	m.tweaks.doctor.postReview = prop
+	m.tweaks.doctor.previewDiff = "@@\n-old\n+new\n"
 
-	drive(m, "0")
+	drive(m, "t", "]", "]", "]")
 	var im tea.Model = m
 	im, _ = im.Update(key("u"))
 
@@ -403,7 +403,7 @@ func TestDoctorRevertDeletesSnapshot(t *testing.T) {
 	}
 
 	m := newModel(st)
-	m.doctor.claudeOnPath = true
+	m.tweaks.doctor.claudeOnPath = true
 	prop := &fixProposal{
 		summary:   "stub for revert-cleanup",
 		kind:      fixClaudeCLI,
@@ -411,9 +411,9 @@ func TestDoctorRevertDeletesSnapshot(t *testing.T) {
 		cliPrompt: "x",
 		cliArgs:   []string{"--print", "x"},
 	}
-	m.doctor.pendingFix = prop
+	m.tweaks.doctor.pendingFix = prop
 
-	drive(m, "0")
+	drive(m, "t", "]", "]", "]")
 	var im tea.Model = m
 	im, cmd := im.Update(key("y"))
 	if cmd != nil {
@@ -449,8 +449,8 @@ func TestDoctorInTUIWriteFailureCleansSnapshot(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(mem, 0o644) })
 
 	m := newModel(st)
-	drive(m, "0", "G")
-	out := drive(m, "0", "G", "f", "y")
+	drive(m, "t", "]", "]", "]", "G")
+	out := drive(m, "t", "]", "]", "]", "G", "f", "y")
 	clean := stripANSI(out)
 	if !strings.Contains(clean, "fix failed") {
 		t.Fatalf("expected 'fix failed' flash, got:\n%s", clean)
@@ -466,15 +466,15 @@ func TestDoctorReLintClearsStaleState(t *testing.T) {
 	st, _ := buildState(t)
 	seedBadMemory(t, st)
 	m := newModel(st)
-	drive(m, "0")
+	drive(m, "t", "]", "]", "]")
 
-	dv := m.doctor
+	dv := m.tweaks.doctor
 	dv.flash = "stale"
 	dv.lastFix = &fixProposal{summary: "stale"}
 	dv.lastFixErr = errStale{}
 	dv.appliedReviewIdx = 0
 
-	drive(m, "0", "r")
+	drive(m, "t", "]", "]", "]", "r")
 
 	if dv.flash != "" {
 		t.Errorf("flash not cleared: %q", dv.flash)
@@ -517,14 +517,14 @@ func TestDoctorBulkFixProgrammaticAppliesEveryFile(t *testing.T) {
 
 	m := newModel(st)
 	// Lint runs lazily on first render; switching tab does the trick.
-	out := drive(m, "0")
+	out := drive(m, "t", "]", "]", "]")
 	if !strings.Contains(stripANSI(out), "MEM002") {
 		t.Fatalf("expected MEM002 issues to render, got:\n%s", out)
 	}
 	// Find a cursor index on a MEM002 issue. Simpler: navigate to first
 	// MEM002 with 'g' (which puts cursor on first issue - depends on layout).
 	// For determinism, set cursor by scanning v.allIssues.
-	dv := m.doctor
+	dv := m.tweaks.doctor
 	cursorIdx := -1
 	for i, iss := range dv.allIssues {
 		if iss.Code == "MEM002" {
@@ -551,7 +551,7 @@ func TestDoctorBulkFixProgrammaticAppliesEveryFile(t *testing.T) {
 
 	// After bulk apply, the postReview gate must be open so the user can `u`
 	// to revert. The CHANGELOG promises this behaviour for the whole batch.
-	if m.doctor.postReview == nil {
+	if m.tweaks.doctor.postReview == nil {
 		t.Fatalf("expected postReview to be set after successful bulk apply")
 	}
 	out = drive(m, "u")
@@ -592,7 +592,7 @@ func TestDoctorBulkCLIPromptIsNotDoubleWrapped(t *testing.T) {
 func TestCommandViewCapturingInputIncludesResolveActive(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
-	drive(m, "0") // ensure model is initialised
+	drive(m, "t", "]", "]", "]") // ensure model is initialised
 	cv := m.commands
 	if cv == nil {
 		t.Fatalf("commandView nil")
@@ -614,8 +614,8 @@ func TestDoctorBulkFixRefusesSingletonCategory(t *testing.T) {
 	st, _ := buildState(t)
 	seedBadMemory(t, st) // single MEM002 only
 	m := newModel(st)
-	drive(m, "0")
-	dv := m.doctor
+	drive(m, "t", "]", "]", "]")
+	dv := m.tweaks.doctor
 	for i, iss := range dv.allIssues {
 		if iss.Code == "MEM002" {
 			dv.cursor = i
@@ -679,7 +679,7 @@ func TestStreamLineMarksStderr(t *testing.T) {
 func TestChatDoneMsgUnknownOriginSurfacesError(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
-	drive(m, "0") // ensure model is initialised
+	drive(m, "t", "]", "]", "]") // ensure model is initialised
 	im, _ := m.Update(chatDoneMsg{err: nil, origin: tabID(99)})
 	mod := im.(*model)
 	if !strings.Contains(stripANSI(mod.message), "chatDoneMsg with unhandled origin") {
@@ -692,7 +692,7 @@ func TestChatDoneMsgUnknownOriginSurfacesError(t *testing.T) {
 func TestTabChangeClearsStaleMessage(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
-	drive(m, "0") // start on Doctor
+	drive(m, "t", "]", "]", "]") // start on Doctor
 	m.message = "leftover from doctor"
 	drive(m, "1") // switch to MCPs
 	if m.message != "" {

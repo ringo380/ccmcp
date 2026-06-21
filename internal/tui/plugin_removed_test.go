@@ -124,7 +124,7 @@ func TestSummaryTabFlagsRemovedFromMarketplace(t *testing.T) {
 	st, _ := buildStateRemovedFromMkt(t)
 	m := newModel(st)
 
-	view := stripANSI(drive(m, "9")) // Summary tab
+	view := stripANSI(drive(m, "t", "]", "]")) // Tweaks -> Summary
 	if !strings.Contains(view, "removed from marketplace") {
 		t.Fatalf("expected Summary 'removed from marketplace' row; got:\n%s", view)
 	}

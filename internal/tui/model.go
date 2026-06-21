@@ -19,9 +19,12 @@ const (
 	tabSkills
 	tabAgents
 	tabCommands
-	tabProfiles
+	tabTweaks
+	// Folded into Tweaks - kept as ids so origin-routing of async fix/chat/stream
+	// messages (which tag tabDoctor/tabSummary) still resolves. Not top-level tabs.
 	tabSummary
 	tabDoctor
+	tabProfiles
 )
 
 var tabs = []struct {
@@ -35,9 +38,7 @@ var tabs = []struct {
 	{tabSkills, "Skills"},
 	{tabAgents, "Agents"},
 	{tabCommands, "Commands"},
-	{tabProfiles, "Profiles"},
-	{tabSummary, "Summary"},
-	{tabDoctor, "Doctor"},
+	{tabTweaks, "Tweaks"},
 }
 
 type model struct {
@@ -55,9 +56,7 @@ type model struct {
 	skills       *skillView
 	agents       *agentView
 	commands     *commandView
-	profiles     *profileView
-	summary      *summaryView
-	doctor       *doctorView
+	tweaks       *tweaksView
 
 	// spinner drives the live in-progress indicator. Always-ticking; ~10 fps.
 	// Frame is republished to state.spinnerFrame on each tick so views can render it.
@@ -81,9 +80,7 @@ func newModel(st *state) *model {
 		skills:       newSkillView(st),
 		agents:       newAgentView(st),
 		commands:     newCommandView(st),
-		profiles:     newProfileView(st),
-		summary:      newSummaryView(st),
-		doctor:       newDoctorView(st),
+		tweaks:       newTweaksView(st),
 		spinner:      sp,
 		globalSearch: newGlobalSearchState(),
 	}
@@ -98,8 +95,8 @@ func (m *model) Init() tea.Cmd { return m.spinner.Tick }
 // running in their terminal after pressing q. Safe to call when nothing is
 // running.
 func (m *model) killActiveFixes() {
-	killIfRunning(m.doctor.fixCmd)
-	killIfRunning(m.summary.fixCmd)
+	killIfRunning(m.tweaks.doctor.fixCmd)
+	killIfRunning(m.tweaks.summary.fixCmd)
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -114,53 +111,26 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// without explicit routing a fix started on one tab and observed via tab
 	// switch would silently land nowhere.
 	if done, ok := msg.(fixDoneMsg); ok {
-		switch done.origin {
-		case tabDoctor:
-			cmd := m.doctor.update(done)
-			if m.doctor.flash != "" {
-				m.message = m.doctor.flash
-				m.doctor.flash = ""
+		if cmd, handled := m.tweaks.routeFix(done.origin, done); handled {
+			if m.tweaks.flash != "" {
+				m.message = m.tweaks.flash
+				m.tweaks.flash = ""
 			}
 			return m, cmd
-		case tabSummary:
-			cmd := m.summary.update(done)
-			if m.summary.flash != "" {
-				m.message = m.summary.flash
-				m.summary.flash = ""
-			}
-			return m, cmd
-		default:
-			// Unknown origin: surface to the user rather than silently dropping
-			// the result. Any new caller of execFixCmd must add a case above -
-			// this default catches the slip rather than letting a fix vanish.
-			m.message = styleErr.Render(fmt.Sprintf("internal: fixDoneMsg with unhandled origin %d", done.origin))
-			return m, nil
 		}
+		m.message = styleErr.Render(fmt.Sprintf("internal: fixDoneMsg with unhandled origin %d", done.origin))
+		return m, nil
 	}
 	if done, ok := msg.(chatDoneMsg); ok {
-		switch done.origin {
-		case tabDoctor:
-			cmd := m.doctor.update(done)
-			if m.doctor.flash != "" {
-				m.message = m.doctor.flash
-				m.doctor.flash = ""
+		if cmd, handled := m.tweaks.routeFix(done.origin, done); handled {
+			if m.tweaks.flash != "" {
+				m.message = m.tweaks.flash
+				m.tweaks.flash = ""
 			}
 			return m, cmd
-		case tabSummary:
-			cmd := m.summary.update(done)
-			if m.summary.flash != "" {
-				m.message = m.summary.flash
-				m.summary.flash = ""
-			}
-			return m, cmd
-		default:
-			// Mirror the fixDoneMsg default arm: surface unhandled origins
-			// instead of silently dropping them, so a new chat caller that
-			// forgets to register lands on the user's status line rather
-			// than vanishing.
-			m.message = styleErr.Render(fmt.Sprintf("internal: chatDoneMsg with unhandled origin %d", done.origin))
-			return m, nil
 		}
+		m.message = styleErr.Render(fmt.Sprintf("internal: chatDoneMsg with unhandled origin %d", done.origin))
+		return m, nil
 	}
 	// cliStreamLineMsg routes the same way - each line carries an origin so
 	// the line lands on the originating view's ring buffer regardless of
@@ -170,16 +140,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if line, ok := msg.(cliStreamLineMsg); ok {
 		switch line.origin {
 		case tabDoctor:
-			m.doctor.update(line)
-			return m, line.next
+			m.tweaks.doctor.update(line)
 		case tabSummary:
-			m.summary.update(line)
-			return m, line.next
-		default:
-			// Defensively keep draining so an unknown-origin run doesn't
-			// deadlock the channel.
-			return m, line.next
+			m.tweaks.summary.update(line)
 		}
+		return m, line.next
 	}
 	// Global search overlay captures all input (and the textinput's blink
 	// ticks) while open. Window-size messages still flow to the resize handler
@@ -200,9 +165,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.skills.resize(msg.Width, msg.Height-reservedHeight)
 		m.agents.resize(msg.Width, msg.Height-reservedHeight)
 		m.commands.resize(msg.Width, msg.Height-reservedHeight)
-		m.profiles.resize(msg.Width, msg.Height-reservedHeight)
-		m.summary.resize(msg.Width, msg.Height-reservedHeight)
-		m.doctor.resize(msg.Width, msg.Height-reservedHeight)
+		m.tweaks.resize(msg.Width, msg.Height-reservedHeight)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -290,18 +253,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tab = tabCommands
 			m.message = ""
 			return m, nil
-		case "8":
-			m.tab = tabProfiles
+		case "t":
+			m.tab = tabTweaks
+			m.tweaks.sub = subSettings
 			m.message = ""
-			return m, nil
-		case "9":
-			m.tab = tabSummary
-			m.message = ""
-			return m, nil
-		case "0":
-			m.tab = tabDoctor
-			m.message = ""
-			return m, nil
+			return m, m.tabEnterCmd()
 		}
 	}
 	return m.updateActive(msg)
@@ -358,25 +314,11 @@ func (m *model) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.commands.flash = ""
 		}
 		return m, cmd
-	case tabProfiles:
-		cmd := m.profiles.update(msg)
-		if m.profiles.flash != "" {
-			m.message = m.profiles.flash
-			m.profiles.flash = ""
-		}
-		return m, cmd
-	case tabSummary:
-		cmd := m.summary.update(msg)
-		if m.summary.flash != "" {
-			m.message = m.summary.flash
-			m.summary.flash = ""
-		}
-		return m, cmd
-	case tabDoctor:
-		cmd := m.doctor.update(msg)
-		if m.doctor.flash != "" {
-			m.message = m.doctor.flash
-			m.doctor.flash = ""
+	case tabTweaks:
+		cmd := m.tweaks.update(msg)
+		if m.tweaks.flash != "" {
+			m.message = m.tweaks.flash
+			m.tweaks.flash = ""
 		}
 		return m, cmd
 	}
@@ -399,12 +341,8 @@ func (m *model) activeView() view {
 		return m.agents
 	case tabCommands:
 		return m.commands
-	case tabProfiles:
-		return m.profiles
-	case tabSummary:
-		return m.summary
-	case tabDoctor:
-		return m.doctor
+	case tabTweaks:
+		return m.tweaks
 	}
 	return m.mcps
 }

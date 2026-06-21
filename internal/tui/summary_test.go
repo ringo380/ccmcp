@@ -24,7 +24,7 @@ func TestSummaryCursorLandsOnFixableRow(t *testing.T) {
 	seedOrphanOverride(t, st, "ghost-orphan-row")
 
 	m := newModel(st)
-	out := drive(m, "9")
+	out := drive(m, "t", "]", "]")
 
 	clean := stripANSI(out)
 	if !strings.Contains(clean, "1 fixable issue(s)") {
@@ -49,7 +49,7 @@ func TestSummaryFixOrphanOverride(t *testing.T) {
 
 	m := newModel(st)
 	// 9 = Summary tab, f = open confirm, y = apply
-	drive(m, "9", "f", "y")
+	drive(m, "t", "]", "]", "f", "y")
 
 	overrides := st.cj.ProjectDisabledMcpServers(st.project)
 	for _, k := range overrides {
@@ -70,7 +70,7 @@ func TestSummaryFixCancelLeavesStateUnchanged(t *testing.T) {
 	before := append([]string{}, st.cj.ProjectDisabledMcpServers(st.project)...)
 
 	m := newModel(st)
-	drive(m, "9", "f", "n")
+	drive(m, "t", "]", "]", "f", "n")
 
 	after := st.cj.ProjectDisabledMcpServers(st.project)
 	if len(before) != len(after) {
@@ -86,7 +86,7 @@ func TestSummaryFixCancelLeavesStateUnchanged(t *testing.T) {
 func TestSummaryFixWithoutFixableRowsNoOps(t *testing.T) {
 	st, _ := buildState(t)
 	m := newModel(st)
-	out := drive(m, "9", "f")
+	out := drive(m, "t", "]", "]", "f")
 	if !strings.Contains(stripANSI(out), "no fixable issues") {
 		t.Fatalf("expected friendly flash, got:\n%s", out)
 	}
@@ -105,8 +105,8 @@ func TestSummaryLLMReviewRendersResponse(t *testing.T) {
 	}
 
 	m := newModel(st)
-	m.summary.claudeOnPath = true
-	drive(m, "9")
+	m.tweaks.summary.claudeOnPath = true
+	drive(m, "t", "]", "]")
 
 	var im tea.Model = m
 	im, cmd := im.Update(key("l"))
@@ -146,7 +146,7 @@ func TestDoctorFixRunsInTUIWithSpinner(t *testing.T) {
 	}
 
 	m := newModel(st)
-	m.doctor.claudeOnPath = true
+	m.tweaks.doctor.claudeOnPath = true
 	prop := &fixProposal{
 		summary:   "stub for spinner test",
 		kind:      fixClaudeCLI,
@@ -154,14 +154,14 @@ func TestDoctorFixRunsInTUIWithSpinner(t *testing.T) {
 		cliPrompt: "x",
 		cliArgs:   []string{"--print", "x"},
 	}
-	m.doctor.pendingFix = prop
+	m.tweaks.doctor.pendingFix = prop
 
-	drive(m, "0") // Doctor tab
+	drive(m, "t", "]", "]", "]") // Doctor tab
 
 	// Press 'y'. executeFix sets fixRunning=true and returns a tea.Cmd.
 	var im tea.Model = m
 	im, cmd := im.Update(key("y"))
-	if !m.doctor.fixRunning {
+	if !m.tweaks.doctor.fixRunning {
 		t.Fatalf("expected fixRunning=true after executeFix")
 	}
 	if capturedOrigin != tabDoctor {
@@ -181,7 +181,7 @@ func TestDoctorFixRunsInTUIWithSpinner(t *testing.T) {
 		msg := cmd()
 		im, _ = im.Update(msg)
 	}
-	if m.doctor.fixRunning {
+	if m.tweaks.doctor.fixRunning {
 		t.Fatalf("expected fixRunning=false after fixDoneMsg")
 	}
 	view = stripANSI(im.View())
@@ -211,7 +211,7 @@ func TestDoctorFixErrorSurfacesOutputInline(t *testing.T) {
 	}
 
 	m := newModel(st)
-	m.doctor.claudeOnPath = true
+	m.tweaks.doctor.claudeOnPath = true
 	prop := &fixProposal{
 		summary:   "stub failure",
 		kind:      fixClaudeCLI,
@@ -219,9 +219,9 @@ func TestDoctorFixErrorSurfacesOutputInline(t *testing.T) {
 		cliPrompt: "x",
 		cliArgs:   []string{"--print", "x"},
 	}
-	m.doctor.pendingFix = prop
+	m.tweaks.doctor.pendingFix = prop
 
-	drive(m, "0")
+	drive(m, "t", "]", "]", "]")
 	var im tea.Model = m
 	im, cmd := im.Update(key("y"))
 	if cmd != nil {
@@ -248,18 +248,18 @@ func TestSummaryCursorClampedAfterFix(t *testing.T) {
 
 	m := newModel(st)
 	// Switch to Summary and move the cursor to the LAST fixable row.
-	drive(m, "9", "j")
-	if got := m.summary.cursor; got != 1 {
+	drive(m, "t", "]", "]", "j")
+	if got := m.tweaks.summary.cursor; got != 1 {
 		t.Fatalf("expected cursor=1 after one j, got %d", got)
 	}
 
 	// Apply the fix at cursor=1. After apply, the row disappears.
 	drive(m, "f", "y")
-	if m.summary.cursor != 0 {
-		t.Fatalf("expected cursor reset to 0 after fix, got %d", m.summary.cursor)
+	if m.tweaks.summary.cursor != 0 {
+		t.Fatalf("expected cursor reset to 0 after fix, got %d", m.tweaks.summary.cursor)
 	}
-	if m.summary.top != 0 {
-		t.Fatalf("expected v.top reset to 0 after fix, got %d", m.summary.top)
+	if m.tweaks.summary.top != 0 {
+		t.Fatalf("expected v.top reset to 0 after fix, got %d", m.tweaks.summary.top)
 	}
 
 	// Pressing f again on the remaining fixable row must succeed.
@@ -276,11 +276,11 @@ func TestSummaryDownAtEndOfListIsNoop(t *testing.T) {
 	seedOrphanOverride(t, st, "ghost-only-row")
 
 	m := newModel(st)
-	drive(m, "9")
-	topBefore := m.summary.top
+	drive(m, "t", "]", "]")
+	topBefore := m.tweaks.summary.top
 	drive(m, "j", "j", "j")
-	if m.summary.top != topBefore {
-		t.Fatalf("v.top drifted on j-past-end: before=%d after=%d", topBefore, m.summary.top)
+	if m.tweaks.summary.top != topBefore {
+		t.Fatalf("v.top drifted on j-past-end: before=%d after=%d", topBefore, m.tweaks.summary.top)
 	}
 }
 
@@ -293,13 +293,13 @@ func TestSummaryStashGhostFix(t *testing.T) {
 	st.cj.AddProjectDisabledMcpServer(st.project, "ghost-stash-only")
 
 	m := newModel(st)
-	out := drive(m, "9")
+	out := drive(m, "t", "]", "]")
 	if !strings.Contains(stripANSI(out), "stash ghost") {
 		t.Fatalf("expected stash-ghost row, got:\n%s", out)
 	}
 
 	// Apply the fix.
-	drive(m, "9", "f", "y")
+	drive(m, "t", "]", "]", "f", "y")
 
 	overrides := st.cj.ProjectDisabledMcpServers(st.project)
 	for _, k := range overrides {
@@ -325,7 +325,7 @@ func TestSummaryAssetLintRowsAppear(t *testing.T) {
 	}
 
 	m := newModel(st)
-	out := drive(m, "9")
+	out := drive(m, "t", "]", "]")
 	clean := stripANSI(out)
 	if !strings.Contains(clean, "SKILL003") {
 		t.Fatalf("expected SKILL003 row in Summary; got:\n%s", clean)
@@ -392,8 +392,8 @@ func TestBulkFixRefusesInMemoryCategories(t *testing.T) {
 	st, _ := buildState(t)
 	seedOrphanOverride(t, st, "ghost-bulk-test")
 	m := newModel(st)
-	m.summary.claudeOnPath = true
-	out := drive(m, "9", "F")
+	m.tweaks.summary.claudeOnPath = true
+	out := drive(m, "t", "]", "]", "F")
 	clean := stripANSI(out)
 	if !strings.Contains(clean, "bulk-fix not available") {
 		t.Fatalf("expected refusal flash for in-memory category; got:\n%s", clean)
@@ -469,14 +469,14 @@ func TestSummaryAssetCachePreservedAcrossOrphanFix(t *testing.T) {
 	m := newModel(st)
 
 	// Force first render so the cache populates, then snapshot loaded state.
-	_ = drive(m, "9")
-	if !m.summary.assetsLoaded {
+	_ = drive(m, "t", "]", "]")
+	if !m.tweaks.summary.assetsLoaded {
 		t.Fatal("expected assetsLoaded=true after first render of summary tab")
 	}
 
 	// Apply the orphan-prune fix (catOrphanPlugin/Stdio - does NOT affect assets).
 	drive(m, "f", "y")
-	if !m.summary.assetsLoaded {
+	if !m.tweaks.summary.assetsLoaded {
 		t.Errorf("orphan-prune fix should preserve asset cache (categoryAffectsAssets=false), but cache was invalidated")
 	}
 }

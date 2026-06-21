@@ -65,19 +65,19 @@ func TestProfilesWindowsToHeight(t *testing.T) {
 		st.profiles.Set(fmt.Sprintf("profile-%02d", i), []string{"a", "b"})
 	}
 	m := newModel(st)
-	_ = drive(m, "8") // Profiles tab
-	m.profiles.rebuild()
+	_ = drive(m, "t", "]", "]", "]", "]") // Profiles tab
+	m.tweaks.profiles.rebuild()
 
-	got := bodyLineCount(stripANSI(m.profiles.render()))
-	if got > m.profiles.h {
-		t.Fatalf("profiles body has %d lines, exceeds view height %d", got, m.profiles.h)
+	got := bodyLineCount(stripANSI(m.tweaks.profiles.render()))
+	if got > m.tweaks.profiles.h {
+		t.Fatalf("profiles body has %d lines, exceeds view height %d", got, m.tweaks.profiles.h)
 	}
 
 	// Bottom of the list stays windowed and visible.
-	m.profiles.index = len(m.profiles.names) - 1
-	out := stripANSI(m.profiles.render())
-	if got := bodyLineCount(out); got > m.profiles.h {
-		t.Fatalf("after jump, profiles body has %d lines, exceeds height %d", got, m.profiles.h)
+	m.tweaks.profiles.index = len(m.tweaks.profiles.names) - 1
+	out := stripANSI(m.tweaks.profiles.render())
+	if got := bodyLineCount(out); got > m.tweaks.profiles.h {
+		t.Fatalf("after jump, profiles body has %d lines, exceeds height %d", got, m.tweaks.profiles.h)
 	}
 	if !strings.Contains(out, "profile-59") {
 		t.Errorf("bottom profile should be visible after jump; got:\n%s", out)
@@ -119,7 +119,11 @@ func TestModelBodyNeverOverflows(t *testing.T) {
 	m := newModel(st)
 	var im tea.Model = m
 	im, _ = im.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	im, _ = im.Update(key("8")) // Profiles
+	im, _ = im.Update(key("t")) // Tweaks
+	im, _ = im.Update(key("]"))
+	im, _ = im.Update(key("]"))
+	im, _ = im.Update(key("]"))
+	im, _ = im.Update(key("]")) // -> Profiles sub-tab
 	out := im.View()
 	if got := bodyLineCount(out); got > 40 {
 		t.Fatalf("full View() has %d lines, exceeds terminal height 40", got)
@@ -173,15 +177,15 @@ func TestProfilesJumpKeys(t *testing.T) {
 		st.profiles.Set(fmt.Sprintf("profile-%02d", i), []string{"a"})
 	}
 	m := newModel(st) // constructor's rebuild() populates names from seeded profiles
-	_ = drive(m, "8", "G")
-	if m.profiles.index != len(m.profiles.names)-1 {
-		t.Fatalf("G should jump to last profile, got index %d", m.profiles.index)
+	_ = drive(m, "t", "]", "]", "]", "]", "G")
+	if m.tweaks.profiles.index != len(m.tweaks.profiles.names)-1 {
+		t.Fatalf("G should jump to last profile, got index %d", m.tweaks.profiles.index)
 	}
 
 	m2 := newModel(st)
-	_ = drive(m2, "8", "G", "g")
-	if m2.profiles.index != 0 {
-		t.Fatalf("g should jump to first profile, got index %d", m2.profiles.index)
+	_ = drive(m2, "t", "]", "]", "]", "]", "G", "g")
+	if m2.tweaks.profiles.index != 0 {
+		t.Fatalf("g should jump to first profile, got index %d", m2.tweaks.profiles.index)
 	}
 }
 
