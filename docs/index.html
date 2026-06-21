@@ -243,7 +243,7 @@
   <div class="wrap">
     <div class="title-row">
       <h1><span class="prompt">&gt;_</span> ccmcp</h1>
-      <span class="tag" id="version">v0.21.0</span>
+      <span class="tag" id="version">v0.22.0</span>
     </div>
     <p class="lede">A dynamic CLI and TUI for managing Claude Code's MCP servers, plugins, and per-project overrides across every scope Claude Code honors.</p>
     <div class="cta">
@@ -265,9 +265,9 @@
         <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
         <span class="title">ccmcp - MCPs tab</span>
       </div>
-      <div class="term-body"><span class="acc">ccmcp</span> <span class="dim">v0.21.0</span>    <span class="dim">project:</span> ~/git/ccmcp    <span class="warn">UNSAVED</span>
+      <div class="term-body"><span class="acc">ccmcp</span> <span class="dim">v0.22.0</span>    <span class="dim">project:</span> ~/git/ccmcp    <span class="warn">UNSAVED</span>
 <span class="dim">──────────────────────────────────────────────────────────────────</span>
-<span class="acc">[MCPs]</span>  Plugins  Marketplaces  Discover  Skills  Agents  Commands  Profiles  Summary  Doctor   <span class="dim">scope: effective</span>
+<span class="acc">[MCPs]</span>  Plugins  Marketplaces  Discover  Skills  Agents  Commands  Tweaks   <span class="dim">scope: effective</span>
 
   <span class="grn">[x]</span> <span class="dim">u</span>  context7              user-scope stdio
   <span class="grn">[x]</span> <span class="dim">l</span>  github                local to this project
@@ -360,8 +360,12 @@ go build -ldflags='-s -w' -o ~/bin/ccmcp .</code></pre>
         <p>Park servers you don't currently need in <code>~/.claude-mcp-stash.json</code>. <kbd>S</kbd> smart-toggles - stash a live row, unstash a parked one.</p>
       </div>
       <div class="card">
+        <h3>Tweaks</h3>
+        <p>One tab for app-level settings and maintenance. Edit ccmcp preferences (persisted to <code>~/.claude-mcp-config.json</code> with env &gt; file &gt; default precedence) and run one-shot ops - prune, plugin-cache GC, snapshot/backup, health check. The Summary, Doctor, and Profiles views live here as sub-tabs.</p>
+      </div>
+      <div class="card">
         <h3>Profiles</h3>
-        <p>Snapshot the current project's MCP set and reapply it later with one keystroke.</p>
+        <p>Snapshot the current project's MCP set and reapply it later with one keystroke. Lives under the Tweaks tab.</p>
       </div>
       <div class="card">
         <h3>Prune stale overrides</h3>
@@ -436,7 +440,7 @@ ccmcp plugin list [--enabled|--disabled]
 ccmcp plugin enable|disable|install|remove &lt;id&gt; [--marketplace M] [--purge]
 ccmcp marketplace list|add|remove &lt;name&gt; [--source github|git|local] [--repo R]
 
-ccmcp tui --dump [--tab mcps|plugins|skills|agents|commands|profiles|summary|doctor]</code></pre>
+ccmcp tui --dump [--tab mcps|plugins|skills|agents|commands|tweaks|profiles|summary|doctor]</code></pre>
     <p class="muted"><strong>Global flags:</strong> <code>--path &lt;dir&gt;</code>, <code>--dry-run</code>, <code>--json</code>, <code>--no-color</code>.</p>
     <p>Full key reference, scope terminology, and implementation notes live in the <a href="https://github.com/ringo380/ccmcp#readme">README</a>.</p>
   </div>
