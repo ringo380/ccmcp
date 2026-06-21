@@ -60,7 +60,7 @@ func newOpsView(st *state) *opsView {
 		},
 		{
 			label:       "Run health check",
-			description: "Doctor scan; show pass/fail summary",
+			description: "CLAUDE.md + MEMORY.md lint; show pass/fail summary",
 			destructive: false,
 			run:         func(v *opsView) (string, error) { return v.runHealthCheck() },
 		},

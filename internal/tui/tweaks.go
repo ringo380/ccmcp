@@ -197,7 +197,15 @@ func (v *tweaksView) focusSearch(key string) {
 			return
 		}
 	}
-	// Try doctor
-	v.sub = subDoctor
-	v.doctor.focusSearch(key)
+	// Only switch to Doctor when the key actually belongs to a doctor issue.
+	// searchEntries() lazily builds the issue list (runLint) just as the index
+	// did. A non-matching key is left as a no-op rather than silently stranding
+	// the user on the Doctor sub-view.
+	for _, e := range v.doctor.searchEntries() {
+		if e.key == key {
+			v.sub = subDoctor
+			v.doctor.focusSearch(key)
+			return
+		}
+	}
 }
