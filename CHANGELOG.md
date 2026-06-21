@@ -6,6 +6,30 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-21
+
+### Added
+
+- **Tweaks tab - a settings and maintenance hub that slims the header from 10 tabs to 8.**
+  The former top-level Summary, Doctor, and Profiles tabs fold in as sub-views of a new
+  `Tweaks` tab, reachable with `t`. Digits `1`-`7` select the seven content tabs, and
+  `[` / `]` (or the arrow keys) cycle the five Tweaks sub-views (Settings, Maintenance,
+  Summary, Doctor, Profiles). Digits `8`/`9`/`0` are no longer bound.
+- **ccmcp now has its own preferences file, `~/.claude-mcp-config.json`.** The Settings
+  sub-view edits app-level preferences - default LLM model, update check, offline
+  discovery, default scope for new MCPs, and prune defaults - with `space`/`enter`.
+  Resolution is environment variable > config file > built-in default; each row shows its
+  effective value and a `[env]` / `[config]` / `[default]` source tag, and env-overridden
+  rows are read-only. The persisted values are honored by the discovery, update-check, and
+  model-calibration paths, so a file-only setting takes effect when no env var is set. The
+  file follows the `~/.claude-mcp-*.json` convention and is backed up to
+  `~/.claude-mcp-backups/` like the stash and profiles.
+- **Maintenance sub-view for one-shot upkeep.** Take a snapshot/backup of `~/.claude.json`,
+  prune orphaned `disabledMcpServers` entries (reusing the same classifier as
+  `ccmcp mcp prune`), garbage-collect stale plugin-cache directories, or run a
+  `CLAUDE.md`/`MEMORY.md` health check - each from a single keystroke, with the existing
+  confirm panel guarding destructive actions.
+
 ## [0.21.0] - 2026-06-20
 
 ### Added
@@ -1061,7 +1085,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.22.0
 [0.21.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.21.0
 [0.20.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.20.1
 [0.20.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.20.0
