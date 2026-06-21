@@ -169,7 +169,7 @@ apart from genuinely absent sources.
 
 Browse a substantial built-in registry of curated Claude Code marketplaces (plus the awesome-list scraper and any `discoverySources` URLs), sorted by GitHub stars. By default the list shows only marketplaces you haven't installed yet - managing existing ones is the Marketplaces tab's job; press `H` to reveal installed entries (marked `[=]`). `a` adopts a marketplace without retyping it in the Marketplaces tab; `i` installs a plugin in one keystroke and enables it.
 
-**Profiles tab**
+**Tweaks - Profiles sub-view**
 
 | Key | Action |
 |---|---|
@@ -178,7 +178,7 @@ Browse a substantial built-in registry of curated Claude Code marketplaces (plus
 | `d` | delete |
 | `j`/`k`, `g`/`G`, `pgup`/`pgdn` | navigate / jump / page |
 
-**Summary tab**
+**Tweaks - Summary sub-view**
 
 | Key | Action |
 |---|---|
@@ -191,7 +191,7 @@ Browse a substantial built-in registry of curated Claude Code marketplaces (plus
 
 Bird's-eye overview of every scope's counts, per-project overrides, and redundancies. Each actionable row (orphan override, stash redundancy, duplicate-load, slash-command conflict, plugin registration drift) is cursor-selectable and fixable in place - orphan prunes and stash drops apply directly to the in-memory state (save with `w`), and config edits hand off to `claude --print` non-interactively with an in-TUI spinner.
 
-**Doctor tab**
+**Tweaks - Doctor sub-view**
 
 | Key | Action |
 |---|---|

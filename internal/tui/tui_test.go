@@ -314,7 +314,8 @@ func TestTUIHelpOverlay(t *testing.T) {
 		"Row marks",
 		"[x]", "[~]", "[!]",
 		"MCPs tab", "Plugins tab", "Skills tab", "Agents tab", "Commands tab",
-		"Tweaks tab", "Tweaks - Summary sub-view", "Tweaks - Profiles sub-view", "Tweaks - Doctor sub-view",
+		"Tweaks tab", "Tweaks - Settings sub-view", "Tweaks - Maintenance sub-view",
+		"Tweaks - Summary sub-view", "Tweaks - Profiles sub-view", "Tweaks - Doctor sub-view",
 		"Global",
 	} {
 		if !strings.Contains(view, want) {
