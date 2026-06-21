@@ -31,7 +31,6 @@ const (
 	KeyDefaultScope     = "defaultScope"
 	KeyPruneGhosts      = "pruneIncludeStashGhosts"
 	KeyConfirmApply     = "confirmBeforeApply"
-	KeyAutoBackup       = "autoBackupOnMutation"
 )
 
 // LoadAppConfig reads the prefs file. A missing or corrupt file yields an empty
@@ -127,13 +126,6 @@ func (c *AppConfig) PruneIncludeStashGhosts() (bool, Source) {
 
 func (c *AppConfig) ConfirmBeforeApply() (bool, Source) {
 	if v, ok := c.fileBool(KeyConfirmApply); ok {
-		return v, SrcConfig
-	}
-	return true, SrcDefault
-}
-
-func (c *AppConfig) AutoBackupOnMutation() (bool, Source) {
-	if v, ok := c.fileBool(KeyAutoBackup); ok {
 		return v, SrcConfig
 	}
 	return true, SrcDefault

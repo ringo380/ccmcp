@@ -91,11 +91,12 @@ func newSettingsView(st *state) *settingsView {
 			},
 		},
 		{
-			label: "Auto-backup on mutation", key: config.KeyAutoBackup, kind: kindToggle,
-			value: func(c *config.AppConfig) (string, config.Source) {
-				on, src := c.AutoBackupOnMutation()
-				return onOff(on), src
-			},
+			// Informational: every ccmcp mutation backs up the target file to
+			// ~/.claude-mcp-backups via state.save() (same as `ccmcp mcp prune`).
+			// This is always on and not user-toggleable, so it renders read-only
+			// rather than as a toggle that would do nothing.
+			label: "Auto-backup on mutation", kind: kindInfo,
+			info:  func(st *state) string { return "always on (writes to ~/.claude-mcp-backups)" },
 		},
 	}
 	return v
