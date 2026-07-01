@@ -6,6 +6,13 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- **Discover tab now shows a source badge on each marketplace row.** A short,
+  color-coded tag distinguishes curated entries (`[emb]` embedded registry,
+  `[ant]` Anthropic) from auto-scraped (`[awe]` awesome-list) and user-added
+  (`[usr]`) sources, so it is clear at a glance which entries are vetted.
+
 ## [0.22.0] - 2026-06-21
 
 ### Added

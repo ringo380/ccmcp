@@ -38,6 +38,44 @@ func TestDiscoveryViewFromCacheRendersList(t *testing.T) {
 	}
 }
 
+func TestOriginBadge(t *testing.T) {
+	cases := map[string]string{
+		"embedded":                            "[emb]",
+		"anthropic":                           "[ant]",
+		"awesome-list:hesreallyhim/awesome-x": "[awe]",
+		"user:https://example.com/reg.json":   "[usr]",
+		"":                                    "[   ]",
+		"something-unknown":                   "[   ]",
+	}
+	for origin, want := range cases {
+		if got := stripANSI(originBadge(origin)); got != want {
+			t.Errorf("originBadge(%q)=%q, want %q", origin, got, want)
+		}
+	}
+}
+
+func TestDiscoveryListShowsOriginBadge(t *testing.T) {
+	st, _ := buildState(t)
+	v := newDiscoveryView(st)
+	v.resize(120, 30)
+
+	res := &discovery.DiscoveryResult{
+		Marketplaces: []discovery.RemoteMarketplace{
+			{Name: "curated", Source: "github", Repo: "owner/curated", Origin: "embedded"},
+			{Name: "scraped", Source: "github", Repo: "owner/scraped", Origin: "awesome-list:owner/list"},
+		},
+	}
+	v.update(discoveryFetchedMsg{res: res})
+
+	out := stripANSI(v.render())
+	if !strings.Contains(out, "[emb]") {
+		t.Errorf("list should show [emb] badge; got:\n%s", out)
+	}
+	if !strings.Contains(out, "[awe]") {
+		t.Errorf("list should show [awe] badge; got:\n%s", out)
+	}
+}
+
 func TestDiscoveryViewBackFromDetail(t *testing.T) {
 	st, _ := buildState(t)
 	v := newDiscoveryView(st)

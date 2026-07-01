@@ -729,6 +729,25 @@ func (v *discoveryView) render() string {
 	return ""
 }
 
+// originBadge renders a short, color-coded tag for where a discovered
+// marketplace came from, so users can tell curated entries apart from
+// auto-scraped ones. Curated sources (embedded registry, Anthropic) use the
+// OK color; scraped/user sources use the dim color.
+func originBadge(origin string) string {
+	switch {
+	case origin == "embedded":
+		return styleOK.Render("[emb]")
+	case origin == "anthropic":
+		return styleOK.Render("[ant]")
+	case strings.HasPrefix(origin, "awesome-list:"):
+		return styleDim.Render("[awe]")
+	case strings.HasPrefix(origin, "user:"):
+		return styleDim.Render("[usr]")
+	default:
+		return styleDim.Render("[   ]")
+	}
+}
+
 func (v *discoveryView) renderList() string {
 	var b strings.Builder
 	visible := v.visibleRows()
@@ -793,7 +812,8 @@ func (v *discoveryView) renderList() string {
 		if r.Repo != "" {
 			src = r.Source + " " + r.Repo
 		}
-		line := fmt.Sprintf("%s %s  %s", marker, r.Name, styleDim.Render("("+src+")"))
+		badge := originBadge(r.Origin)
+		line := fmt.Sprintf("%s %s  %s  %s", marker, r.Name, badge, styleDim.Render("("+src+")"))
 		if r.Stars > 0 {
 			line += "  " + styleDim.Render(fmt.Sprintf("★ %s", formatStars(r.Stars)))
 		}
