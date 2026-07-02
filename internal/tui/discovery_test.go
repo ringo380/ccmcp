@@ -46,6 +46,12 @@ func TestOriginBadge(t *testing.T) {
 		"user:https://example.com/reg.json":   "[usr]",
 		"":                                    "[   ]",
 		"something-unknown":                   "[   ]",
+		// Merged origins (mergeOrigins comma-joins multi-source entries): a
+		// curated segment wins regardless of order.
+		"embedded,awesome-list:owner/list":  "[emb]",
+		"awesome-list:owner/list,embedded":  "[emb]",
+		"anthropic,user:https://x/reg.json": "[ant]",
+		"awesome-list:a/b,user:https://x":   "[awe]",
 	}
 	for origin, want := range cases {
 		if got := stripANSI(originBadge(origin)); got != want {
