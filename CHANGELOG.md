@@ -6,12 +6,15 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-01
+
 ### Added
 
 - **Discover tab now shows a source badge on each marketplace row.** A short,
   color-coded tag distinguishes curated entries (`[emb]` embedded registry,
   `[ant]` Anthropic) from auto-scraped (`[awe]` awesome-list) and user-added
-  (`[usr]`) sources, so it is clear at a glance which entries are vetted.
+  (`[usr]`) sources, so it is clear at a glance which entries are vetted. Entries
+  surfaced by more than one source are classified by their most-vetted origin.
 
 ## [0.22.0] - 2026-06-21
 
@@ -1092,7 +1095,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.23.0
 [0.22.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.22.0
 [0.21.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.21.0
 [0.20.1]: https://github.com/ringo380/ccmcp/releases/tag/v0.20.1
