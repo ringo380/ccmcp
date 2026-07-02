@@ -729,6 +729,42 @@ func (v *discoveryView) render() string {
 	return ""
 }
 
+// originBadge renders a short, color-coded tag for where a discovered
+// marketplace came from, so users can tell curated entries apart from
+// auto-scraped ones. Curated sources (embedded registry, Anthropic) use the
+// OK color; scraped/user sources use the dim color. An entry surfaced by more
+// than one source has its origins comma-joined by mergeOrigins (eg.
+// "embedded,awesome-list:owner/repo"), so classify per segment and let a
+// curated source win - a vetted entry that also appears in a scraped list is
+// still vetted.
+func originBadge(origin string) string {
+	var emb, ant, awe, usr bool
+	for _, seg := range strings.Split(origin, ",") {
+		switch {
+		case seg == "embedded":
+			emb = true
+		case seg == "anthropic":
+			ant = true
+		case strings.HasPrefix(seg, "awesome-list:"):
+			awe = true
+		case strings.HasPrefix(seg, "user:"):
+			usr = true
+		}
+	}
+	switch {
+	case emb:
+		return styleOK.Render("[emb]")
+	case ant:
+		return styleOK.Render("[ant]")
+	case awe:
+		return styleDim.Render("[awe]")
+	case usr:
+		return styleDim.Render("[usr]")
+	default:
+		return styleDim.Render("[   ]")
+	}
+}
+
 func (v *discoveryView) renderList() string {
 	var b strings.Builder
 	visible := v.visibleRows()
@@ -793,7 +829,8 @@ func (v *discoveryView) renderList() string {
 		if r.Repo != "" {
 			src = r.Source + " " + r.Repo
 		}
-		line := fmt.Sprintf("%s %s  %s", marker, r.Name, styleDim.Render("("+src+")"))
+		badge := originBadge(r.Origin)
+		line := fmt.Sprintf("%s %s  %s  %s", marker, r.Name, badge, styleDim.Render("("+src+")"))
 		if r.Stars > 0 {
 			line += "  " + styleDim.Render(fmt.Sprintf("★ %s", formatStars(r.Stars)))
 		}
