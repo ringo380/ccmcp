@@ -32,10 +32,8 @@ type pluginRowView struct {
 	RemovedFromMkt bool // marketplace is cached locally but no longer lists this plugin
 
 	// Ctx is this plugin's estimated per-turn context contribution from the
-	// skills/agents/commands it ships. Populated in rebuild(). CtxItems is how
-	// many assets that covers; 0 means the plugin ships none.
-	Ctx      ctxcost.Cost
-	CtxItems int
+	// skills/agents/commands it ships. Populated in rebuild().
+	Ctx ctxcost.Cost
 }
 
 type availPluginRow struct {
@@ -252,9 +250,7 @@ func (v *pluginView) rebuild() {
 
 	idx := v.st.costIndex()
 	for i := range rows {
-		b := idx.ByPlugin[rows[i].ID]
-		rows[i].Ctx = b.Total()
-		rows[i].CtxItems = b.Items
+		rows[i].Ctx = idx.ByPlugin[rows[i].ID].Total()
 	}
 
 	v.rows = rows
@@ -1027,7 +1023,10 @@ func (v *pluginView) render() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(title)
+	// The title is a header line like any other: budgeted as ONE logical line
+	// below, so at 80 columns a long count summary wrapped to two physical rows
+	// and pushed the list past the bottom of the terminal.
+	b.WriteString(fitWidth(title, v.w))
 	b.WriteString("\n")
 
 	idx := v.st.costIndex()
@@ -1084,34 +1083,65 @@ func (v *pluginView) render() string {
 	// -1 reserves the "[a-b of N]" scroll indicator appended after the list. The
 	// help line is NOT budgeted here: model.View() renders it into the footer,
 	// after its own clamp, so it costs the body nothing.
-	listHeight := v.h - headerLines - 1
+	lineBudget := v.h - headerLines - 1
 	switch {
 	case v.h <= 0:
 		// No WindowSizeMsg yet - show a usable default instead of a negative window.
-		listHeight = 5
-	case listHeight < 1:
+		lineBudget = 5
+	case lineBudget < 1:
 		// A floor of 5 here used to overflow short terminals by up to 4 rows,
 		// which model.View() then clamped off the BOTTOM - taking the scroll
 		// indicator and the last rows with it.
-		listHeight = 1
-	}
-	if v.index < v.top {
-		v.top = v.index
-	}
-	if v.index >= v.top+listHeight {
-		v.top = v.index - listHeight + 1
-	}
-	end := v.top + listHeight
-	if end > len(visible) {
-		end = len(visible)
+		lineBudget = 1
 	}
 
 	// Find where remote rows start to insert a separator.
 	remoteStart := firstRemoteIdx(visible)
 
+	// The "─── Remote (claude.ai) ───" separator is a physical LINE the loop
+	// emits on top of the rows, so it has to come out of the same budget. Left
+	// unbudgeted the body emitted lineBudget+1 lines and model.View() clamped
+	// from the BOTTOM, dropping the scroll indicator and the last row.
+	//
+	// Two passes, reduce-only: window at the full budget, and if the separator
+	// lands inside that window, re-window one row smaller. If the separator then
+	// falls out of the window the body is one line short of the budget, which is
+	// safe; it can never exceed it.
+	listHeight := lineBudget
+	window := func() int {
+		if v.index < v.top {
+			v.top = v.index
+		}
+		if v.index >= v.top+listHeight {
+			v.top = v.index - listHeight + 1
+		}
+		if v.top < 0 {
+			v.top = 0
+		}
+		end := v.top + listHeight
+		if end > len(visible) {
+			end = len(visible)
+		}
+		return end
+	}
+	end := window()
+	sepVisible := func(end int) bool { return remoteStart >= 0 && remoteStart >= v.top && remoteStart < end }
+	drawSep := sepVisible(end)
+	if drawSep {
+		if listHeight > 1 {
+			listHeight--
+			end = window()
+			drawSep = sepVisible(end)
+		} else {
+			// A one-row budget cannot afford the separator at all; the row itself
+			// is what the user needs to see.
+			drawSep = false
+		}
+	}
+
 	for i := v.top; i < end; i++ {
 		// Separator before first remote row.
-		if i == remoteStart && remoteStart >= 0 {
+		if drawSep && i == remoteStart {
 			b.WriteString(styleDim.Render("  ─── Remote (claude.ai) " + strings.Repeat("─", 40)))
 			b.WriteString("\n")
 		}

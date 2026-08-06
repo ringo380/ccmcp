@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/ringo380/ccmcp/internal/agents"
 	"github.com/ringo380/ccmcp/internal/commands"
 	"github.com/ringo380/ccmcp/internal/ctxcost"
@@ -112,13 +113,12 @@ func truncateRunes(s string, n int) string {
 // line that wraps. A wrapped header silently costs the body an extra physical
 // row and scrolls itself off the top of a narrow terminal - which is the normal
 // case under screen magnification. Clamping keeps physical rows == logical rows.
+// Truncation is ANSI-aware: header and title lines carry styled segments, and
+// cutting runes off the end of one can land inside an escape sequence, leaving
+// visible garbage that lipgloss.Width measures as zero columns.
 func fitWidth(s string, w int) string {
 	if w <= 0 || lipgloss.Width(s) <= w {
 		return s
 	}
-	r := []rune(s)
-	for len(r) > 0 && lipgloss.Width(string(r)+"…") > w {
-		r = r[:len(r)-1]
-	}
-	return string(r) + "…"
+	return ansi.Truncate(s, w, "…")
 }

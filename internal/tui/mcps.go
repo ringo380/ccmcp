@@ -952,7 +952,10 @@ func (v *mcpView) render() string {
 		title += fmt.Sprintf("  (%d shown)", len(visible))
 	}
 	var b strings.Builder
-	b.WriteString(title)
+	// The title is budgeted as ONE logical line below, so it has to be clamped
+	// like every other header line: at 80 columns the scope description plus the
+	// count summary wrapped to two physical rows and cost the list a row.
+	b.WriteString(fitWidth(title, v.w))
 	b.WriteString("\n")
 
 	idx := v.st.costIndex()
@@ -969,15 +972,15 @@ func (v *mcpView) render() string {
 	// so a wrapped header costs the list a row it never gave back.
 	switch {
 	case v.st.costUnavailable() != "":
-		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s   (unavailable: %s)",
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context (MCP tool schemas)   %s   (unavailable: %s)",
 			ctxcost.Human(ctxcost.Unmeasured), v.st.costUnavailable()), v.w))
 	case known.Loaded == 0 && unmeasured > 0:
-		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s   (%d server(s) unmeasured - tool schemas need a probe)",
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context (MCP tool schemas)   %s   (%d server(s) unmeasured - tool schemas need a probe)",
 			ctxcost.Human(ctxcost.Unmeasured), unmeasured), v.w))
 	case unmeasured > 0:
-		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s   (%d unmeasured)", ctxcost.HumanCost(known), unmeasured), v.w))
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context (MCP tool schemas)   %s   (%d unmeasured)", ctxcost.HumanCost(known), unmeasured), v.w))
 	default:
-		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s", ctxcost.HumanCost(known)), v.w))
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context (MCP tool schemas)   %s", ctxcost.HumanCost(known)), v.w))
 	}
 	b.WriteString("\n")
 	if mm, ok := v.st.measured(); ok {
