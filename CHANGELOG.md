@@ -21,13 +21,22 @@ All notable changes to this project are documented here. Format based on
 - Context figures render as `-` with the reason when the token encoder is
   unavailable (offline with a cold BPE cache), instead of a confident `≈0` on
   the Plugins tab header and on every plugin row.
+- The MCPs tab context caption reads "per-turn context (MCP tool schemas)": the
+  unqualified caption meant a different quantity on each tab, so switching tabs
+  showed the whole asset estimate and then `-` under the same label.
+- `ccmcp context` marks disabled plugins in the "heaviest plugins" list with
+  `(disabled)`, and `--json` carries an `enabled` bool per plugin. Disabled
+  plugins are listed to show what enabling one would add, but they do not count
+  toward the printed total.
 - The context caption no longer claims the total is "global, not per-project":
   plugin enablement is global, but the total also counts the project's own
   `.claude/` skills, agents, and commands.
 - Session transcript lookup now matches Claude Code's real directory encoding
   (every non-alphanumeric becomes `-`), so the measured-prefix line no longer
   silently disappears for project paths containing a dot, underscore, or space.
-  The doctor MEMORY.md path uses the same slug.
+  The doctor MEMORY.md path uses the same slug, falling back to the legacy
+  encoding (which preserved `.` and `_`) when only that directory exists, so
+  older projects are no longer reported as having no MEMORY.md.
 
 ### Fixed
 
@@ -35,6 +44,16 @@ All notable changes to this project are documented here. Format based on
   windows: the context header is clamped to the terminal width, and the list
   window is budgeted against the real available height instead of a hard floor
   of five rows.
+- The Plugins tab no longer drops the scroll indicator and the last row when a
+  claude.ai row is in view: the "Remote (claude.ai)" separator is now paid for
+  out of the same line budget as the rows.
+- Tab title lines are clamped to the terminal width like every other header
+  line, so a long title no longer wraps and pushes the list off the bottom.
+- The context estimate no longer goes stale after the second and later
+  mutations. The cache keyed off pending-write booleans, which cannot express
+  more than one change; it now keys off a mutation counter.
+- The session-start prefix is read once per mutation instead of on every render
+  frame; it previously rescanned the newest transcript on every keypress.
 - `.gitignore` no longer duplicates patterns already covered by the user's global
   git excludes.
 
