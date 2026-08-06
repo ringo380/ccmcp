@@ -6,6 +6,21 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- `ccmcp context` estimates the per-turn context cost of the enabled plugins and
+  MCP servers, attributed per plugin, with `--json` output.
+- Plugins and MCPs tabs show a per-turn context total, and the Plugins tab shows a
+  per-plugin cost column.
+- Both tabs display the last measured prompt prefix from the project's newest
+  session transcript, so the estimate can be checked against a real number.
+
+### Changed
+
+- The shared token encoder moved from `internal/doctor` to `internal/tokens`.
+- `.gitignore` no longer duplicates patterns already covered by the user's global
+  git excludes.
+
 ## [0.23.0] - 2026-07-01
 
 ### Added
