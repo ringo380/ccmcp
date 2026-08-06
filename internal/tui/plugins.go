@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 	"github.com/ringo380/ccmcp/internal/updates"
@@ -29,6 +30,12 @@ type pluginRowView struct {
 	DisabledHere bool // per-project disabled (remote rows only)
 	Outdated  bool   // a newer upstream version is available
 	RemovedFromMkt bool // marketplace is cached locally but no longer lists this plugin
+
+	// Ctx is this plugin's estimated per-turn context contribution from the
+	// skills/agents/commands it ships. Populated in rebuild(). CtxItems is how
+	// many assets that covers; 0 means the plugin ships none.
+	Ctx      ctxcost.Cost
+	CtxItems int
 }
 
 type availPluginRow struct {
@@ -241,6 +248,13 @@ func (v *pluginView) rebuild() {
 				DisabledHere: disabled[aiKey],
 			})
 		}
+	}
+
+	idx := v.st.costIndex()
+	for i := range rows {
+		b := idx.ByPlugin[rows[i].ID]
+		rows[i].Ctx = b.Total()
+		rows[i].CtxItems = b.Items
 	}
 
 	v.rows = rows
@@ -1015,6 +1029,15 @@ func (v *pluginView) render() string {
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n")
+
+	idx := v.st.costIndex()
+	total := idx.Project.Total()
+	fmt.Fprintf(&b, "  per-turn context   %s   (assets only, global not per-project; MCP schemas need a probe)\n",
+		ctxcost.HumanCost(total))
+	if mm, ok := v.st.measured(); ok {
+		fmt.Fprintf(&b, "  last measured prefix %s\n", ctxcost.Human(mm.PrefixTokens))
+	}
+
 	if v.filterActive || v.filter.Value() != "" {
 		b.WriteString(v.filter.View() + "\n")
 	}
@@ -1047,7 +1070,8 @@ func (v *pluginView) render() string {
 	if v.index < 0 {
 		v.index = 0
 	}
-	listHeight := v.h - 4
+	headerLines := strings.Count(b.String(), "\n")
+	listHeight := v.h - headerLines - 1 // -1 reserves the help line
 	if listHeight < 5 {
 		listHeight = 5
 	}
@@ -1105,6 +1129,10 @@ func (v *pluginView) render() string {
 		}
 		if v.pendingRemove == r.ID {
 			line += "  " + styleWarn.Render("← press x to confirm")
+		}
+		if !r.IsRemote {
+			cost := ctxcost.Human(r.Ctx.Loaded) // ≈0 is a real measurement here, not a gap
+			line += "  " + styleDim.Render(cost)
 		}
 		if i == v.index {
 			b.WriteString(styleSelected.Render("  " + line))

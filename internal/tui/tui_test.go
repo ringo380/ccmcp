@@ -1760,3 +1760,37 @@ func TestDropFailureHelper(t *testing.T) {
 		t.Fatal("nil slice should report removed=false")
 	}
 }
+
+func TestPluginsTabShowsPerTurnContextCost(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	out := stripANSI(drive(m, "2")) // 2 = Plugins tab
+
+	if !strings.Contains(out, "per-turn context") {
+		t.Fatalf("plugins header must show the per-turn context total:\n%s", out)
+	}
+	// The estimate marker must be present, since no figure here is exact.
+	if !strings.Contains(out, "≈") {
+		t.Fatalf("context figures must be rendered as estimates with ≈:\n%s", out)
+	}
+	// Asset cost is global, not per-project - the header must say so, or it
+	// implies a per-project lever that does not exist.
+	if !strings.Contains(out, "global") {
+		t.Fatalf("plugins header must state that asset cost is global:\n%s", out)
+	}
+}
+
+func TestPluginsTabHeaderDoesNotClampAwayTheList(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	drive(m, "2") // switch to the Plugins tab
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 12}) // deliberately short
+	out := stripANSI(m.View())
+
+	if !strings.Contains(out, "per-turn context") {
+		t.Fatalf("header lost at short height:\n%s", out)
+	}
+	if !strings.Contains(out, "space: toggle") {
+		t.Fatalf("help line clamped off the bottom at short height:\n%s", out)
+	}
+}
