@@ -19,7 +19,7 @@ import (
 // which Human renders as "≈0" - a confident measurement of zero. Callers must
 // therefore consult costUnavailable() before rendering any figure from it.
 func (s *state) costIndex() *ctxcost.Index {
-	if s.cost != nil && s.costDirtySettings == s.dirtySettings && s.costDirtyPlugins == s.dirtyPlugins {
+	if s.cost != nil && s.costSettingsGen == s.settingsGen && s.costPluginsGen == s.pluginsGen {
 		return s.cost
 	}
 	in := ctxcost.Input{
@@ -46,8 +46,8 @@ func (s *state) costIndex() *ctxcost.Index {
 		}
 	}
 	s.cost = idx
-	s.costDirtySettings = s.dirtySettings
-	s.costDirtyPlugins = s.dirtyPlugins
+	s.costSettingsGen = s.settingsGen
+	s.costPluginsGen = s.pluginsGen
 	return s.cost
 }
 
@@ -67,13 +67,31 @@ func (s *state) costUnavailable() string {
 	return truncateRunes(s.costErr.Error(), 60)
 }
 
-// invalidateCost drops the cached estimate so the next costIndex call rebuilds.
-func (s *state) invalidateCost() { s.cost = nil }
+// invalidateCost drops the cached estimate and calibration so the next
+// costIndex/measured call rebuilds.
+func (s *state) invalidateCost() {
+	s.cost = nil
+	s.measuredValid = false
+}
 
 // measured returns the session-start prompt prefix for this project's newest
 // transcript, if any.
+//
+// Cached on the same generations as costIndex, because both mcps.render() and
+// plugins.render() call this unconditionally on every frame and ctxcost.Calibrate
+// is a directory scan plus a per-entry stat plus a full scan of the newest
+// transcript. The worst case is the common one: a session that just started has
+// no non-zero usage record yet, so every keypress re-read multi-megabyte JSONL
+// only to return ok=false.
 func (s *state) measured() (ctxcost.Measured, bool) {
-	return ctxcost.Calibrate(s.paths.ClaudeConfigDir, s.project)
+	if s.measuredValid && s.measuredSettingsGen == s.settingsGen && s.measuredPluginsGen == s.pluginsGen {
+		return s.measuredVal, s.measuredOK
+	}
+	s.measuredVal, s.measuredOK = ctxcost.Calibrate(s.paths.ClaudeConfigDir, s.project)
+	s.measuredValid = true
+	s.measuredSettingsGen = s.settingsGen
+	s.measuredPluginsGen = s.pluginsGen
+	return s.measuredVal, s.measuredOK
 }
 
 // truncateRunes shortens s to at most n runes, appending an ellipsis. Unlike

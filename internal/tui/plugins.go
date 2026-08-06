@@ -341,7 +341,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 				v.st.pendingCacheGC = append(v.st.pendingCacheGC, stale)
 			}
 			v.st.updates.InvalidatePlugin(t.id)
-			v.st.dirtyPlugins = true
+			v.st.markPluginsDirty()
 			v.bulkApplied = append(v.bulkApplied, bulkUpdateApplied{
 				id: t.id, result: m.result, oldInstPath: t.oldInstPath,
 			})
@@ -378,7 +378,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			}
 		}
 		if len(m.applied) > 0 {
-			v.st.dirtyPlugins = true
+			v.st.markPluginsDirty()
 			v.st.rescanPluginMCPs()
 		}
 		// Persist failures so `F` (capital) can re-open the panel later. Survives
@@ -417,7 +417,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		if stale := install.UpdateInstall(v.st.installed, m.result, m.oldInstPath); stale != "" {
 			v.st.pendingCacheGC = append(v.st.pendingCacheGC, stale)
 		}
-		v.st.dirtyPlugins = true
+		v.st.markPluginsDirty()
 		v.st.rescanPluginMCPs()
 		v.st.updates.InvalidatePlugin(m.id)
 		// A successful single-plugin update may have come from the failures
@@ -451,8 +451,8 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		install.RegisterInstall(v.st.settings, v.st.installed, m.result)
-		v.st.dirtySettings = true
-		v.st.dirtyPlugins = true
+		v.st.markSettingsDirty()
+		v.st.markPluginsDirty()
 		v.st.rescanPluginMCPs()
 		v.mode = ""
 		v.removed = nil
@@ -597,7 +597,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		}
 		newState := !r.Enabled
 		v.st.settings.SetPluginEnabled(r.ID, newState)
-		v.st.dirtySettings = true
+		v.st.markSettingsDirty()
 		v.st.rescanPluginMCPs()
 		if newState {
 			v.flash = styleOK.Render(r.ID + " → enabled")
@@ -658,8 +658,8 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			// Confirmed: remove.
 			v.st.settings.RemovePluginEntry(r.ID)
 			instPath, _ := v.st.installed.Remove(r.ID)
-			v.st.dirtySettings = true
-			v.st.dirtyPlugins = true
+			v.st.markSettingsDirty()
+			v.st.markPluginsDirty()
 			v.st.rescanPluginMCPs()
 			v.pendingRemove = ""
 			v.removed = nil
@@ -735,7 +735,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 				v.st.settings.SetPluginEnabled(r.ID, true)
 			}
 		}
-		v.st.dirtySettings = true
+		v.st.markSettingsDirty()
 		v.st.rescanPluginMCPs()
 		v.flash = styleOK.Render(fmt.Sprintf("enabled %d plugins (unsaved)", len(visible)))
 		v.rebuild()
@@ -745,7 +745,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 				v.st.settings.SetPluginEnabled(r.ID, false)
 			}
 		}
-		v.st.dirtySettings = true
+		v.st.markSettingsDirty()
 		v.st.rescanPluginMCPs()
 		v.flash = styleDim.Render(fmt.Sprintf("disabled %d plugins (unsaved)", len(visible)))
 		v.rebuild()

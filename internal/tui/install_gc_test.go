@@ -17,7 +17,7 @@ func TestPendingCacheGCSurvivesDiscard(t *testing.T) {
 	}
 	// Simulate an in-memory update that queued the old dir for GC but was never applied.
 	st.pendingCacheGC = append(st.pendingCacheGC, oldDir)
-	st.dirtyPlugins = true
+	st.markPluginsDirty()
 
 	// Discard == never calling save(). The dir must still be present so the on-disk
 	// registry (which still references it) stays valid.
@@ -34,7 +34,7 @@ func TestPendingCacheGCRunsAfterSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.pendingCacheGC = append(st.pendingCacheGC, oldDir)
-	st.dirtyPlugins = true
+	st.markPluginsDirty()
 
 	if _, err := st.save(); err != nil {
 		t.Fatalf("save: %v", err)

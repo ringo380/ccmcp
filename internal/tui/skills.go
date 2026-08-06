@@ -258,7 +258,7 @@ func (v *skillView) update(msg tea.Msg) tea.Cmd {
 		for _, s := range v.rows {
 			v.st.settings.RemoveSkillOverride(s.Name)
 		}
-		v.st.dirtySettings = true
+		v.st.markSettingsDirty()
 		v.flash = styleOK.Render(fmt.Sprintf("enabled %d skill(s) (unsaved)", len(v.rows)))
 		v.rebuild()
 	case "N":
@@ -269,7 +269,7 @@ func (v *skillView) update(msg tea.Msg) tea.Cmd {
 				n++
 			}
 		}
-		v.st.dirtySettings = true
+		v.st.markSettingsDirty()
 		v.flash = styleWarn.Render(fmt.Sprintf("disabled %d skill(s) (unsaved)", n))
 		v.rebuild()
 	}
@@ -299,7 +299,7 @@ func (v *skillView) toggle(s skills.Skill) {
 		v.st.settings.RemoveSkillOverride(s.Name)
 		v.flash = styleOK.Render(fmt.Sprintf("enabled %s (unsaved)", s.Name))
 	}
-	v.st.dirtySettings = true
+	v.st.markSettingsDirty()
 }
 
 func (v *skillView) render() string {
