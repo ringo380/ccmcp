@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 	"github.com/ringo380/ccmcp/internal/updates"
 )
@@ -953,6 +954,30 @@ func (v *mcpView) render() string {
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n")
+
+	idx := v.st.costIndex()
+	unmeasured := 0
+	for _, r := range v.rows {
+		if isEffective(r) {
+			if _, ok := idx.ByMCP[r.Name]; !ok {
+				unmeasured++
+			}
+		}
+	}
+	known := idx.Project.MCP
+	switch {
+	case known.Loaded == 0 && unmeasured > 0:
+		fmt.Fprintf(&b, "  per-turn context   %s   (%d server(s) unmeasured - tool schemas need a probe)\n",
+			ctxcost.Human(ctxcost.Unmeasured), unmeasured)
+	case unmeasured > 0:
+		fmt.Fprintf(&b, "  per-turn context   %s   (%d unmeasured)\n", ctxcost.HumanCost(known), unmeasured)
+	default:
+		fmt.Fprintf(&b, "  per-turn context   %s\n", ctxcost.HumanCost(known))
+	}
+	if mm, ok := v.st.measured(); ok {
+		fmt.Fprintf(&b, "  last measured prefix %s\n", ctxcost.Human(mm.PrefixTokens))
+	}
+
 	if v.moveActive {
 		b.WriteString(styleWarn.Render(fmt.Sprintf("Move to: [u]ser  [l]ocal  [s]tash  (esc to cancel)")))
 		b.WriteString("\n")
@@ -971,7 +996,8 @@ func (v *mcpView) render() string {
 	if v.index < 0 {
 		v.index = 0
 	}
-	listHeight := v.h - 4
+	headerLines := strings.Count(b.String(), "\n")
+	listHeight := v.h - headerLines - 1 // -1 reserves the help line
 	if listHeight < 5 {
 		listHeight = 5
 	}

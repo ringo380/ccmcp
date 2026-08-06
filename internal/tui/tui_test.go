@@ -1794,3 +1794,19 @@ func TestPluginsTabHeaderDoesNotClampAwayTheList(t *testing.T) {
 		t.Fatalf("help line clamped off the bottom at short height:\n%s", out)
 	}
 }
+
+func TestMCPsTabReportsUnmeasuredServersRatherThanZero(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	out := stripANSI(drive(m, "1")) // 1 = MCPs tab
+
+	if !strings.Contains(out, "per-turn context") {
+		t.Fatalf("MCPs header must show a per-turn context line:\n%s", out)
+	}
+	if !strings.Contains(out, "unmeasured") {
+		t.Fatalf("with no probe data the header must say how many servers are unmeasured:\n%s", out)
+	}
+	if strings.Contains(out, "per-turn context   ≈0") {
+		t.Fatalf("unmeasured servers must never render as ≈0:\n%s", out)
+	}
+}
