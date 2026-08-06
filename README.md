@@ -281,6 +281,10 @@ ccmcp report audit    [--format json|md|csv]                # stale overrides, c
 ccmcp doctor md [--user] [--memory-dir DIR]                # lint CLAUDE.md + MEMORY.md
 ccmcp doctor md --llm-review [--provider anthropic|openai] # + LLM quality review
 
+ccmcp context [--json]                                     # estimate per-turn context cost of enabled
+                                                             # plugins/MCP servers; MCP tool schemas excluded
+                                                             # until probed
+
 ccmcp tui --dump [--tab mcps|plugins|marketplaces|discover|skills|agents|commands|profiles|summary|doctor]   # print initial render, no TTY
 ```
 
@@ -342,7 +346,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-412 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, plugin MCP scanning (.mcp.json + plugin.json manifest merge), doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+451 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, plugin MCP scanning (.mcp.json + plugin.json manifest merge), doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, per-turn context-cost estimation (`ccmcp context`) across skills/agents/commands (MCP tool schemas are reported as unmeasured until a server probe lands), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 
@@ -357,6 +361,9 @@ internal/
                   (single place to update per CC release)
   commands/       command discovery, conflict detection, ignore list
   config/         readers + writers for every Claude Code config file
+  ctxcost/        per-turn context-cost estimator (skills/agents/commands cost,
+                  per-plugin attribution, transcript calibration); consumes
+                  Discover results rather than re-walking the filesystem
   discovery/      remote marketplace discovery (curated registry + awesome-list
                   + user URLs merged, preview-clone + conflict detection)
   doctor/         CLAUDE.md + MEMORY.md structural linter + asset lint
@@ -367,6 +374,7 @@ internal/
                   dispatch (oh-my-zsh style)
   skills/         skill CRUD + file-backed store
   stringslice/    shared slice helpers
+  tokens/         shared cl100k_base token encoder (also used by doctor's asset lint)
   tui/            bubbletea app: 8 top-level tabs (MCPs, Plugins, Marketplaces,
                   Discover, Skills, Agents, Commands, Tweaks); Tweaks folds
                   Settings, Maintenance, Summary, Doctor, and Profiles as

@@ -287,8 +287,8 @@ func (v *discoveryView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		install.RegisterInstall(v.st.settings, v.st.installed, m.result)
-		v.st.dirtySettings = true
-		v.st.dirtyPlugins = true
+		v.st.markSettingsDirty()
+		v.st.markPluginsDirty()
 		v.st.rescanPluginMCPs()
 		v.refreshInstalled()
 		// The marketplace clone already touched disk; persist settings now so a

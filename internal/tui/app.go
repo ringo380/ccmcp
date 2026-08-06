@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ringo380/ccmcp/internal/claudecode"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/paths"
 	"github.com/ringo380/ccmcp/internal/updates"
@@ -125,6 +126,35 @@ type state struct {
 	// Re-scanned whenever dirtySettings or dirtyPlugins flips.
 	pluginMCPs map[string][]config.PluginMCPSource
 
+	// cost caches the per-turn context estimate. Built on first use and
+	// invalidated wherever pluginMCPs is re-scanned (dirtySettings /
+	// dirtyPlugins), since both derive from the same enabled-plugin state.
+	// nil means "not built yet", NOT "zero cost".
+	cost *ctxcost.Index
+
+	// costErr is the error from the build that produced `cost`, retained because
+	// the fallback empty index is indistinguishable from a genuine zero. Read it
+	// through costUnavailable() before rendering any figure.
+	costErr error
+
+	// costSettingsGen/costPluginsGen record settingsGen/pluginsGen at the moment
+	// `cost` was built. Any change to either means a mutation landed that could
+	// move the estimate (skill/agent overrides feed ctxcost's Enabled filter), so
+	// the cache is rebuilt. Cheaper and far more robust than calling
+	// invalidateCost() at every mutation site - a new site added later is covered
+	// automatically, PROVIDED it goes through markSettingsDirty/markPluginsDirty.
+	costSettingsGen int
+	costPluginsGen  int
+
+	// measuredVal/measuredOK cache the transcript calibration, which is a
+	// directory scan plus a full file scan - too expensive to redo per render
+	// frame. Invalidated exactly like `cost`.
+	measuredVal         ctxcost.Measured
+	measuredOK          bool
+	measuredValid       bool
+	measuredSettingsGen int
+	measuredPluginsGen  int
+
 	// claudeAi: full list of "claude.ai <Name>" strings from claudeAiMcpEverConnected
 	claudeAi []string
 
@@ -144,6 +174,15 @@ type state struct {
 	dirtyProfiles   bool
 	dirtyAppConfig  bool
 
+	// settingsGen/pluginsGen count mutations, and only ever increase. The cost
+	// cache keys off them rather than off dirtySettings/dirtyPlugins, which are
+	// pending-WRITE booleans: once one is true a second mutation sets it true
+	// again, so a boolean comparison cannot see it and the cache goes stale from
+	// the second mutation onward. Bump them only via markSettingsDirty /
+	// markPluginsDirty.
+	settingsGen int
+	pluginsGen  int
+
 	// pendingCacheGC holds superseded plugin cache dirs from in-memory UpdateInstall calls.
 	// They are deleted ONLY after installed_plugins.json saves successfully (see save()),
 	// so a discarded/failed apply never strands the on-disk registry pointing at a deleted
@@ -151,11 +190,27 @@ type state struct {
 	pendingCacheGC []string
 }
 
+// markSettingsDirty records a pending settings.json write and advances the
+// settings generation so every derived cache (currently the context-cost index
+// and the transcript calibration) rebuilds. Every mutation site must call this
+// instead of assigning dirtySettings directly.
+func (s *state) markSettingsDirty() {
+	s.dirtySettings = true
+	s.settingsGen++
+}
+
+// markPluginsDirty is markSettingsDirty's counterpart for installed_plugins.json.
+func (s *state) markPluginsDirty() {
+	s.dirtyPlugins = true
+	s.pluginsGen++
+}
+
 // rescanPluginMCPs refreshes pluginMCPs from the current enabledPlugins + installed_plugins state.
 // Uses ScanAllInstalledPluginMCPs so disabled-but-installed plugins are still represented -
 // consumers that care about "what will actually load" filter by PluginMCPSource.Enabled.
 func (s *state) rescanPluginMCPs() {
 	s.pluginMCPs = config.ScanAllInstalledPluginMCPs(s.settings, s.installed, s.paths.PluginsDir)
+	s.invalidateCost()
 }
 
 func loadState(p paths.Paths, project string) (*state, error) {

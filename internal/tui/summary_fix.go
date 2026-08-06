@@ -128,7 +128,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 			},
 			applyFn: func(s *state) (string, error) {
 				s.settings.SetPluginEnabled(id, false)
-				s.dirtySettings = true
+				s.markSettingsDirty()
 				return "disabled missing plugin " + id + " (press w to save)", nil
 			},
 		}, true
@@ -212,7 +212,7 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 					return "", fmt.Errorf("plugin %q already registered - refresh with r", id)
 				}
 				s.settings.SetPluginEnabled(id, true)
-				s.dirtySettings = true
+				s.markSettingsDirty()
 				return "registered installed plugin " + id + " (press w to save)", nil
 			},
 		}, true
@@ -245,8 +245,8 @@ func buildSummaryFixProposalImpl(r summaryRow, st *state) (*fixProposal, bool) {
 				if instPath != "" {
 					_ = os.RemoveAll(instPath)
 				}
-				s.dirtySettings = true
-				s.dirtyPlugins = true
+				s.markSettingsDirty()
+				s.markPluginsDirty()
 				s.rescanPluginMCPs()
 				return "removed obsolete plugin " + id + " (press w to save)", nil
 			},
@@ -597,7 +597,7 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 				if len(added) == 0 {
 					return "", fmt.Errorf("all %d plugin(s) already registered - refresh with r", len(ids))
 				}
-				s.dirtySettings = true
+				s.markSettingsDirty()
 				return fmt.Sprintf("registered %d plugin(s) (press w to save)", len(added)), nil
 			},
 		}, []string{st.paths.SettingsJSON}, true
@@ -645,8 +645,8 @@ func buildBulkFixProposal(cursor summaryRow, all []summaryRow, st *state) (*fixP
 				if len(removed) == 0 {
 					return "", fmt.Errorf("all %d plugin(s) already removed - refresh with r", len(ids))
 				}
-				s.dirtySettings = true
-				s.dirtyPlugins = true
+				s.markSettingsDirty()
+				s.markPluginsDirty()
 				s.rescanPluginMCPs()
 				return fmt.Sprintf("removed %d obsolete plugin(s) (press w to save)", len(removed)), nil
 			},

@@ -5,15 +5,13 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync"
-
-	"github.com/pkoukk/tiktoken-go"
 
 	"github.com/ringo380/ccmcp/internal/agents"
 	"github.com/ringo380/ccmcp/internal/assets"
 	"github.com/ringo380/ccmcp/internal/claudecode"
 	"github.com/ringo380/ccmcp/internal/commands"
 	"github.com/ringo380/ccmcp/internal/skills"
+	"github.com/ringo380/ccmcp/internal/tokens"
 )
 
 // LintConfig holds the version-calibrated limits the asset linters enforce.
@@ -201,23 +199,6 @@ func LintAgentsWithConfig(ags []agents.Agent, cfg LintConfig) []Issue {
 	return out
 }
 
-// tokenEncoderOnce memoises the cl100k_base BPE encoder. Anthropic doesn't
-// publish its tokenizer publicly; OpenAI's cl100k_base is the standard close-
-// enough analog (within ~5% on prose, much closer than the 4-chars-per-token
-// rule of thumb).
-var (
-	tokenEncoderOnce sync.Once
-	tokenEncoder     *tiktoken.Tiktoken
-	tokenEncoderErr  error
-)
-
-func getTokenEncoder() (*tiktoken.Tiktoken, error) {
-	tokenEncoderOnce.Do(func() {
-		tokenEncoder, tokenEncoderErr = tiktoken.GetEncoding("cl100k_base")
-	})
-	return tokenEncoder, tokenEncoderErr
-}
-
 // agentBodyTokenCount reads `path`, strips the leading YAML frontmatter
 // block (if any), and returns the BPE token count of the remainder. Returns
 // an error only on read or encoder-init failure - empty bodies are 0 tokens.
@@ -226,12 +207,7 @@ func agentBodyTokenCount(path string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	body := stripFrontmatter(string(data))
-	enc, err := getTokenEncoder()
-	if err != nil {
-		return 0, err
-	}
-	return len(enc.Encode(body, nil, nil)), nil
+	return tokens.Count(stripFrontmatter(string(data)))
 }
 
 // stripFrontmatter removes a leading `---\n...\n---\n` YAML block if present.

@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 	"github.com/ringo380/ccmcp/internal/updates"
@@ -29,6 +30,10 @@ type pluginRowView struct {
 	DisabledHere bool // per-project disabled (remote rows only)
 	Outdated  bool   // a newer upstream version is available
 	RemovedFromMkt bool // marketplace is cached locally but no longer lists this plugin
+
+	// Ctx is this plugin's estimated per-turn context contribution from the
+	// skills/agents/commands it ships. Populated in rebuild().
+	Ctx ctxcost.Cost
 }
 
 type availPluginRow struct {
@@ -243,6 +248,11 @@ func (v *pluginView) rebuild() {
 		}
 	}
 
+	idx := v.st.costIndex()
+	for i := range rows {
+		rows[i].Ctx = idx.ByPlugin[rows[i].ID].Total()
+	}
+
 	v.rows = rows
 	if visible := v.visibleRows(); v.index >= len(visible) {
 		v.index = 0
@@ -327,7 +337,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 				v.st.pendingCacheGC = append(v.st.pendingCacheGC, stale)
 			}
 			v.st.updates.InvalidatePlugin(t.id)
-			v.st.dirtyPlugins = true
+			v.st.markPluginsDirty()
 			v.bulkApplied = append(v.bulkApplied, bulkUpdateApplied{
 				id: t.id, result: m.result, oldInstPath: t.oldInstPath,
 			})
@@ -364,7 +374,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			}
 		}
 		if len(m.applied) > 0 {
-			v.st.dirtyPlugins = true
+			v.st.markPluginsDirty()
 			v.st.rescanPluginMCPs()
 		}
 		// Persist failures so `F` (capital) can re-open the panel later. Survives
@@ -403,7 +413,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		if stale := install.UpdateInstall(v.st.installed, m.result, m.oldInstPath); stale != "" {
 			v.st.pendingCacheGC = append(v.st.pendingCacheGC, stale)
 		}
-		v.st.dirtyPlugins = true
+		v.st.markPluginsDirty()
 		v.st.rescanPluginMCPs()
 		v.st.updates.InvalidatePlugin(m.id)
 		// A successful single-plugin update may have come from the failures
@@ -437,8 +447,8 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		install.RegisterInstall(v.st.settings, v.st.installed, m.result)
-		v.st.dirtySettings = true
-		v.st.dirtyPlugins = true
+		v.st.markSettingsDirty()
+		v.st.markPluginsDirty()
 		v.st.rescanPluginMCPs()
 		v.mode = ""
 		v.removed = nil
@@ -583,7 +593,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 		}
 		newState := !r.Enabled
 		v.st.settings.SetPluginEnabled(r.ID, newState)
-		v.st.dirtySettings = true
+		v.st.markSettingsDirty()
 		v.st.rescanPluginMCPs()
 		if newState {
 			v.flash = styleOK.Render(r.ID + " → enabled")
@@ -644,8 +654,8 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 			// Confirmed: remove.
 			v.st.settings.RemovePluginEntry(r.ID)
 			instPath, _ := v.st.installed.Remove(r.ID)
-			v.st.dirtySettings = true
-			v.st.dirtyPlugins = true
+			v.st.markSettingsDirty()
+			v.st.markPluginsDirty()
 			v.st.rescanPluginMCPs()
 			v.pendingRemove = ""
 			v.removed = nil
@@ -721,7 +731,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 				v.st.settings.SetPluginEnabled(r.ID, true)
 			}
 		}
-		v.st.dirtySettings = true
+		v.st.markSettingsDirty()
 		v.st.rescanPluginMCPs()
 		v.flash = styleOK.Render(fmt.Sprintf("enabled %d plugins (unsaved)", len(visible)))
 		v.rebuild()
@@ -731,7 +741,7 @@ func (v *pluginView) update(msg tea.Msg) tea.Cmd {
 				v.st.settings.SetPluginEnabled(r.ID, false)
 			}
 		}
-		v.st.dirtySettings = true
+		v.st.markSettingsDirty()
 		v.st.rescanPluginMCPs()
 		v.flash = styleDim.Render(fmt.Sprintf("disabled %d plugins (unsaved)", len(visible)))
 		v.rebuild()
@@ -1013,8 +1023,30 @@ func (v *pluginView) render() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(title)
+	// The title is a header line like any other: budgeted as ONE logical line
+	// below, so at 80 columns a long count summary wrapped to two physical rows
+	// and pushed the list past the bottom of the terminal.
+	b.WriteString(fitWidth(title, v.w))
 	b.WriteString("\n")
+
+	idx := v.st.costIndex()
+	costErr := v.st.costUnavailable()
+	total := idx.Project.Total()
+	// Keep each header line inside v.w: it is budgeted in logical lines below,
+	// so a wrap would push the list past the bottom of the terminal.
+	if costErr != "" {
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s   (unavailable: %s)",
+			ctxcost.Human(ctxcost.Unmeasured), costErr), v.w))
+	} else {
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s   (assets; MCP unmeasured)",
+			ctxcost.HumanCost(total)), v.w))
+	}
+	b.WriteString("\n")
+	if mm, ok := v.st.measured(); ok {
+		b.WriteString(fitWidth(fmt.Sprintf("  session-start prefix %s", ctxcost.Human(mm.PrefixTokens)), v.w))
+		b.WriteString("\n")
+	}
+
 	if v.filterActive || v.filter.Value() != "" {
 		b.WriteString(v.filter.View() + "\n")
 	}
@@ -1047,27 +1079,69 @@ func (v *pluginView) render() string {
 	if v.index < 0 {
 		v.index = 0
 	}
-	listHeight := v.h - 4
-	if listHeight < 5 {
-		listHeight = 5
-	}
-	if v.index < v.top {
-		v.top = v.index
-	}
-	if v.index >= v.top+listHeight {
-		v.top = v.index - listHeight + 1
-	}
-	end := v.top + listHeight
-	if end > len(visible) {
-		end = len(visible)
+	headerLines := strings.Count(b.String(), "\n")
+	// -1 reserves the "[a-b of N]" scroll indicator appended after the list. The
+	// help line is NOT budgeted here: model.View() renders it into the footer,
+	// after its own clamp, so it costs the body nothing.
+	lineBudget := v.h - headerLines - 1
+	switch {
+	case v.h <= 0:
+		// No WindowSizeMsg yet - show a usable default instead of a negative window.
+		lineBudget = 5
+	case lineBudget < 1:
+		// A floor of 5 here used to overflow short terminals by up to 4 rows,
+		// which model.View() then clamped off the BOTTOM - taking the scroll
+		// indicator and the last rows with it.
+		lineBudget = 1
 	}
 
 	// Find where remote rows start to insert a separator.
 	remoteStart := firstRemoteIdx(visible)
 
+	// The "─── Remote (claude.ai) ───" separator is a physical LINE the loop
+	// emits on top of the rows, so it has to come out of the same budget. Left
+	// unbudgeted the body emitted lineBudget+1 lines and model.View() clamped
+	// from the BOTTOM, dropping the scroll indicator and the last row.
+	//
+	// Two passes, reduce-only: window at the full budget, and if the separator
+	// lands inside that window, re-window one row smaller. If the separator then
+	// falls out of the window the body is one line short of the budget, which is
+	// safe; it can never exceed it.
+	listHeight := lineBudget
+	window := func() int {
+		if v.index < v.top {
+			v.top = v.index
+		}
+		if v.index >= v.top+listHeight {
+			v.top = v.index - listHeight + 1
+		}
+		if v.top < 0 {
+			v.top = 0
+		}
+		end := v.top + listHeight
+		if end > len(visible) {
+			end = len(visible)
+		}
+		return end
+	}
+	end := window()
+	sepVisible := func(end int) bool { return remoteStart >= 0 && remoteStart >= v.top && remoteStart < end }
+	drawSep := sepVisible(end)
+	if drawSep {
+		if listHeight > 1 {
+			listHeight--
+			end = window()
+			drawSep = sepVisible(end)
+		} else {
+			// A one-row budget cannot afford the separator at all; the row itself
+			// is what the user needs to see.
+			drawSep = false
+		}
+	}
+
 	for i := v.top; i < end; i++ {
 		// Separator before first remote row.
-		if i == remoteStart && remoteStart >= 0 {
+		if drawSep && i == remoteStart {
 			b.WriteString(styleDim.Render("  ─── Remote (claude.ai) " + strings.Repeat("─", 40)))
 			b.WriteString("\n")
 		}
@@ -1105,6 +1179,23 @@ func (v *pluginView) render() string {
 		}
 		if v.pendingRemove == r.ID {
 			line += "  " + styleWarn.Render("← press x to confirm")
+		}
+		if !r.IsRemote {
+			// ≈0 is a real measurement here, not a gap - unless the whole index
+			// failed to build, in which case every row's 0 is an artifact of the
+			// fallback empty index and must render as unmeasured.
+			n := r.Ctx.Loaded
+			if costErr != "" {
+				n = ctxcost.Unmeasured
+			}
+			cost := ctxcost.Human(n)
+			if r.Enabled {
+				line += "  " + cost
+			} else {
+				// Disabled: this is "what enabling it would cost", not current cost -
+				// dim to convey potential rather than active contribution.
+				line += "  " + styleDim.Render(cost)
+			}
 		}
 		if i == v.index {
 			b.WriteString(styleSelected.Render("  " + line))

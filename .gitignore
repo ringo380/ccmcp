@@ -8,15 +8,6 @@
 # Go
 vendor/
 
-# Claude-related (personal, never ship)
-.claude/
-CLAUDE.md
-**/CLAUDE.md
-memory/
-.browser-pilot/
-.claude-dev-helper/
-.plugin-config/
-
 # macOS
 .DS_Store
 **/.DS_Store

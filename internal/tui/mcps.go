@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 	"github.com/ringo380/ccmcp/internal/updates"
 )
@@ -951,8 +952,42 @@ func (v *mcpView) render() string {
 		title += fmt.Sprintf("  (%d shown)", len(visible))
 	}
 	var b strings.Builder
-	b.WriteString(title)
+	// The title is budgeted as ONE logical line below, so it has to be clamped
+	// like every other header line: at 80 columns the scope description plus the
+	// count summary wrapped to two physical rows and cost the list a row.
+	b.WriteString(fitWidth(title, v.w))
 	b.WriteString("\n")
+
+	idx := v.st.costIndex()
+	unmeasured := 0
+	for _, r := range v.rows {
+		if isEffective(r) {
+			if _, ok := idx.ByMCP[r.Name]; !ok {
+				unmeasured++
+			}
+		}
+	}
+	known := idx.Project.MCP
+	// Keep each header line inside v.w: headerLines below budgets logical lines,
+	// so a wrapped header costs the list a row it never gave back.
+	switch {
+	case v.st.costUnavailable() != "":
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context (MCP tool schemas)   %s   (unavailable: %s)",
+			ctxcost.Human(ctxcost.Unmeasured), v.st.costUnavailable()), v.w))
+	case known.Loaded == 0 && unmeasured > 0:
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context (MCP tool schemas)   %s   (%d server(s) unmeasured - tool schemas need a probe)",
+			ctxcost.Human(ctxcost.Unmeasured), unmeasured), v.w))
+	case unmeasured > 0:
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context (MCP tool schemas)   %s   (%d unmeasured)", ctxcost.HumanCost(known), unmeasured), v.w))
+	default:
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context (MCP tool schemas)   %s", ctxcost.HumanCost(known)), v.w))
+	}
+	b.WriteString("\n")
+	if mm, ok := v.st.measured(); ok {
+		b.WriteString(fitWidth(fmt.Sprintf("  session-start prefix %s", ctxcost.Human(mm.PrefixTokens)), v.w))
+		b.WriteString("\n")
+	}
+
 	if v.moveActive {
 		b.WriteString(styleWarn.Render(fmt.Sprintf("Move to: [u]ser  [l]ocal  [s]tash  (esc to cancel)")))
 		b.WriteString("\n")
@@ -971,9 +1006,16 @@ func (v *mcpView) render() string {
 	if v.index < 0 {
 		v.index = 0
 	}
-	listHeight := v.h - 4
-	if listHeight < 5 {
+	headerLines := strings.Count(b.String(), "\n")
+	// -1 reserves the "[a-b of N]" scroll indicator appended after the list; the
+	// help line lives in the footer, outside the body budget. Same reasoning as
+	// plugins.go - a floor of 5 overflows a short terminal.
+	listHeight := v.h - headerLines - 1
+	switch {
+	case v.h <= 0:
 		listHeight = 5
+	case listHeight < 1:
+		listHeight = 1
 	}
 	if v.index < v.top {
 		v.top = v.index

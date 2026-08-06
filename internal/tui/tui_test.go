@@ -2,12 +2,15 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/paths"
@@ -1758,5 +1761,178 @@ func TestDropFailureHelper(t *testing.T) {
 	var nilSlice []bulkUpdateFailure
 	if dropFailure(&nilSlice, "x") {
 		t.Fatal("nil slice should report removed=false")
+	}
+}
+
+func TestPluginsTabShowsPerTurnContextCost(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	out := stripANSI(drive(m, "2")) // 2 = Plugins tab
+
+	if !strings.Contains(out, "per-turn context") {
+		t.Fatalf("plugins header must show the per-turn context total:\n%s", out)
+	}
+	// The estimate marker must be present, since no figure here is exact.
+	if !strings.Contains(out, "≈") {
+		t.Fatalf("context figures must be rendered as estimates with ≈:\n%s", out)
+	}
+	// The total folds in this project's own .claude/ assets as well as the
+	// globally enabled plugins, so the header must NOT claim it is per-project
+	// invariant. The old "global, not per-project" caption was measurably false.
+	if strings.Contains(out, "not per-project") {
+		t.Fatalf("plugins header must not claim the total is invariant across projects:\n%s", out)
+	}
+}
+
+// fillPluginRows gives the Plugins tab far more rows than any test terminal can
+// show, so a broken list-height budget produces a body that visibly overflows
+// instead of one that happens to fit.
+func fillPluginRows(v *pluginView, n int) {
+	rows := make([]pluginRowView, 0, n)
+	for i := 0; i < n; i++ {
+		rows = append(rows, pluginRowView{
+			ID:        fmt.Sprintf("filler-%02d@mkt", i),
+			Version:   "1.0",
+			Known:     true,
+			Installed: true,
+			Enabled:   true,
+		})
+	}
+	v.rows = rows
+	v.index = 0
+	v.top = 0
+}
+
+// TestPluginsTabHeaderDoesNotClampAwayTheList pins the arithmetic the name
+// promises: the context header must be paid for out of the LIST budget, so the
+// rendered body still fits in `height - reservedHeight` and model.View()'s
+// bottom clamp never has to trim anything.
+//
+// The previous version of this test asserted on "space: toggle", which
+// model.View() renders into the footer AFTER the clamp - it passed even with
+// listHeight set to v.h*10.
+func TestPluginsTabHeaderDoesNotClampAwayTheList(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	drive(m, "2")                                       // switch to the Plugins tab
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 12}) // deliberately short
+	fillPluginRows(m.plugins, 40)
+
+	body := stripANSI(m.plugins.render())
+	avail := m.height - reservedHeight
+	got := len(strings.Split(body, "\n"))
+	if got > avail {
+		t.Fatalf("plugins body emitted %d lines but only %d fit; model.View() would clamp %d off the bottom:\n%s",
+			got, avail, got-avail, body)
+	}
+	if !strings.Contains(body, "per-turn context") {
+		t.Fatalf("header lost at short height:\n%s", body)
+	}
+	// The list must still be there: a header that ate the whole budget is the
+	// other way to "not overflow".
+	if !strings.Contains(body, "filler-00") {
+		t.Fatalf("header consumed the entire list budget:\n%s", body)
+	}
+}
+
+// TestPluginsTabHeaderFitsNarrowTerminals proves the geometry numerically at
+// widths the primary user actually sees under screen magnification. A header
+// line wider than the terminal wraps into an extra PHYSICAL row that neither
+// headerLines (logical `\n` count) nor model.View()'s clamp (also logical)
+// accounts for, pushing the list off the bottom.
+func TestPluginsTabHeaderFitsNarrowTerminals(t *testing.T) {
+	for _, w := range []int{80, 100, 120} {
+		t.Run(fmt.Sprintf("w%d", w), func(t *testing.T) {
+			st, _ := buildState(t)
+			m := newModel(st)
+			drive(m, "2")
+			m.Update(tea.WindowSizeMsg{Width: w, Height: 12})
+			fillPluginRows(m.plugins, 40)
+
+			body := stripANSI(m.plugins.render())
+			lines := strings.Split(body, "\n")
+			avail := m.height - reservedHeight
+
+			physical := 0
+			for i, ln := range lines {
+				cols := lipgloss.Width(ln)
+				if cols > w {
+					t.Fatalf("body line %d is %d columns wide at w=%d and will wrap:\n%s", i, cols, w, ln)
+				}
+				rows := 1
+				if cols > 0 {
+					rows = (cols + w - 1) / w
+				}
+				physical += rows
+			}
+			if physical != len(lines) {
+				t.Fatalf("w=%d: %d logical lines rendered as %d physical rows", w, len(lines), physical)
+			}
+			if physical > avail {
+				t.Fatalf("w=%d: %d physical rows exceeds the %d-row budget", w, physical, avail)
+			}
+		})
+	}
+}
+
+// TestPluginsTabRendersUnmeasuredWhenTheIndexFailedToBuild pins F1: the
+// fallback empty index used when ctxcost.Build fails is all zeros, and "≈0" is
+// reserved for a real measurement of zero. Encoder construction downloads a BPE
+// table into a purgeable $TMPDIR cache, so this failure is reachable offline.
+func TestPluginsTabRendersUnmeasuredWhenTheIndexFailedToBuild(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	drive(m, "2")
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	// Build the index once so the cache is valid, then mark the build as failed
+	// exactly as costIndex would on an encoder error.
+	st.costIndex()
+	st.costErr = errors.New("encoder unavailable")
+
+	out := stripANSI(m.plugins.render())
+	if strings.Contains(out, "≈0") {
+		t.Fatalf("a failed index must never render a figure of zero:\n%s", out)
+	}
+	if !strings.Contains(out, "per-turn context   -") {
+		t.Fatalf("header must render the total as unmeasured:\n%s", out)
+	}
+	if !strings.Contains(out, "encoder unavailable") {
+		t.Fatalf("header must say why the estimate is unavailable:\n%s", out)
+	}
+	// Every plugin row must be unmeasured too, not a confident zero.
+	for _, want := range []string{"plug-one@mkt  v1.0  -", "plug-two@mkt  v1.0  -"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("plugin rows must render as unmeasured (want %q):\n%s", want, out)
+		}
+	}
+}
+
+func TestMCPsTabRendersUnmeasuredWhenTheIndexFailedToBuild(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	drive(m, "1")
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	st.costIndex()
+	st.costErr = errors.New("encoder unavailable")
+
+	out := stripANSI(m.mcps.render())
+	if !strings.Contains(out, "unavailable: encoder unavailable") {
+		t.Fatalf("MCPs header must report why the estimate is unavailable:\n%s", out)
+	}
+}
+
+func TestMCPsTabReportsUnmeasuredServersRatherThanZero(t *testing.T) {
+	st, _ := buildState(t)
+	m := newModel(st)
+	out := stripANSI(drive(m, "1")) // 1 = MCPs tab
+
+	if !strings.Contains(out, "per-turn context") {
+		t.Fatalf("MCPs header must show a per-turn context line:\n%s", out)
+	}
+	if !strings.Contains(out, "unmeasured") {
+		t.Fatalf("with no probe data the header must say how many servers are unmeasured:\n%s", out)
+	}
+	if strings.Contains(out, "per-turn context   ≈0") {
+		t.Fatalf("unmeasured servers must never render as ≈0:\n%s", out)
 	}
 }

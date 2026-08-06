@@ -12,10 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ringo380/ccmcp/internal/doctor"
+	"github.com/ringo380/ccmcp/internal/paths"
 )
 
 // doctorView runs structural lint checks on CLAUDE.md and MEMORY.md and
@@ -128,10 +129,11 @@ func (v *doctorView) runLint() {
 	v.cursor = 0
 }
 
-// tuiMemoryPath derives the memory directory path using the same slug logic as cmd/doctor.go.
+// tuiMemoryPath derives the memory directory path using the same slug logic as
+// cmd/doctor.go, including the legacy-slug fallback for project directories
+// written before ~2026-04.
 func tuiMemoryPath(claudeConfigDir, projectPath string) string {
-	slug := strings.ReplaceAll(projectPath, "/", "-")
-	return filepath.Join(claudeConfigDir, "projects", slug, "memory")
+	return paths.ProjectMemoryDir(claudeConfigDir, projectPath)
 }
 
 func (v *doctorView) update(msg tea.Msg) tea.Cmd {

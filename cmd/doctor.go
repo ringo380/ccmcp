@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ringo380/ccmcp/internal/doctor"
+	"github.com/ringo380/ccmcp/internal/paths"
 )
 
 var doctorCmd = &cobra.Command{
@@ -18,12 +19,12 @@ var doctorCmd = &cobra.Command{
 }
 
 var (
-	doctorLLMReview  bool
-	doctorProvider   string
-	doctorModel      string
-	doctorAPIKey     string
-	doctorMemoryDir  string
-	doctorUserLevel  bool
+	doctorLLMReview bool
+	doctorProvider  string
+	doctorModel     string
+	doctorAPIKey    string
+	doctorMemoryDir string
+	doctorUserLevel bool
 )
 
 var doctorMDCmd = &cobra.Command{
@@ -197,11 +198,13 @@ func formatReviewError(err error) string {
 	return err.Error()
 }
 
-// projectMemoryPath derives the memory directory from the Claude config dir and project path.
-// The slug replaces every '/' with '-' (leading slash becomes leading '-').
+// projectMemoryPath derives the memory directory from the Claude config dir and
+// project path, using the same slug Claude Code writes (every non-alphanumeric
+// becomes '-'), falling back to the legacy encoding that preserved '.' and '_'
+// when only that directory exists. Shared with the TUI and ctxcost so all three
+// agree.
 func projectMemoryPath(claudeConfigDir, projectPath string) string {
-	slug := strings.ReplaceAll(projectPath, "/", "-")
-	return filepath.Join(claudeConfigDir, "projects", slug, "memory")
+	return paths.ProjectMemoryDir(claudeConfigDir, projectPath)
 }
 
 func init() {
