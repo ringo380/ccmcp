@@ -1031,11 +1031,21 @@ func (v *pluginView) render() string {
 	b.WriteString("\n")
 
 	idx := v.st.costIndex()
+	costErr := v.st.costUnavailable()
 	total := idx.Project.Total()
-	fmt.Fprintf(&b, "  per-turn context   %s   (assets only, global not per-project; MCP schemas need a probe)\n",
-		ctxcost.HumanCost(total))
+	// Keep each header line inside v.w: it is budgeted in logical lines below,
+	// so a wrap would push the list past the bottom of the terminal.
+	if costErr != "" {
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s   (unavailable: %s)",
+			ctxcost.Human(ctxcost.Unmeasured), costErr), v.w))
+	} else {
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s   (assets; MCP unmeasured)",
+			ctxcost.HumanCost(total)), v.w))
+	}
+	b.WriteString("\n")
 	if mm, ok := v.st.measured(); ok {
-		fmt.Fprintf(&b, "  last measured prefix %s\n", ctxcost.Human(mm.PrefixTokens))
+		b.WriteString(fitWidth(fmt.Sprintf("  session-start prefix %s", ctxcost.Human(mm.PrefixTokens)), v.w))
+		b.WriteString("\n")
 	}
 
 	if v.filterActive || v.filter.Value() != "" {
@@ -1071,9 +1081,19 @@ func (v *pluginView) render() string {
 		v.index = 0
 	}
 	headerLines := strings.Count(b.String(), "\n")
-	listHeight := v.h - headerLines - 1 // -1 reserves the help line
-	if listHeight < 5 {
+	// -1 reserves the "[a-b of N]" scroll indicator appended after the list. The
+	// help line is NOT budgeted here: model.View() renders it into the footer,
+	// after its own clamp, so it costs the body nothing.
+	listHeight := v.h - headerLines - 1
+	switch {
+	case v.h <= 0:
+		// No WindowSizeMsg yet - show a usable default instead of a negative window.
 		listHeight = 5
+	case listHeight < 1:
+		// A floor of 5 here used to overflow short terminals by up to 4 rows,
+		// which model.View() then clamped off the BOTTOM - taking the scroll
+		// indicator and the last rows with it.
+		listHeight = 1
 	}
 	if v.index < v.top {
 		v.top = v.index
@@ -1131,7 +1151,14 @@ func (v *pluginView) render() string {
 			line += "  " + styleWarn.Render("← press x to confirm")
 		}
 		if !r.IsRemote {
-			cost := ctxcost.Human(r.Ctx.Loaded) // ≈0 is a real measurement here, not a gap
+			// ≈0 is a real measurement here, not a gap - unless the whole index
+			// failed to build, in which case every row's 0 is an artifact of the
+			// fallback empty index and must render as unmeasured.
+			n := r.Ctx.Loaded
+			if costErr != "" {
+				n = ctxcost.Unmeasured
+			}
+			cost := ctxcost.Human(n)
 			if r.Enabled {
 				line += "  " + cost
 			} else {

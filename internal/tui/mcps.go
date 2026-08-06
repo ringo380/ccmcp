@@ -965,17 +965,24 @@ func (v *mcpView) render() string {
 		}
 	}
 	known := idx.Project.MCP
+	// Keep each header line inside v.w: headerLines below budgets logical lines,
+	// so a wrapped header costs the list a row it never gave back.
 	switch {
+	case v.st.costUnavailable() != "":
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s   (unavailable: %s)",
+			ctxcost.Human(ctxcost.Unmeasured), v.st.costUnavailable()), v.w))
 	case known.Loaded == 0 && unmeasured > 0:
-		fmt.Fprintf(&b, "  per-turn context   %s   (%d server(s) unmeasured - tool schemas need a probe)\n",
-			ctxcost.Human(ctxcost.Unmeasured), unmeasured)
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s   (%d server(s) unmeasured - tool schemas need a probe)",
+			ctxcost.Human(ctxcost.Unmeasured), unmeasured), v.w))
 	case unmeasured > 0:
-		fmt.Fprintf(&b, "  per-turn context   %s   (%d unmeasured)\n", ctxcost.HumanCost(known), unmeasured)
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s   (%d unmeasured)", ctxcost.HumanCost(known), unmeasured), v.w))
 	default:
-		fmt.Fprintf(&b, "  per-turn context   %s\n", ctxcost.HumanCost(known))
+		b.WriteString(fitWidth(fmt.Sprintf("  per-turn context   %s", ctxcost.HumanCost(known)), v.w))
 	}
+	b.WriteString("\n")
 	if mm, ok := v.st.measured(); ok {
-		fmt.Fprintf(&b, "  last measured prefix %s\n", ctxcost.Human(mm.PrefixTokens))
+		b.WriteString(fitWidth(fmt.Sprintf("  session-start prefix %s", ctxcost.Human(mm.PrefixTokens)), v.w))
+		b.WriteString("\n")
 	}
 
 	if v.moveActive {
@@ -997,9 +1004,15 @@ func (v *mcpView) render() string {
 		v.index = 0
 	}
 	headerLines := strings.Count(b.String(), "\n")
-	listHeight := v.h - headerLines - 1 // -1 reserves the help line
-	if listHeight < 5 {
+	// -1 reserves the "[a-b of N]" scroll indicator appended after the list; the
+	// help line lives in the footer, outside the body budget. Same reasoning as
+	// plugins.go - a floor of 5 overflows a short terminal.
+	listHeight := v.h - headerLines - 1
+	switch {
+	case v.h <= 0:
 		listHeight = 5
+	case listHeight < 1:
+		listHeight = 1
 	}
 	if v.index < v.top {
 		v.top = v.index

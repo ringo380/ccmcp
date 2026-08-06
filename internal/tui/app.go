@@ -132,6 +132,11 @@ type state struct {
 	// nil means "not built yet", NOT "zero cost".
 	cost *ctxcost.Index
 
+	// costErr is the error from the build that produced `cost`, retained because
+	// the fallback empty index is indistinguishable from a genuine zero. Read it
+	// through costUnavailable() before rendering any figure.
+	costErr error
+
 	// costDirtySettings/costDirtyPlugins record the dirty-flag state when `cost`
 	// was built. Any change to either means a mutation landed that could move the
 	// estimate (skill/agent overrides feed ctxcost's Enabled filter), so the cache
