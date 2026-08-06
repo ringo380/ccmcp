@@ -12,12 +12,29 @@ All notable changes to this project are documented here. Format based on
   MCP servers, attributed per plugin, with `--json` output.
 - Plugins and MCPs tabs show a per-turn context total, and the Plugins tab shows a
   per-plugin cost column.
-- Both tabs display the last measured prompt prefix from the project's newest
+- Both tabs display the session-start prompt prefix from the project's newest
   session transcript, so the estimate can be checked against a real number.
 
 ### Changed
 
 - The shared token encoder moved from `internal/doctor` to `internal/tokens`.
+- Context figures render as `-` with the reason when the token encoder is
+  unavailable (offline with a cold BPE cache), instead of a confident `≈0` on
+  the Plugins tab header and on every plugin row.
+- The context caption no longer claims the total is "global, not per-project":
+  plugin enablement is global, but the total also counts the project's own
+  `.claude/` skills, agents, and commands.
+- Session transcript lookup now matches Claude Code's real directory encoding
+  (every non-alphanumeric becomes `-`), so the measured-prefix line no longer
+  silently disappears for project paths containing a dot, underscore, or space.
+  The doctor MEMORY.md path uses the same slug.
+
+### Fixed
+
+- Plugins and MCPs tab lists no longer overflow the terminal on short or narrow
+  windows: the context header is clamped to the terminal width, and the list
+  window is budgeted against the real available height instead of a hard floor
+  of five rows.
 - `.gitignore` no longer duplicates patterns already covered by the user's global
   git excludes.
 

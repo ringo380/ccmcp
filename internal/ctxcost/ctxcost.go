@@ -1,6 +1,10 @@
-// Package ctxcost estimates how many tokens the currently enabled MCP servers
-// and plugins add to every turn's prompt, attributed per source and scoped to
-// one project's perspective.
+// Package ctxcost estimates how many tokens the currently enabled skills,
+// agents, and commands add to every turn's prompt, attributed per source and
+// scoped to one project's perspective.
+//
+// Phase 1 measures assets only. MCP tool schemas require a server probe and are
+// reported as unmeasured ("-"), never as zero; the types here carry the MCP
+// fields so Phase 2 can fill them in.
 //
 // Every figure is an ESTIMATE. Counts come from internal/tokens (cl100k_base,
 // not Anthropic's tokenizer), and the exact wording Claude Code uses to inject
@@ -37,8 +41,9 @@ func (c Cost) Add(o Cost) Cost {
 	return Cost{Loaded: c.Loaded + o.Loaded, Deferred: c.Deferred + o.Deferred}
 }
 
-// Source is one measurable thing: a single MCP server, or one plugin's
-// contribution of a given kind.
+// Source is one measurable thing: a single MCP server. Only AddSource consumes
+// it, and that folds solely into Breakdown.MCP - plugin asset contributions are
+// accumulated directly into the per-kind fields instead.
 type Source struct {
 	Cost   Cost   `json:"cost"`
 	Tier   Tier   `json:"tier"`

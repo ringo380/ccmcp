@@ -20,7 +20,8 @@ var contextCmd = &cobra.Command{
 	Long: "Estimate how many tokens the enabled plugins and MCP servers add to every turn.\n\n" +
 		"Figures are estimates: they use OpenAI's cl100k_base encoder (Anthropic does not\n" +
 		"publish its own), and MCP tool schemas are not counted until a server is probed.\n" +
-		"Plugin skill/agent/command cost is global - it is identical in every project.",
+		"Plugin enablement is global, so plugin asset cost is the same everywhere - but\n" +
+		"the total also counts this project's own .claude/ skills, agents, and commands.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p, err := resolvePaths()
 		if err != nil {
@@ -74,9 +75,9 @@ var contextCmd = &cobra.Command{
 
 		total := idx.Project.Total()
 		fmt.Printf("per-turn context   %s\n", ctxcost.HumanCost(total))
-		fmt.Printf("  from %d enabled skills/agents/commands (global, not per-project)\n", idx.Project.Items)
+		fmt.Printf("  from %d enabled skills/agents/commands (global plugins plus this project's own)\n", idx.Project.Items)
 		if mm, ok := ctxcost.Calibrate(p.ClaudeConfigDir, proj); ok {
-			fmt.Printf("  last measured prompt prefix %s (session %s)\n",
+			fmt.Printf("  session-start prompt prefix %s (session %s)\n",
 				ctxcost.Human(mm.PrefixTokens), mm.SessionID)
 			fmt.Printf("  that prefix also covers CLAUDE.md, memory, and MCP tool schemas,\n")
 			fmt.Printf("  so it is an upper bound rather than a like-for-like comparison\n")
