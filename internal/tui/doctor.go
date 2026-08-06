@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/doctor"
 )
 
@@ -130,8 +131,7 @@ func (v *doctorView) runLint() {
 
 // tuiMemoryPath derives the memory directory path using the same slug logic as cmd/doctor.go.
 func tuiMemoryPath(claudeConfigDir, projectPath string) string {
-	slug := strings.ReplaceAll(projectPath, "/", "-")
-	return filepath.Join(claudeConfigDir, "projects", slug, "memory")
+	return filepath.Join(claudeConfigDir, "projects", ctxcost.TranscriptSlug(projectPath), "memory")
 }
 
 func (v *doctorView) update(msg tea.Msg) tea.Cmd {

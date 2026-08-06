@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/doctor"
 )
 
@@ -197,11 +198,11 @@ func formatReviewError(err error) string {
 	return err.Error()
 }
 
-// projectMemoryPath derives the memory directory from the Claude config dir and project path.
-// The slug replaces every '/' with '-' (leading slash becomes leading '-').
+// projectMemoryPath derives the memory directory from the Claude config dir and
+// project path, using the same slug Claude Code writes (every non-alphanumeric
+// becomes '-'). Shared with the TUI and ctxcost so all three agree.
 func projectMemoryPath(claudeConfigDir, projectPath string) string {
-	slug := strings.ReplaceAll(projectPath, "/", "-")
-	return filepath.Join(claudeConfigDir, "projects", slug, "memory")
+	return filepath.Join(claudeConfigDir, "projects", ctxcost.TranscriptSlug(projectPath), "memory")
 }
 
 func init() {
