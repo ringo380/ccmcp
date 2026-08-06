@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ringo380/ccmcp/internal/claudecode"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/install"
 	"github.com/ringo380/ccmcp/internal/paths"
 	"github.com/ringo380/ccmcp/internal/updates"
@@ -125,6 +126,12 @@ type state struct {
 	// Re-scanned whenever dirtySettings or dirtyPlugins flips.
 	pluginMCPs map[string][]config.PluginMCPSource
 
+	// cost caches the per-turn context estimate. Built on first use and
+	// invalidated wherever pluginMCPs is re-scanned (dirtySettings /
+	// dirtyPlugins), since both derive from the same enabled-plugin state.
+	// nil means "not built yet", NOT "zero cost".
+	cost *ctxcost.Index
+
 	// claudeAi: full list of "claude.ai <Name>" strings from claudeAiMcpEverConnected
 	claudeAi []string
 
@@ -156,6 +163,7 @@ type state struct {
 // consumers that care about "what will actually load" filter by PluginMCPSource.Enabled.
 func (s *state) rescanPluginMCPs() {
 	s.pluginMCPs = config.ScanAllInstalledPluginMCPs(s.settings, s.installed, s.paths.PluginsDir)
+	s.invalidateCost()
 }
 
 func loadState(p paths.Paths, project string) (*state, error) {
