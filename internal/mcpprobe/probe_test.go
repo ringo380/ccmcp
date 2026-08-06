@@ -1,0 +1,264 @@
+package mcpprobe
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+)
+
+// fakeserverPath is the built fixture binary, shared by every test in this
+// package. Built once in TestMain so the per-test cost is a spawn, not a
+// compile.
+var fakeserverPath string
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "mcpprobe-fixture")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mkdtemp: %v\n", err)
+		os.Exit(1)
+	}
+	fakeserverPath = filepath.Join(dir, "fakeserver")
+
+	build := exec.Command("go", "build", "-o", fakeserverPath, "./testdata/fakeserver")
+	build.Stderr = os.Stderr
+	if err := build.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "building fakeserver fixture: %v\n", err)
+		os.RemoveAll(dir)
+		os.Exit(1)
+	}
+
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// fakeTarget builds a Target pointing at the fixture in the given mode.
+func fakeTarget(mode string, env ...string) Target {
+	e := map[string]string{"FAKE_MODE": mode}
+	for i := 0; i+1 < len(env); i += 2 {
+		e[env[i]] = env[i+1]
+	}
+	return Target{Name: "fake-" + mode, Command: fakeserverPath, Env: e}
+}
+
+// shortCtx keeps the timeout paths hermetic and fast - tests must never sit
+// out the 10s production default.
+func shortCtx(t *testing.T, d time.Duration) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	t.Cleanup(cancel)
+	return ctx
+}
+
+func TestProbeCountsToolsAndInstructions(t *testing.T) {
+	res := Probe(shortCtx(t, 10*time.Second), fakeTarget("ok"))
+
+	if !res.OK {
+		t.Fatalf("Probe failed: %q", res.Err)
+	}
+	if res.Err != "" {
+		t.Fatalf("OK probe carries an error: %q", res.Err)
+	}
+	if len(res.Tools) != 2 {
+		t.Fatalf("got %d tools, want 2: %+v", len(res.Tools), res.Tools)
+	}
+	if res.Tools[0].Name != "align_widget" || res.Tools[1].Name != "burnish_widget" {
+		t.Fatalf("unexpected tool names: %+v", res.Tools)
+	}
+	for _, tl := range res.Tools {
+		if tl.SchemaTokens <= 0 {
+			t.Fatalf("tool %q measured %d tokens - a zero here means unmeasured, not free", tl.Name, tl.SchemaTokens)
+		}
+	}
+	if res.InstructionTokens <= 0 {
+		t.Fatalf("InstructionTokens = %d, want > 0", res.InstructionTokens)
+	}
+	if res.Key != fakeTarget("ok").Key() {
+		t.Fatalf("Key = %q, want the target's key", res.Key)
+	}
+	if res.Name != "fake-ok" {
+		t.Fatalf("Name = %q", res.Name)
+	}
+	if res.ProbedAt.IsZero() {
+		t.Fatal("ProbedAt is zero")
+	}
+}
+
+func TestProbeDeferredIsMuchSmallerThanLoaded(t *testing.T) {
+	res := Probe(shortCtx(t, 10*time.Second), fakeTarget("ok"))
+	if !res.OK {
+		t.Fatalf("Probe failed: %q", res.Err)
+	}
+
+	loaded, deferred := res.Loaded(), res.Deferred()
+	if loaded <= 0 || deferred <= 0 {
+		t.Fatalf("Loaded=%d Deferred=%d, both must be positive", loaded, deferred)
+	}
+	if deferred >= loaded {
+		t.Fatalf("Deferred=%d must be smaller than Loaded=%d - collapsing schemas to a name list is the whole point", deferred, loaded)
+	}
+	if deferred*2 > loaded {
+		t.Fatalf("Deferred=%d is not much smaller than Loaded=%d", deferred, loaded)
+	}
+
+	// Loaded is instructions plus every schema; nothing silently dropped.
+	sum := res.InstructionTokens
+	for _, tl := range res.Tools {
+		sum += tl.SchemaTokens
+	}
+	if loaded != sum {
+		t.Fatalf("Loaded=%d, want instructions+schemas=%d", loaded, sum)
+	}
+	if deferred <= res.InstructionTokens {
+		t.Fatalf("Deferred=%d must exceed the %d instruction tokens by the name list", deferred, res.InstructionTokens)
+	}
+}
+
+// TestProbeReadsToolSchemasPastTheDefaultLineLimit pins the explicit scanner
+// buffer. Real tool schemas routinely exceed bufio's 64KB default, and the
+// default's failure mode is silent truncation - a measurement that looks fine
+// and is wrong.
+func TestProbeReadsToolSchemasPastTheDefaultLineLimit(t *testing.T) {
+	res := Probe(shortCtx(t, 10*time.Second), fakeTarget("big"))
+	if !res.OK {
+		t.Fatalf("Probe failed on an oversized frame: %q", res.Err)
+	}
+	if len(res.Tools) != 1 || res.Tools[0].Name != "huge_tool" {
+		t.Fatalf("unexpected tools: %+v", res.Tools)
+	}
+	if res.Tools[0].SchemaTokens < 20000 {
+		t.Fatalf("SchemaTokens = %d, far below the size of the schema sent - the frame was truncated", res.Tools[0].SchemaTokens)
+	}
+}
+
+func TestProbeTimesOutAndReportsIt(t *testing.T) {
+	const budget = 700 * time.Millisecond
+
+	start := time.Now()
+	res := Probe(shortCtx(t, budget), fakeTarget("hang"))
+	elapsed := time.Since(start)
+
+	if res.OK {
+		t.Fatal("a server that never replies must not report OK")
+	}
+	if !strings.Contains(res.Err, "timed out") {
+		t.Fatalf("Err = %q, want it to mention the timeout", res.Err)
+	}
+	if elapsed > 2*budget {
+		t.Fatalf("Probe took %s, want under %s", elapsed, 2*budget)
+	}
+	if res.Key == "" || res.Name == "" || res.ProbedAt.IsZero() {
+		t.Fatalf("a failed probe is still a cacheable fact and must be identified: %+v", res)
+	}
+}
+
+func TestProbeSurvivesCrash(t *testing.T) {
+	res := Probe(shortCtx(t, 5*time.Second), fakeTarget("crash"))
+	if res.OK {
+		t.Fatal("a server that exits immediately must not report OK")
+	}
+	if res.Err == "" {
+		t.Fatal("failed probe must carry a reason")
+	}
+	if len(res.Tools) != 0 || res.InstructionTokens != 0 {
+		t.Fatalf("failed probe must not report costs: %+v", res)
+	}
+}
+
+func TestProbeSurvivesGarbage(t *testing.T) {
+	res := Probe(shortCtx(t, 700*time.Millisecond), fakeTarget("garbage"))
+	if res.OK {
+		t.Fatal("a server emitting non-JSON must not report OK")
+	}
+	if !strings.Contains(res.Err, "non-JSON") {
+		t.Fatalf("Err = %q, want it to name the non-JSON output", res.Err)
+	}
+}
+
+func TestProbeReportsInitializeFailure(t *testing.T) {
+	res := Probe(shortCtx(t, 5*time.Second), fakeTarget("noinit"))
+	if res.OK {
+		t.Fatal("a server that rejects initialize must not report OK")
+	}
+	if !strings.Contains(res.Err, "initialize") {
+		t.Fatalf("Err = %q, want it to name the initialize step", res.Err)
+	}
+	if len(res.Tools) != 0 {
+		t.Fatalf("must not report tools when initialize failed: %+v", res.Tools)
+	}
+}
+
+// TestProbeLeavesNoProcessBehind is the one that matters most. The fixture
+// spawns a grandchild that outlives its parent - exactly what npx-based MCP
+// servers do - so killing only the direct child leaves a live process behind.
+func TestProbeLeavesNoProcessBehind(t *testing.T) {
+	pidfile := filepath.Join(t.TempDir(), "pids")
+	target := fakeTarget("hangchild", "FAKE_PIDFILE", pidfile)
+
+	res := Probe(shortCtx(t, 700*time.Millisecond), target)
+	if res.OK {
+		t.Fatalf("hangchild must not report OK: %+v", res)
+	}
+
+	pids := readPids(t, pidfile)
+	if len(pids) != 2 {
+		t.Fatalf("fixture recorded %d pids, want the server and its child: %v", len(pids), pids)
+	}
+
+	for _, pid := range pids {
+		if alive := waitForExit(pid, 3*time.Second); alive {
+			t.Fatalf("pid %d is still alive after Probe returned - the probe leaked a process", pid)
+		}
+	}
+}
+
+// readPids waits briefly for the fixture to record its pids, then parses them.
+func readPids(t *testing.T, path string) []int {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		b, err := os.ReadFile(path)
+		if err == nil {
+			var pids []int
+			for _, line := range strings.Fields(string(b)) {
+				n, convErr := strconv.Atoi(line)
+				if convErr != nil {
+					t.Fatalf("bad pid %q in %s", line, path)
+				}
+				pids = append(pids, n)
+			}
+			if len(pids) == 2 {
+				return pids
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("fixture never wrote two pids to %s (err=%v)", path, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// waitForExit reports whether pid is still alive after waiting up to d for it
+// to disappear. A SIGKILLed process can linger for a few milliseconds as a
+// zombie before its parent (or init) reaps it, so this polls rather than
+// sampling once - but the window is far shorter than the 60s the leaked
+// sleeper would otherwise survive for.
+func waitForExit(pid int, d time.Duration) (alive bool) {
+	deadline := time.Now().Add(d)
+	for {
+		if err := syscall.Kill(pid, 0); err == syscall.ESRCH {
+			return false
+		}
+		if time.Now().After(deadline) {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
