@@ -17,9 +17,14 @@ func Human(n int) string {
 	}
 	switch {
 	case n >= 1_000_000:
+		// math.Round forces round-half-away-from-zero. fmt.Sprintf("%.1f") alone
+		// uses banker's rounding (round-half-to-even), so 1250000/1e6=1.25 would
+		// render as "1.2M" instead of the expected "1.3M". Scale by 10, round, then
+		// scale back to get the right behavior.
 		v := math.Round(float64(n)/1_000_000*10) / 10
 		return fmt.Sprintf("≈%.1fM", v)
 	case n >= 1000:
+		// Same rounding fix as millions case.
 		v := math.Round(float64(n)/1000*10) / 10
 		return fmt.Sprintf("≈%.1fk", v)
 	default:
