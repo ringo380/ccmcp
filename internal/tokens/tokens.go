@@ -10,16 +10,23 @@ package tokens
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkoukk/tiktoken-go"
 )
 
-// fetchTimeout bounds how long Encoder waits for the BPE table to warm.
-// Encoder sits on the TUI render path (the per-turn context-cost estimate),
-// so tiktoken-go's unbounded first-call HTTP fetch of the BPE table - into a
-// purgeable $TMPDIR cache, with no timeout - must not be able to freeze the
-// UI on a cold cache and a slow or hostile network.
+// fetchTimeout bounds how long a caller's *own wait* for the BPE table can
+// take - not the underlying fetch. tiktoken.GetEncoding takes no
+// context.Context and tiktoken-go exposes no cancellation hook, so the
+// background warm goroutine's HTTP request cannot itself be cancelled: if
+// the network hangs outright rather than erroring, that one goroutine (and
+// its connection) lives for the remaining life of the process. That leak is
+// bounded to exactly one goroutine, ever, by encOnce - Encoder never starts a
+// second warm no matter how many times callers time out - so it is an
+// accepted, capped cost rather than an unbounded one. fetchTimeout only
+// decides how long any single Encoder call is willing to sit blocked waiting
+// on that goroutine's result.
 //
 // This is a var, not a const, so tests can shrink it to make the timeout
 // path hermetic and fast instead of waiting out a real 10s deadline.
@@ -36,6 +43,15 @@ var (
 	// off exactly once.
 	warmDone chan struct{}
 
+	// warmTimedOut records that some earlier Encoder call already waited
+	// out a full fetchTimeout without the warm completing. Encoder is on
+	// the TUI render path, so once this is true, later calls must not
+	// block again - a persistently slow or hanging network would otherwise
+	// re-stall the UI for fetchTimeout on every single render. Once set,
+	// callers instead do a non-blocking check of warmDone: the real result
+	// if the warm has since finished, or errStillLoading if it hasn't.
+	warmTimedOut atomic.Bool
+
 	// warmFn performs the actual (possibly slow, network-fetching) load.
 	// It is a package var, not a direct call to tiktoken.GetEncoding, so
 	// tests can substitute a stub that never touches the network or the
@@ -45,17 +61,26 @@ var (
 	}
 )
 
+// errStillLoading is returned by a non-blocking Encoder call made after some
+// earlier call already timed out waiting for the warm. It is short and
+// worded to read sensibly when the TUI truncates costUnavailable() text to
+// 60 runes and shows it as the reason next to a "-".
+var errStillLoading = fmt.Errorf("tokens: encoder still loading")
+
 // Encoder returns the process-wide memoised cl100k_base encoder.
 //
 // The first call starts the warm exactly once, in the background, and does
 // not wait for it to finish before returning control to the select below.
-// Every caller - the one that started the warm and any that arrive
-// concurrently or later - waits at most fetchTimeout for it to complete. A
-// caller that times out gets an error rather than blocking forever; the warm
-// itself keeps running, so a later call (after the network eventually
-// responds, or never) still observes the real outcome via warmDone, rather
-// than being left permanently stuck on a timeout that has nothing to do with
-// its own wait.
+// The first wave of callers - the one that started the warm and any that
+// arrive concurrently before any wait has timed out - each wait up to
+// fetchTimeout for it to complete. Once any caller has timed out, every
+// later call skips the blocking wait entirely and does a non-blocking check
+// of warmDone instead: it returns the real encoder if the warm has since
+// finished, or errStillLoading immediately if it hasn't. This caps the
+// render-path cost at one fetchTimeout stall for the whole process - a
+// persistently slow network freezes the UI once, not on every frame - while
+// the warm goroutine itself keeps running in the background and any render
+// after it finishes picks up the real result via warmDone.
 func Encoder() (*tiktoken.Tiktoken, error) {
 	encOnce.Do(func() {
 		warmDone = make(chan struct{})
@@ -65,10 +90,20 @@ func Encoder() (*tiktoken.Tiktoken, error) {
 		}()
 	})
 
+	if warmTimedOut.Load() {
+		select {
+		case <-warmDone:
+			return enc, encErr
+		default:
+			return nil, errStillLoading
+		}
+	}
+
 	select {
 	case <-warmDone:
 		return enc, encErr
 	case <-time.After(fetchTimeout):
+		warmTimedOut.Store(true)
 		return nil, fmt.Errorf("tokens: encoder warm timed out after %s", fetchTimeout)
 	}
 }

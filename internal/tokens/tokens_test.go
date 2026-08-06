@@ -51,6 +51,7 @@ func resetEncoderState() {
 	enc = nil
 	encErr = nil
 	warmDone = nil
+	warmTimedOut.Store(false)
 }
 
 // TestEncoderTimeout pins the fetch-timeout guard: a warm that never
@@ -87,6 +88,70 @@ func TestEncoderTimeout(t *testing.T) {
 	}
 	if elapsed > 2*fetchTimeout {
 		t.Fatalf("Encoder blocked for %s, want <= %s (2x the deadline)", elapsed, 2*fetchTimeout)
+	}
+}
+
+// TestEncoderSecondCallAfterTimeoutDoesNotReblock pins Finding A: once one
+// caller has timed out waiting for the warm, a persistently slow network
+// must not re-stall every later Encoder call on the TUI render path for
+// another full fetchTimeout. The second call must return promptly (well
+// under fetchTimeout) with errStillLoading, and a third call made after the
+// warm actually completes must observe the real result via the same
+// non-blocking path.
+func TestEncoderSecondCallAfterTimeoutDoesNotReblock(t *testing.T) {
+	origWarm := warmFn
+	origTimeout := fetchTimeout
+	release := make(chan struct{})
+
+	defer func() {
+		close(release)
+		if warmDone != nil {
+			<-warmDone
+		}
+		warmFn = origWarm
+		fetchTimeout = origTimeout
+		resetEncoderState()
+	}()
+
+	resetEncoderState()
+	fetchTimeout = 50 * time.Millisecond
+	stub := &tiktoken.Tiktoken{}
+	warmFn = func() (*tiktoken.Tiktoken, error) {
+		<-release // stays pending until the test releases it
+		return stub, nil
+	}
+
+	// First call: no prior timeout recorded yet, so it must block and time out.
+	if _, err := Encoder(); err == nil {
+		t.Fatalf("first call: expected a timeout error, got nil")
+	}
+
+	// Second call: a timeout has already been recorded, so this must return
+	// immediately rather than waiting out another fetchTimeout.
+	start := time.Now()
+	_, err := Encoder()
+	elapsed := time.Since(start)
+
+	if err != errStillLoading {
+		t.Fatalf("second call: err = %v, want errStillLoading", err)
+	}
+	if elapsed >= fetchTimeout {
+		t.Fatalf("second call blocked for %s, want well under fetchTimeout (%s)", elapsed, fetchTimeout)
+	}
+
+	// Let the warm finish, then confirm a later call observes the real result
+	// through the same non-blocking path rather than staying stuck on
+	// errStillLoading forever.
+	close(release)
+	<-warmDone
+	release = make(chan struct{}) // avoid a double-close in the deferred cleanup
+
+	got, err := Encoder()
+	if err != nil {
+		t.Fatalf("third call: unexpected error %v", err)
+	}
+	if got != stub {
+		t.Fatalf("third call: got %p, want %p", got, stub)
 	}
 }
 
