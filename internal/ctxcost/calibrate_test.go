@@ -5,31 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-)
 
-// TestTranscriptSlug pins the encoding against directory names observed under
-// a live ~/.claude/projects: every character outside [A-Za-z0-9] becomes "-",
-// case is preserved, and adjacent separators are NOT collapsed.
-func TestTranscriptSlug(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"/Users/x/git/ccmcp", "-Users-x-git-ccmcp"},
-		// Dotted path - the case that made calibration silently dead. Observed
-		// live: /Users/ryanrobson/git/clubdeck.github.io is stored as
-		// -Users-ryanrobson-git-clubdeck-github-io.
-		{"/Users/ryanrobson/git/clubdeck.github.io", "-Users-ryanrobson-git-clubdeck-github-io"},
-		// "/." yields "--": separators are not collapsed. Observed live as
-		// -Users-ryanrobson-git--claude.
-		{"/Users/ryanrobson/git/.claude", "-Users-ryanrobson-git--claude"},
-		// Underscores and spaces are separators too; capitals survive.
-		{"/Users/x/My Docs/CT_Orbits", "-Users-x-My-Docs-CT-Orbits"},
-		{"/Users/x/git/Audacity-MCP", "-Users-x-git-Audacity-MCP"},
-	}
-	for _, c := range cases {
-		if got := TranscriptSlug(c.in); got != c.want {
-			t.Fatalf("TranscriptSlug(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
+	"github.com/ringo380/ccmcp/internal/paths"
+)
 
 // TestCalibrateFindsTranscriptForDottedProjectPath is the end-to-end form of
 // the same bug: with the old "/"-only slug, Calibrate looked for a directory
@@ -56,10 +34,33 @@ func TestCalibrateFindsTranscriptForDottedProjectPath(t *testing.T) {
 	}
 }
 
+// TestCalibrateFindsLegacySlugTranscript: directories written before ~2026-04
+// preserved "." and "_", so a lookup that only tries the current slug misses
+// them entirely.
+func TestCalibrateFindsLegacySlugTranscript(t *testing.T) {
+	cfg := t.TempDir()
+	proj := "/Users/x/records/2024-01-15_Methodist_CT"
+	dir := filepath.Join(cfg, "projects", paths.LegacyTranscriptSlug(proj))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "s.jsonl"), []byte(
+		`{"message":{"usage":{"cache_creation_input_tokens":7,"cache_read_input_tokens":3}}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, ok := Calibrate(cfg, proj)
+	if !ok {
+		t.Fatal("Calibrate must find a transcript stored under the legacy slug")
+	}
+	if m.PrefixTokens != 10 {
+		t.Fatalf("PrefixTokens = %d, want 10", m.PrefixTokens)
+	}
+}
+
 func TestCalibrateReadsFirstUsageRecordOfNewestTranscript(t *testing.T) {
 	cfg := t.TempDir()
 	proj := "/Users/x/git/demo"
-	dir := filepath.Join(cfg, "projects", TranscriptSlug(proj))
+	dir := filepath.Join(cfg, "projects", paths.TranscriptSlug(proj))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +103,7 @@ func TestCalibrateMissingOrUnreadableReportsNotOK(t *testing.T) {
 
 	// An existing dir with no usage record anywhere.
 	proj := "/Users/x/git/empty"
-	dir := filepath.Join(cfg, "projects", TranscriptSlug(proj))
+	dir := filepath.Join(cfg, "projects", paths.TranscriptSlug(proj))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Paths resolves every config file ccmcp needs to read or write.
@@ -48,6 +49,73 @@ func Resolve() (Paths, error) {
 		AppConfig:        filepath.Join(home, ".claude-mcp-config.json"),
 	}
 	return p, nil
+}
+
+// TranscriptSlug converts a project path into the directory name Claude Code
+// uses under <claudeConfigDir>/projects: every character outside [A-Za-z0-9]
+// becomes "-", with no run collapsing.
+//
+// Derived from the live directories under ~/.claude/projects, not assumed:
+// "/Users/ryanrobson/git/clubdeck.github.io" is stored as
+// "-Users-ryanrobson-git-clubdeck-github-io" and "/Users/ryanrobson/.claude" as
+// "-Users-ryanrobson--claude" (adjacent separators are kept, so "/." yields
+// "--"). Replacing just "/" left calibration silently dead for every project
+// path containing a dot, underscore, or space.
+func TranscriptSlug(projectDir string) string {
+	return slug(projectDir, false)
+}
+
+// LegacyTranscriptSlug is the older encoding Claude Code used before ~2026-04,
+// which preserved "." and "_" verbatim. Directories written back then still
+// carry it, so a lookup that only tries TranscriptSlug reports real, populated
+// state as missing.
+func LegacyTranscriptSlug(projectDir string) string {
+	return slug(projectDir, true)
+}
+
+func slug(projectDir string, keepDotUnderscore bool) string {
+	var b strings.Builder
+	b.Grow(len(projectDir))
+	for _, r := range projectDir {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case keepDotUnderscore && (r == '.' || r == '_'):
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
+}
+
+// ProjectStateDir returns <claudeConfigDir>/projects/<slug> for projectDir.
+//
+// It prefers the current slug, but when that directory does not exist and the
+// legacy-slug one does, it returns the legacy path. Without the fallback a
+// project whose path contains "." or "_" and was first opened before ~2026-04
+// resolves to a nonexistent directory, so its transcripts look absent and
+// doctor reports MEM001 against a populated memory dir.
+func ProjectStateDir(claudeConfigDir, projectDir string) string {
+	cur := filepath.Join(claudeConfigDir, "projects", TranscriptSlug(projectDir))
+	legacy := LegacyTranscriptSlug(projectDir)
+	if legacy == TranscriptSlug(projectDir) {
+		return cur
+	}
+	if _, err := os.Stat(cur); err == nil {
+		return cur
+	}
+	alt := filepath.Join(claudeConfigDir, "projects", legacy)
+	if _, err := os.Stat(alt); err == nil {
+		return alt
+	}
+	return cur
+}
+
+// ProjectMemoryDir returns the per-project memory directory, honoring the
+// legacy-slug fallback in ProjectStateDir.
+func ProjectMemoryDir(claudeConfigDir, projectDir string) string {
+	return filepath.Join(ProjectStateDir(claudeConfigDir, projectDir), "memory")
 }
 
 // ProjectMCPJSON returns <projectDir>/.mcp.json.
