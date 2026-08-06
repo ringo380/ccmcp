@@ -89,6 +89,46 @@ func TestBuildCountsNonPluginAssetsInProjectOnly(t *testing.T) {
 	}
 }
 
+// A registered-but-disabled plugin's assets must still be costed into
+// ByPlugin (so the UI can show what enabling it would add), but must be
+// excluded from the Project total, because a disabled plugin injects nothing
+// into the prompt. skills.Discover/agents.Discover deliberately surface
+// disabled-plugin assets with Enabled=true (their Enabled field reflects only
+// skillOverrides, not plugin enablement) - PluginEnabled is what tells Build
+// the owning plugin itself is off.
+func TestBuildExcludesDisabledPluginFromProjectTotalButKeepsByPlugin(t *testing.T) {
+	in := Input{
+		Skills: []skills.Skill{
+			{Name: "on", Description: "from an enabled plugin", Scope: skills.ScopePlugin, PluginID: "enabled@mkt", Enabled: true},
+			{Name: "off", Description: "from a disabled plugin", Scope: skills.ScopePlugin, PluginID: "disabled@mkt", Enabled: true},
+		},
+		PluginEnabled: func(id string) bool { return id == "enabled@mkt" },
+	}
+	idx, err := Build(in)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	// Both plugins must still appear in ByPlugin with non-zero cost.
+	enabled := idx.ByPlugin["enabled@mkt"]
+	disabled := idx.ByPlugin["disabled@mkt"]
+	if enabled.Total().Loaded == 0 {
+		t.Fatalf("enabled plugin must have non-zero cost in ByPlugin, got %+v", enabled)
+	}
+	if disabled.Total().Loaded == 0 {
+		t.Fatalf("disabled plugin must still have non-zero cost in ByPlugin (shows what enabling it would add), got %+v", disabled)
+	}
+
+	// The project total must count only the enabled plugin's contribution.
+	if idx.Project.Total().Loaded != enabled.Total().Loaded {
+		t.Fatalf("Project.Total().Loaded = %d, want exactly the enabled plugin's cost (%d) - disabled plugin's cost must be excluded",
+			idx.Project.Total().Loaded, enabled.Total().Loaded)
+	}
+	if idx.Project.Items != 1 {
+		t.Fatalf("Project.Items = %d, want 1 (only the enabled plugin's asset)", idx.Project.Items)
+	}
+}
+
 func TestBuildIgnoresAssetsWithNoDescription(t *testing.T) {
 	in := Input{
 		Skills: []skills.Skill{

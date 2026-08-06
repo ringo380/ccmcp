@@ -21,6 +21,13 @@ func (s *state) costIndex() *ctxcost.Index {
 		Skills:   skills.Discover(s.paths.ClaudeConfigDir, s.project, s.settings, s.installed, s.paths.PluginsDir),
 		Agents:   agents.Discover(s.paths.ClaudeConfigDir, s.project, s.settings, s.installed, s.paths.PluginsDir),
 		Commands: commands.Discover(s.paths.ClaudeConfigDir, s.project, s.settings, s.installed, s.paths.PluginsDir),
+		PluginEnabled: func(id string) bool {
+			if s.settings == nil {
+				return true
+			}
+			en, known := s.settings.PluginEnabled(id)
+			return known && en
+		},
 	}
 	idx, err := ctxcost.Build(in)
 	if err != nil || idx == nil {

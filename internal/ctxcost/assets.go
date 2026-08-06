@@ -14,6 +14,17 @@ type Input struct {
 	Skills   []skills.Skill
 	Agents   []agents.Agent
 	Commands []commands.Command
+
+	// PluginEnabled reports whether a plugin id ("name@marketplace") is enabled.
+	// Assets from a disabled plugin are still costed into ByPlugin (so the UI can
+	// show what enabling it would add) but are excluded from the Project total,
+	// because a disabled plugin injects nothing into the prompt.
+	//
+	// Necessary because skills.Discover/agents.Discover deliberately return assets
+	// from registered-but-disabled plugins (see internal/skills/skills.go:48), and
+	// their Enabled field reflects only skillOverrides, not plugin enablement.
+	// A nil func means treat every plugin as enabled.
+	PluginEnabled func(pluginID string) bool
 }
 
 // Index is the computed estimate from one project's perspective.
@@ -46,7 +57,8 @@ func commandLine(c commands.Command) string {
 }
 
 // Build costs every enabled asset in `in`, attributing plugin-scope assets to
-// their plugin and folding everything into the project total.
+// their plugin. Project only folds in assets that actually load in the
+// current prompt - see the PluginEnabled field on Input.
 func Build(in Input) (*Index, error) {
 	idx := &Index{
 		ByPlugin: map[string]Breakdown{},
@@ -55,6 +67,10 @@ func Build(in Input) (*Index, error) {
 
 	// add routes one costed item into the owning plugin (when there is one) and
 	// into the project total, via `pick` which selects the kind's Cost field.
+	// ByPlugin always accumulates, regardless of enablement, so the UI can show
+	// what enabling a disabled plugin would add. The project total only counts
+	// assets that actually load: user/project-scope assets (empty pluginID) and
+	// assets owned by an enabled plugin.
 	add := func(pluginID, line string, pick func(*Breakdown) *Cost) error {
 		n, err := tokens.Count(line)
 		if err != nil {
@@ -62,14 +78,18 @@ func Build(in Input) (*Index, error) {
 		}
 		c := Cost{Loaded: n, Deferred: n} // deferral never applies to assets
 
+		pluginEnabled := pluginID == "" || in.PluginEnabled == nil || in.PluginEnabled(pluginID)
+
 		if pluginID != "" {
 			b := idx.ByPlugin[pluginID]
 			*pick(&b) = pick(&b).Add(c)
 			b.Items++
 			idx.ByPlugin[pluginID] = b
 		}
-		*pick(&idx.Project) = pick(&idx.Project).Add(c)
-		idx.Project.Items++
+		if pluginEnabled {
+			*pick(&idx.Project) = pick(&idx.Project).Add(c)
+			idx.Project.Items++
+		}
 		return nil
 	}
 

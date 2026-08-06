@@ -1132,7 +1132,13 @@ func (v *pluginView) render() string {
 		}
 		if !r.IsRemote {
 			cost := ctxcost.Human(r.Ctx.Loaded) // ≈0 is a real measurement here, not a gap
-			line += "  " + styleDim.Render(cost)
+			if r.Enabled {
+				line += "  " + cost
+			} else {
+				// Disabled: this is "what enabling it would cost", not current cost -
+				// dim to convey potential rather than active contribution.
+				line += "  " + styleDim.Render(cost)
+			}
 		}
 		if i == v.index {
 			b.WriteString(styleSelected.Render("  " + line))
