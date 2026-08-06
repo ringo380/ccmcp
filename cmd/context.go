@@ -59,12 +59,28 @@ var contextCmd = &cobra.Command{
 			return err
 		}
 
+		// ctxcost.Build deliberately keeps disabled plugins in ByPlugin (so a UI can
+		// show what enabling one would add) while excluding them from Project.
+		// Unmarked, the rows below do not sum to the printed total.
+		enabledPlugin := func(id string) bool {
+			en, known := settings.PluginEnabled(id)
+			return known && en
+		}
+
 		if flagJSON {
+			type pluginEntry struct {
+				ctxcost.Breakdown
+				Enabled bool `json:"enabled"`
+			}
+			byPlugin := make(map[string]pluginEntry, len(idx.ByPlugin))
+			for id, b := range idx.ByPlugin {
+				byPlugin[id] = pluginEntry{Breakdown: b, Enabled: enabledPlugin(id)}
+			}
 			payload := struct {
-				Project  ctxcost.Breakdown            `json:"project"`
-				ByPlugin map[string]ctxcost.Breakdown `json:"byPlugin"`
-				Measured *ctxcost.Measured            `json:"measured,omitempty"`
-			}{Project: idx.Project, ByPlugin: idx.ByPlugin}
+				Project  ctxcost.Breakdown      `json:"project"`
+				ByPlugin map[string]pluginEntry `json:"byPlugin"`
+				Measured *ctxcost.Measured      `json:"measured,omitempty"`
+			}{Project: idx.Project, ByPlugin: byPlugin}
 			if mm, ok := ctxcost.Calibrate(p.ClaudeConfigDir, proj); ok {
 				payload.Measured = &mm
 			}
@@ -101,8 +117,14 @@ var contextCmd = &cobra.Command{
 
 		fmt.Println("heaviest plugins:")
 		for _, r := range rows {
-			fmt.Printf("  %8s  %4d items  %s\n",
-				ctxcost.Human(r.b.Total().Loaded), r.b.Items, r.id)
+			suffix := ""
+			if !enabledPlugin(r.id) {
+				// Not counted in the total above - shown because it says what
+				// enabling the plugin would add.
+				suffix = "  (disabled)"
+			}
+			fmt.Printf("  %8s  %4d items  %s%s\n",
+				ctxcost.Human(r.b.Total().Loaded), r.b.Items, r.id, suffix)
 		}
 		return nil
 	},

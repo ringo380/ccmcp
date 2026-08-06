@@ -107,6 +107,83 @@ func TestCLIContextSortsPluginsByCostDescending(t *testing.T) {
 	}
 }
 
+// TestCLIContextMarksDisabledPlugins pins the honesty of the "heaviest
+// plugins" list: ctxcost.Build keeps disabled plugins in ByPlugin (so a UI can
+// show what enabling one would add) but excludes them from the project total,
+// so an unmarked row makes the list fail to sum to the printed total. The TUI
+// conveys this by dimming the row; the CLI needs a marker and a JSON flag.
+func TestCLIContextMarksDisabledPlugins(t *testing.T) {
+	home := setupSandbox(t)
+	claudeDir := filepath.Join(home, ".claude")
+	pluginsRoot := filepath.Join(home, "test-plugins")
+
+	write := func(id, skill, desc string) string {
+		installPath := filepath.Join(pluginsRoot, id)
+		skillDir := filepath.Join(installPath, "skills", skill)
+		if err := os.MkdirAll(skillDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "---\nname: " + skill + "\ndescription: " + desc + "\n---\nbody\n"
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return installPath
+	}
+	onPath := write("on-plugin@mkt", "on-skill", "an enabled plugin skill")
+	offPath := write("off-plugin@mkt", "off-skill", "a disabled plugin skill that loads nothing")
+
+	settingsBytes, _ := json.Marshal(map[string]any{"enabledPlugins": map[string]any{
+		"on-plugin@mkt":  true,
+		"off-plugin@mkt": false,
+	}})
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), settingsBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	installedBytes, _ := json.Marshal(map[string]any{"version": float64(2), "plugins": map[string]any{
+		"on-plugin@mkt":  []any{map[string]any{"scope": "user", "installPath": onPath, "version": "1.0"}},
+		"off-plugin@mkt": []any{map[string]any{"scope": "user", "installPath": offPath, "version": "1.0"}},
+	}})
+	if err := os.WriteFile(filepath.Join(claudeDir, "plugins", "installed_plugins.json"), installedBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCLI(t, home, "context")
+	if err != nil {
+		t.Fatalf("context: %v\n%s", err, out)
+	}
+	for _, ln := range strings.Split(out, "\n") {
+		switch {
+		case strings.Contains(ln, "off-plugin@mkt"):
+			if !strings.Contains(ln, "(disabled)") {
+				t.Fatalf("the disabled plugin's row must be marked, or it looks like it counts toward the total: %q", ln)
+			}
+		case strings.Contains(ln, "on-plugin@mkt"):
+			if strings.Contains(ln, "(disabled)") {
+				t.Fatalf("an enabled plugin must not be marked disabled: %q", ln)
+			}
+		}
+	}
+
+	jsonOut, err := runCLI(t, home, "context", "--json")
+	if err != nil {
+		t.Fatalf("context --json: %v\n%s", err, jsonOut)
+	}
+	var payload struct {
+		ByPlugin map[string]struct {
+			Enabled bool `json:"enabled"`
+		} `json:"byPlugin"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &payload); err != nil {
+		t.Fatalf("decode: %v\n%s", err, jsonOut)
+	}
+	if payload.ByPlugin["off-plugin@mkt"].Enabled {
+		t.Fatalf("off-plugin@mkt must carry enabled=false:\n%s", jsonOut)
+	}
+	if !payload.ByPlugin["on-plugin@mkt"].Enabled {
+		t.Fatalf("on-plugin@mkt must carry enabled=true:\n%s", jsonOut)
+	}
+}
+
 func TestCLIContextJSONHasProjectTotal(t *testing.T) {
 	home := setupSandbox(t)
 	out, err := runCLI(t, home, "context", "--json")
