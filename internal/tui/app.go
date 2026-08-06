@@ -132,6 +132,14 @@ type state struct {
 	// nil means "not built yet", NOT "zero cost".
 	cost *ctxcost.Index
 
+	// costDirtySettings/costDirtyPlugins record the dirty-flag state when `cost`
+	// was built. Any change to either means a mutation landed that could move the
+	// estimate (skill/agent overrides feed ctxcost's Enabled filter), so the cache
+	// is rebuilt. Cheaper and far more robust than calling invalidateCost() at
+	// every mutation site - a new site added later is covered automatically.
+	costDirtySettings bool
+	costDirtyPlugins  bool
+
 	// claudeAi: full list of "claude.ai <Name>" strings from claudeAiMcpEverConnected
 	claudeAi []string
 

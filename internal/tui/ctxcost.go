@@ -14,7 +14,7 @@ import (
 // A build error yields an empty index rather than nil, so callers never have to
 // nil-check; an empty index renders as unmeasured, not as zero.
 func (s *state) costIndex() *ctxcost.Index {
-	if s.cost != nil {
+	if s.cost != nil && s.costDirtySettings == s.dirtySettings && s.costDirtyPlugins == s.dirtyPlugins {
 		return s.cost
 	}
 	in := ctxcost.Input{
@@ -30,6 +30,8 @@ func (s *state) costIndex() *ctxcost.Index {
 		}
 	}
 	s.cost = idx
+	s.costDirtySettings = s.dirtySettings
+	s.costDirtyPlugins = s.dirtyPlugins
 	return s.cost
 }
 
