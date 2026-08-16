@@ -16,7 +16,12 @@ type Input struct {
 	Commands []commands.Command
 
 	// MCP is the per-server probe state, keyed by the server name as the MCPs
-	// tab displays it. See MCPState for the unmeasured-vs-zero contract.
+	// tab displays it. Build has no other source of truth for which servers
+	// exist: a server absent from this map is invisible to the estimate, not
+	// counted as unmeasured. To produce a complete estimate the caller MUST
+	// supply one entry per configured server (Probed: false for any it
+	// couldn't probe). See MCPState for the full absent-vs-unmeasured-vs-zero
+	// contract.
 	MCP map[string]MCPState
 
 	// PluginEnabled reports whether a plugin id ("name@marketplace") is enabled.
