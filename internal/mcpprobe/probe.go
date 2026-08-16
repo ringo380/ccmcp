@@ -15,10 +15,14 @@ import (
 )
 
 // DefaultTimeout bounds one whole probe - spawn, initialize and tools/list
-// together. A server that takes longer than this is reported as a timeout
-// rather than waited on: the result is cached either way, so a hanging server
-// costs the user this once, not once per visit.
-const DefaultTimeout = 10 * time.Second
+// together - when the caller's context carries no deadline of its own. A server
+// that takes longer than this is reported as a timeout rather than waited on:
+// the result is cached either way, so a hanging server costs the user this once,
+// not once per visit.
+//
+// It is a FALLBACK, not a cap: see Probe. A var rather than a const so tests can
+// shrink it and exercise the timeout path without waiting out the real one.
+var DefaultTimeout = 10 * time.Second
 
 // protocolVersion is the MCP revision ccmcp announces in initialize. Servers
 // that speak a different revision are expected to answer with their own.
@@ -120,10 +124,17 @@ func Probe(ctx context.Context, t Target) (res Result) {
 		return res
 	}
 
-	// WithTimeout keeps whichever deadline is sooner, so a caller that wants
-	// a tighter bound than DefaultTimeout simply passes one.
-	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
-	defer cancel()
+	// A caller-supplied deadline wins outright, in BOTH directions: `ccmcp mcp
+	// probe --timeout 30s` exists to give a slow server longer, and
+	// context.WithTimeout keeps whichever deadline is sooner - so layering
+	// DefaultTimeout on top unconditionally would silently clamp that flag back
+	// to 10s. DefaultTimeout applies only when the caller set no deadline at
+	// all, so a probe is never unbounded either.
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultTimeout)
+		defer cancel()
+	}
 
 	if err := probeInto(ctx, t, &res); err != nil {
 		res.OK = false

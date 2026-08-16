@@ -381,3 +381,34 @@ func waitForExit(pid int, d time.Duration) (alive bool) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// TestProbeHonorsACallerDeadlineLongerThanTheDefault pins that DefaultTimeout is
+// a FALLBACK, not a cap. `ccmcp mcp probe --timeout 30s` exists to give a slow
+// server longer than the default, and layering DefaultTimeout on top of the
+// caller's context unconditionally would silently clamp it back to 10s - a flag
+// that quietly does not do what it says.
+//
+// DefaultTimeout is shrunk here so the "no caller deadline" half of the
+// assertion is fast and hermetic rather than a real 10s wait.
+func TestProbeHonorsACallerDeadlineLongerThanTheDefault(t *testing.T) {
+	orig := DefaultTimeout
+	DefaultTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { DefaultTimeout = orig })
+
+	target := fakeTarget("slowinit")
+
+	// No caller deadline: the (shrunken) default must bite.
+	if res := Probe(context.Background(), target); res.OK {
+		t.Fatalf("expected the default timeout to bite with no caller deadline, got a measured result: %+v", res)
+	}
+
+	// A caller deadline well past the default must win, and the same server
+	// must then measure cleanly.
+	res := Probe(shortCtx(t, 10*time.Second), target)
+	if !res.OK {
+		t.Fatalf("a caller deadline longer than DefaultTimeout must be honored, not clamped: %q", res.Err)
+	}
+	if len(res.Tools) != 2 {
+		t.Fatalf("got %d tools, want 2", len(res.Tools))
+	}
+}

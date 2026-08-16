@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ringo380/ccmcp/internal/mcpprobe"
 )
 
 // runCLI executes the root command with args in a sandboxed $HOME/$CLAUDE_CONFIG_DIR so
@@ -74,6 +76,8 @@ func runCLI(t *testing.T, home string, args ...string) (string, error) {
 	mktNoClone = false
 	discoverJSON = false
 	discoverRefresh = false
+	probeTimeout = mcpprobe.DefaultTimeout
+	probeForce = false
 
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))

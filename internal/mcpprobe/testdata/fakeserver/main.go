@@ -75,6 +75,12 @@ func main() {
 
 		switch req.Method {
 		case "initialize":
+			if mode == "slowinit" {
+				// Slower than a shrunken DefaultTimeout but far faster than a
+				// caller deadline, so a test can tell which one the probe
+				// actually applied.
+				time.Sleep(400 * time.Millisecond)
+			}
 			if mode == "noinit" {
 				emit(`{"jsonrpc":"2.0","id":` + id + `,"error":{"code":-32000,"message":"initialize refused by fake server"}}`)
 				continue
