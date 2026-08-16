@@ -11,6 +11,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/mcpprobe"
+	"github.com/ringo380/ccmcp/internal/mcpscope"
 	"github.com/ringo380/ccmcp/internal/skills"
 	"github.com/spf13/cobra"
 )
@@ -55,7 +56,7 @@ var contextCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		mcpStates := mcpCostStates(servers, probeCache)
+		mcpStates := mcpscope.CostStates(servers, probeCache, reasonNotProbedYet)
 
 		// PluginEnabled is REQUIRED, not optional. skills.Discover and
 		// agents.Discover deliberately return assets from registered-but-DISABLED
@@ -85,6 +86,19 @@ var contextCmd = &cobra.Command{
 			return known && en
 		}
 
+		// Breakdown.Items counts measured ASSETS plus measured MCP SERVERS, and
+		// AddSource increments it once per probed server - so anything reporting
+		// an asset count has to subtract them or it grows by one per probed
+		// server and starts miscounting skills/agents/commands. Computed once,
+		// above both output paths, so the JSON and the printed line cannot drift.
+		probedServers := 0
+		for _, st := range mcpStates {
+			if st.Probed {
+				probedServers++
+			}
+		}
+		assetItems := idx.Project.Items - probedServers
+
 		if flagJSON {
 			type pluginEntry struct {
 				ctxcost.Breakdown
@@ -94,13 +108,22 @@ var contextCmd = &cobra.Command{
 			for id, b := range idx.ByPlugin {
 				byPlugin[id] = pluginEntry{Breakdown: b, Enabled: enabledPlugin(id)}
 			}
+			// assetItems/probedServers are stated explicitly because
+			// project.items is the raw ctxcost figure - assets PLUS measured
+			// servers. Both are exposed rather than redefining the existing
+			// field, whose meaning is documented on ctxcost.Breakdown.
 			payload := struct {
-				Project  ctxcost.Breakdown            `json:"project"`
-				ByPlugin map[string]pluginEntry       `json:"byPlugin"`
-				ByMCP    map[string]ctxcost.Breakdown `json:"byMcp"`
-				MCP      map[string]mcpEntry          `json:"mcp"`
-				Measured *ctxcost.Measured            `json:"measured,omitempty"`
-			}{Project: idx.Project, ByPlugin: byPlugin, ByMCP: idx.ByMCP, MCP: mcpJSON(mcpStates)}
+				Project       ctxcost.Breakdown            `json:"project"`
+				AssetItems    int                          `json:"assetItems"`
+				ProbedServers int                          `json:"probedServers"`
+				ByPlugin      map[string]pluginEntry       `json:"byPlugin"`
+				ByMCP         map[string]ctxcost.Breakdown `json:"byMcp"`
+				MCP           map[string]mcpEntry          `json:"mcp"`
+				Measured      *ctxcost.Measured            `json:"measured,omitempty"`
+			}{
+				Project: idx.Project, AssetItems: assetItems, ProbedServers: probedServers,
+				ByPlugin: byPlugin, ByMCP: idx.ByMCP, MCP: mcpJSON(mcpStates),
+			}
 			if mm, ok := ctxcost.Calibrate(p.ClaudeConfigDir, proj); ok {
 				payload.Measured = &mm
 			}
@@ -110,17 +133,6 @@ var contextCmd = &cobra.Command{
 		}
 
 		total := idx.Project.Total()
-		// Breakdown.Items counts measured ASSETS plus measured MCP SERVERS, and
-		// AddSource increments it once per probed server - so the asset sentence
-		// below has to subtract them or it grows by one per probed server and
-		// starts miscounting skills/agents/commands.
-		probedServers := 0
-		for _, st := range mcpStates {
-			if st.Probed {
-				probedServers++
-			}
-		}
-		assetItems := idx.Project.Items - probedServers
 		fmt.Printf("per-turn context   %s\n", ctxcost.HumanCost(total))
 		fmt.Printf("  from %d enabled skills/agents/commands (global plugins plus this project's own)\n", assetItems)
 		if len(mcpStates) > 0 {

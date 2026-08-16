@@ -12,6 +12,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/mcpprobe"
+	"github.com/ringo380/ccmcp/internal/mcpscope"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 	"github.com/ringo380/ccmcp/internal/updates"
 )
@@ -334,68 +335,28 @@ func (v *mcpView) rebuild() {
 // publishCostStates hands the context estimator one entry per server that loads
 // in this project - NOT just the ones the probe cache knows about.
 //
-// ctxcost.Build has no independent view of which servers exist: a server absent
-// from Input.MCP contributes nothing to the total AND nothing to Unmeasured, so
-// publishing only cache hits would render a confident headline that silently
-// omits every unprobed server. Unprobed and unprobeable servers therefore get an
-// explicit Probed=false entry carrying the reason.
+// The enumeration and the accounting both live in internal/mcpscope, shared with
+// `ccmcp context` and `ccmcp mcp probe`, so the tab and the CLI cannot disagree
+// about the same project. They already did: a name that was both stashed and
+// listed in enabledMcpServers was effective in the CLI's own former copy of these
+// rules and suppressed here, so the two printed different unmeasured counts. See
+// mcpscope.CostStates for the completeness and duplicate-name contracts.
 //
 // Runs from rebuild() (construction plus every mutation) rather than render() so
 // the states, and the generation bump they cause, are in place before the first
 // keypress - and so no render path can ever be the thing that triggers a probe.
 //
-// Input.MCP is keyed by display name, so two effective rows sharing a name (a
-// user-scope `context7` plus a plugin-registered one - the case the ⚠
-// duplicate-load marker exists for) cannot both be represented. Such a name is
-// published as UNMEASURED rather than as the first row's measurement: keeping one
-// row's figure would read as a COMPLETE number while a second real server
-// vanished from the total with nothing saying so, which is the same failure mode
-// as the absent-server contract. An honest "-" plus a bump to the unmeasured
-// count costs a real measurement and is still the better trade.
+// It reads v.st, not v.rows: the state is the source of truth for what loads, and
+// the tab's rows are a display projection of it (TestMCPRowsAgreeWithMCPScope
+// pins the two to the same effective set).
 func (v *mcpView) publishCostStates() {
-	states := make(map[string]ctxcost.MCPState, len(v.rows))
-	cache := v.st.probeCache()
-
-	// Count first: the collision has to be known before the first of the
-	// colliding rows is published, or it would be published as measured.
-	effByName := map[string]int{}
-	for _, r := range v.rows {
-		if isEffective(r) {
-			effByName[r.Name]++
-		}
-	}
-
-	for _, r := range v.rows {
-		if !isEffective(r) {
-			continue
-		}
-		if _, dup := states[r.Name]; dup {
-			continue
-		}
-		if effByName[r.Name] > 1 {
-			states[r.Name] = ctxcost.MCPState{
-				Probed: false,
-				Reason: fmt.Sprintf("duplicate server name (%d sources) - cannot attribute cost", effByName[r.Name]),
-			}
-			continue
-		}
-		t, ok, reason := probeTargetFor(r)
-		if !ok {
-			states[r.Name] = ctxcost.MCPState{Probed: false, Reason: reason}
-			continue
-		}
-		res, hit := cache.Get(t.Key())
-		if !hit {
-			states[r.Name] = ctxcost.MCPState{Probed: false, Reason: reasonNotProbedYet}
-			continue
-		}
-		// MCPStateFrom is the single conversion point, and the reason it exists:
-		// a failed probe's Loaded()/Deferred() are arithmetically 0, and
-		// rendering that as a measured "≈0" is the exact bug this feature is
-		// meant to prevent.
-		states[r.Name] = ctxcost.MCPStateFrom(res.OK, res.Err, res.Loaded(), res.Deferred())
-	}
-	v.st.setMCPStates(states)
+	servers := mcpscope.Effective(mcpscope.Inputs{
+		CJ:         v.st.cj,
+		Project:    v.st.project,
+		Stash:      v.st.stash,
+		PluginMCPs: v.st.pluginMCPs,
+	})
+	v.st.setMCPStates(mcpscope.CostStates(servers, v.st.probeCache(), reasonNotProbedYet))
 }
 
 // probeTargetFor resolves a row into a probeable target, or explains why it is

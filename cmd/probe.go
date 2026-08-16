@@ -12,6 +12,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/mcpprobe"
+	"github.com/ringo380/ccmcp/internal/mcpscope"
 	"github.com/ringo380/ccmcp/internal/paths"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 	"github.com/spf13/cobra"
@@ -27,33 +28,11 @@ var (
 // command instead.
 const reasonNotProbedYet = "not probed yet - run `ccmcp mcp probe`"
 
-// effectiveMCP is one MCP server that Claude Code will load in a project.
-//
-// Reason, when set, means the server loads but cannot be probed locally (a
-// claude.ai integration, a built-in with no local config). Such a server still
-// belongs in the accounting: it is real prompt cost that ccmcp cannot measure,
-// and dropping it would silently shrink the unmeasured count.
-type effectiveMCP struct {
-	Name   string
-	Source config.MCPSource
-	Config any
-	Reason string
-}
-
-// effectiveMCPs returns one entry per MCP server that loads in proj - the CLI's
-// counterpart to the MCPs tab's rebuild() + isEffective() pair
-// (internal/tui/mcps.go). The rules are deliberately identical, so `ccmcp
-// context` and the TUI can never disagree about the same project:
-//
-//   - user and local scope load unless disabled here
-//   - ./.mcp.json loads unless denied by the allow/deny lists or disabled here
-//   - plugin-registered servers load only when the owning plugin is enabled
-//   - claude.ai integrations load (unprobeable)
-//   - a name in enabledMcpServers with no enumerable source is a built-in that
-//     loads only because it is listed there (unprobeable)
-//
-// Stash entries and orphan disabledMcpServers keys are excluded: neither loads.
-func effectiveMCPs(p paths.Paths, proj string) ([]effectiveMCP, error) {
+// effectiveMCPs loads this machine's config and asks internal/mcpscope which MCP
+// servers load in proj. The rules live there, in one place, shared with the MCPs
+// tab: two surfaces reporting different unmeasured counts for the same project is
+// what having two copies of them already produced.
+func effectiveMCPs(p paths.Paths, proj string) ([]mcpscope.Server, error) {
 	cj, err := config.LoadClaudeJSON(p.ClaudeJSON)
 	if err != nil {
 		return nil, err
@@ -66,159 +45,31 @@ func effectiveMCPs(p paths.Paths, proj string) ([]effectiveMCP, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	disabled := stringslice.Set(cj.ProjectDisabledMcpServers(proj))
-	enabledHere := stringslice.Set(cj.ProjectEnabledMcpServers(proj))
-	allow := stringslice.Set(cj.ProjectMcpjsonEnabled(proj))
-	deny := stringslice.Set(cj.ProjectMcpjsonDisabled(proj))
-
-	var out []effectiveMCP
-	// seen tracks every override key an enumerable source accounts for, so the
-	// built-in pass below cannot emit a second row for a name that already has
-	// a real source.
-	seen := map[string]bool{}
-
-	for name, cfg := range cj.UserMCPs() {
-		key := config.OverrideKey(config.SourceUser, name, "")
-		seen[key] = true
-		if disabled[key] {
-			continue
-		}
-		out = append(out, effectiveMCP{Name: name, Source: config.SourceUser, Config: cfg})
+	stash, err := config.LoadStash(p.Stash)
+	if err != nil {
+		return nil, err
 	}
-	for name, cfg := range cj.ProjectMCPs(proj) {
-		key := config.OverrideKey(config.SourceLocal, name, "")
-		seen[key] = true
-		if disabled[key] {
-			continue
-		}
-		out = append(out, effectiveMCP{Name: name, Source: config.SourceLocal, Config: cfg})
-	}
-	if m, err := config.LoadMCPJson(proj + "/.mcp.json"); err == nil {
-		for name, cfg := range m.Servers() {
-			key := config.OverrideKey(config.SourceProject, name, "")
-			seen[key] = true
-			if disabled[key] || deny[name] || (len(allow) > 0 && !allow[name]) {
-				continue
-			}
-			out = append(out, effectiveMCP{Name: name, Source: config.SourceProject, Config: cfg})
-		}
-	}
-	// ScanEnabledPluginMCPs, not ScanAllInstalledPluginMCPs: a server from a
-	// globally disabled plugin does not load, so it is not effective here.
-	for name, srcs := range config.ScanEnabledPluginMCPs(settings, installed, p.PluginsDir) {
-		for _, s := range srcs {
-			pluginName, _ := config.ParsePluginID(s.PluginID)
-			key := config.OverrideKey(config.SourcePlugin, name, pluginName)
-			seen[key] = true
-			if disabled[key] {
-				continue
-			}
-			out = append(out, effectiveMCP{Name: name, Source: config.SourcePlugin, Config: s.Config})
-		}
-	}
-	for _, full := range cj.ClaudeAiEverConnected() {
-		if !strings.HasPrefix(full, "claude.ai ") {
-			continue
-		}
-		seen[full] = true
-		if disabled[full] {
-			continue
-		}
-		out = append(out, effectiveMCP{
-			Name:   strings.TrimPrefix(full, "claude.ai "),
-			Source: config.SourceClaude,
-			Reason: "claude.ai integration - cannot probe locally",
-		})
-	}
-	for name := range enabledHere {
-		if seen[name] || disabled[name] {
-			continue
-		}
-		out = append(out, effectiveMCP{
-			Name:   name,
-			Source: config.SourceBuiltin,
-			Reason: "built-in with no local config - cannot probe locally",
-		})
-	}
-
-	sort.Slice(out, func(i, j int) bool {
-		li, lj := strings.ToLower(out[i].Name), strings.ToLower(out[j].Name)
-		if li != lj {
-			return li < lj
-		}
-		return out[i].Source < out[j].Source
-	})
-	return out, nil
-}
-
-// mcpCostStates converts the effective server list plus the probe cache into the
-// per-server state ctxcost.Build consumes.
-//
-// It emits an entry for EVERY effective server, not just the cache hits.
-// ctxcost.Build has no independent view of which servers exist: a server absent
-// from Input.MCP contributes nothing to the total AND nothing to Unmeasured, so
-// populating only cache hits would print a confident headline that silently
-// omits every unprobed server.
-//
-// Input.MCP is keyed by display name, so two effective servers sharing a name
-// cannot both be represented. Such a name is published as unmeasured rather than
-// as the first one's measurement - keeping one figure would read as a COMPLETE
-// number while a second real server vanished from the total. The per-name count
-// is therefore taken in a first pass, before anything is published: computing it
-// inline would publish the first colliding server as measured.
-func mcpCostStates(servers []effectiveMCP, cache *mcpprobe.Cache) map[string]ctxcost.MCPState {
-	states := make(map[string]ctxcost.MCPState, len(servers))
-
-	byName := map[string]int{}
-	for _, s := range servers {
-		byName[s.Name]++
-	}
-
-	for _, s := range servers {
-		if _, done := states[s.Name]; done {
-			continue
-		}
-		if byName[s.Name] > 1 {
-			states[s.Name] = ctxcost.MCPState{
-				Probed: false,
-				Reason: fmt.Sprintf("duplicate server name (%d sources) - cannot attribute cost", byName[s.Name]),
-			}
-			continue
-		}
-		if s.Reason != "" {
-			states[s.Name] = ctxcost.MCPState{Probed: false, Reason: s.Reason}
-			continue
-		}
-		t, ok, reason := mcpprobe.TargetFromConfig(s.Name, s.Config)
-		if !ok {
-			states[s.Name] = ctxcost.MCPState{Probed: false, Reason: reason}
-			continue
-		}
-		res, hit := cache.Get(t.Key())
-		if !hit {
-			states[s.Name] = ctxcost.MCPState{Probed: false, Reason: reasonNotProbedYet}
-			continue
-		}
-		// MCPStateFrom is the single conversion point, and the reason it
-		// exists: a failed probe's Loaded()/Deferred() are arithmetically 0,
-		// and rendering that as a measured "≈0" is the exact defect this
-		// feature is meant to prevent.
-		states[s.Name] = ctxcost.MCPStateFrom(res.OK, res.Err, res.Loaded(), res.Deferred())
-	}
-	return states
+	return mcpscope.Effective(mcpscope.Inputs{
+		CJ:      cj,
+		Project: proj,
+		Stash:   stash,
+		// The ALL-installed scan, matching the MCPs tab: a disabled plugin's
+		// server does not load, but it still accounts for its override key.
+		PluginMCPs: config.ScanAllInstalledPluginMCPs(settings, installed, p.PluginsDir),
+	}), nil
 }
 
 // probeOutcome is one server's line in the report.
 type probeOutcome struct {
-	Name     string `json:"name"`
-	Key      string `json:"key,omitempty"`
-	State    string `json:"state"` // probed | cached | failed | skipped
-	Err      string `json:"err,omitempty"`
-	Reason   string `json:"reason,omitempty"` // why skipped
-	Tools    int    `json:"tools,omitempty"`
-	Loaded   int    `json:"loaded,omitempty"`
-	Deferred int    `json:"deferred,omitempty"`
+	Name      string `json:"name"`
+	Key       string `json:"key,omitempty"`
+	State     string `json:"state"` // probed | cached | failed | skipped
+	Err       string `json:"err,omitempty"`
+	Reason    string `json:"reason,omitempty"`    // why skipped
+	NotCached bool   `json:"notCached,omitempty"` // failed under a caller-supplied --timeout
+	Tools     int    `json:"tools,omitempty"`
+	Loaded    int    `json:"loaded,omitempty"`
+	Deferred  int    `json:"deferred,omitempty"`
 }
 
 var mcpProbeCmd = &cobra.Command{
@@ -235,6 +86,13 @@ var mcpProbeCmd = &cobra.Command{
 		"locally and are reported as skipped; `ccmcp context` counts them as\n" +
 		"unmeasured. Every figure is an estimate.",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Checked before anything is loaded or started: a non-positive timeout
+		// makes every probe fail with a deadline error that reads as the
+		// server's fault. Rejected rather than coerced - silently substituting
+		// another value would hide a flag the user meant to pass.
+		if probeTimeout <= 0 {
+			return fmt.Errorf("--timeout must be positive, got %s", probeTimeout)
+		}
 		p, err := resolvePaths()
 		if err != nil {
 			return err
@@ -250,7 +108,7 @@ var mcpProbeCmd = &cobra.Command{
 
 		if len(args) > 0 {
 			want := stringslice.Set(args)
-			var kept []effectiveMCP
+			var kept []mcpscope.Server
 			for _, s := range servers {
 				if want[s.Name] {
 					kept = append(kept, s)
@@ -288,6 +146,23 @@ var mcpProbeCmd = &cobra.Command{
 			return nil
 		}
 
+		// A probe run under a timeout the CALLER chose is an experiment, not a
+		// measurement of that server: `--timeout 1ms` fails everything. Caching
+		// that would overwrite a good result and leave `ccmcp context` blaming
+		// the server for the user's flag, recoverable only via --force. The
+		// narrowest rule that fixes it: when --timeout is explicitly set, cache
+		// only SUCCESSES. Narrower than matching on the error text (which cannot
+		// tell a caller-induced deadline from a server that really is that slow)
+		// and narrower than skipping the cache entirely (a successful probe is a
+		// real measurement whatever bound it ran under).
+		//
+		// Keyed off the VALUE rather than cobra's Changed bit, which is sticky
+		// for the life of the command object: a caller that runs the command
+		// twice in one process (the test harness does) would otherwise carry the
+		// first run's --timeout into the second. Passing exactly the default is
+		// indistinguishable from not passing it, which is the right answer.
+		explicitTimeout := probeTimeout != mcpprobe.DefaultTimeout
+
 		outcomes := make([]probeOutcome, 0, len(servers))
 		dirty := false
 		for _, s := range servers {
@@ -311,10 +186,15 @@ var mcpProbeCmd = &cobra.Command{
 			cached := hit && !probeForce
 			if !cached {
 				ctx, cancel := context.WithTimeout(cmd.Context(), probeTimeout)
-				res = mcpprobe.Probe(ctx, t)
+				probed := mcpprobe.Probe(ctx, t)
 				cancel()
-				cache.Put(res)
-				dirty = true
+				if probed.OK || !explicitTimeout {
+					cache.Put(probed)
+					dirty = true
+				} else {
+					o.NotCached = true
+				}
+				res = probed
 			}
 
 			switch {
@@ -359,7 +239,11 @@ var mcpProbeCmd = &cobra.Command{
 			case "skipped":
 				fmt.Printf("  %-24s skipped  %s\n", o.Name, o.Reason)
 			case "failed":
-				fmt.Printf("  %-24s failed   %s\n", o.Name, o.Err)
+				note := ""
+				if o.NotCached {
+					note = "   (not cached: ran under an explicit --timeout)"
+				}
+				fmt.Printf("  %-24s failed   %s%s\n", o.Name, o.Err, note)
 			default:
 				fmt.Printf("  %-24s %-8s %s   %d tool(s)\n",
 					o.Name, o.State, ctxcost.HumanCost(ctxcost.Cost{Loaded: o.Loaded, Deferred: o.Deferred}), o.Tools)
@@ -367,7 +251,16 @@ var mcpProbeCmd = &cobra.Command{
 		}
 		fmt.Printf("\n%d probed, %d already cached, %d failed, %d skipped   (cache: %s)\n",
 			counts["probed"], counts["cached"], counts["failed"], counts["skipped"], p.ProbeCache)
-		if counts["failed"] > 0 {
+		notCached := 0
+		for _, o := range outcomes {
+			if o.NotCached {
+				notCached++
+			}
+		}
+		switch {
+		case notCached > 0:
+			fmt.Printf("%d failure(s) under an explicit --timeout were NOT cached - any earlier result still stands\n", notCached)
+		case counts["failed"] > 0:
 			fmt.Println("failures are cached too - re-run with --force to try them again")
 		}
 		fmt.Println("figures are estimates; run `ccmcp context` to see them alongside asset cost")

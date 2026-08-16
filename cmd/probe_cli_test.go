@@ -419,3 +419,157 @@ func TestCLIContextReportsDuplicateServerNamesAsUnmeasured(t *testing.T) {
 		t.Fatalf("unmeasured = %d, want 1:\n%s", payload.Project.Unmeasured, out)
 	}
 }
+
+// TestCLIProbeRejectsANonPositiveTimeout: `--timeout 0` (or a negative value)
+// makes every probe fail with a deadline error that reads as the server's fault.
+// It must be rejected up front, before any server is started, rather than
+// silently coerced to something else.
+func TestCLIProbeRejectsANonPositiveTimeout(t *testing.T) {
+	for _, val := range []string{"0", "-1s"} {
+		home := setupSandbox(t)
+		proj := t.TempDir()
+		writeUserMCPs(t, home, map[string]any{
+			"fake": map[string]any{"command": fakeserver(t), "env": map[string]any{"FAKE_MODE": "ok"}},
+		})
+
+		out, err := runCLI(t, home, "--path", proj, "mcp", "probe", "--timeout", val)
+		if err == nil {
+			t.Fatalf("--timeout %s must be rejected, got success:\n%s", val, out)
+		}
+		if !strings.Contains(err.Error(), "--timeout") {
+			t.Fatalf("--timeout %s: error should name the flag, got %v", val, err)
+		}
+		if len(loadProbeCache(t, home).Entries) != 0 {
+			t.Fatalf("--timeout %s must be rejected before anything is probed or cached", val)
+		}
+	}
+}
+
+// TestCLIProbeDoesNotCacheAFailureUnderAnExplicitTimeout: a probe run under a
+// caller-chosen timeout is an experiment, not a measurement of that server. Its
+// failure must not overwrite a good cached result nor manufacture a sticky one,
+// because `ccmcp context` would then report the user's own flag choice as a
+// server failure and only --force could clear it.
+func TestCLIProbeDoesNotCacheAFailureUnderAnExplicitTimeout(t *testing.T) {
+	home := setupSandbox(t)
+	proj := t.TempDir()
+	cfg := map[string]any{
+		"command": fakeserver(t),
+		"env":     map[string]any{"FAKE_MODE": "ok"},
+	}
+	writeUserMCPs(t, home, map[string]any{"fake": cfg})
+	target, ok, reason := mcpprobe.TargetFromConfig("fake", cfg)
+	if !ok {
+		t.Fatalf("fixture should be probeable: %s", reason)
+	}
+
+	// A good measurement already on disk.
+	cache := loadProbeCache(t, home)
+	cache.Put(mcpprobe.Result{
+		Key: target.Key(), Name: "fake", ProbedAt: time.Now(), OK: true,
+		InstructionTokens: 700, NameTokens: 20,
+		Tools: []mcpprobe.Tool{{Name: "alpha", SchemaTokens: 1300}},
+	})
+	if err := cache.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCLI(t, home, "--path", proj, "mcp", "probe", "--force", "--timeout", "1ms")
+	if err != nil {
+		t.Fatalf("a timed-out probe must not fail the command: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "not cached") {
+		t.Fatalf("output must say the failure was not cached:\n%s", out)
+	}
+	res, hit := loadProbeCache(t, home).Get(target.Key())
+	if !hit {
+		t.Fatalf("the existing measurement must survive a --timeout experiment:\n%s", out)
+	}
+	if !res.OK || res.Loaded() != 2000 {
+		t.Fatalf("cached result was overwritten by the timeout failure: %+v", res)
+	}
+
+	// With nothing cached beforehand, a timeout under an explicit --timeout must
+	// not manufacture a sticky failure either.
+	fresh := setupSandbox(t)
+	writeUserMCPs(t, fresh, map[string]any{"fake": cfg})
+	out, err = runCLI(t, fresh, "--path", proj, "mcp", "probe", "--timeout", "1ms")
+	if err != nil {
+		t.Fatalf("probe: %v\n%s", err, out)
+	}
+	if n := len(loadProbeCache(t, fresh).Entries); n != 0 {
+		t.Fatalf("a failure under an explicit --timeout must not be cached; cache has %d entr(ies)", n)
+	}
+
+	// The default timeout still caches failures - that is what keeps a broken
+	// server from re-costing the user on every run.
+	broken := setupSandbox(t)
+	writeUserMCPs(t, broken, map[string]any{
+		"broken": map[string]any{"command": filepath.Join(proj, "not-a-binary")},
+	})
+	if out, err := runCLI(t, broken, "--path", proj, "mcp", "probe"); err != nil {
+		t.Fatalf("probe: %v\n%s", err, out)
+	}
+	if n := len(loadProbeCache(t, broken).Entries); n != 1 {
+		t.Fatalf("without an explicit --timeout a failure must still be cached; cache has %d entr(ies)", n)
+	}
+}
+
+// TestCLIContextJSONExposesTheAssetItemCount: the human line subtracts probed
+// servers from Breakdown.Items to report assets, so a JSON consumer reading the
+// raw project.items reproduces the off-by-N the printed sentence avoids. The
+// payload must therefore carry the asset count (and the probed-server count that
+// explains the difference) explicitly.
+func TestCLIContextJSONExposesTheAssetItemCount(t *testing.T) {
+	home := setupSandbox(t)
+	proj := t.TempDir()
+	cfg := map[string]any{"command": "some-server"}
+	writeUserMCPs(t, home, map[string]any{"measured": cfg})
+
+	target, ok, reason := mcpprobe.TargetFromConfig("measured", cfg)
+	if !ok {
+		t.Fatalf("fixture should be probeable: %s", reason)
+	}
+	cache := loadProbeCache(t, home)
+	cache.Put(mcpprobe.Result{
+		Key: target.Key(), Name: "measured", ProbedAt: time.Now(), OK: true,
+		InstructionTokens: 300, NameTokens: 10,
+		Tools: []mcpprobe.Tool{{Name: "alpha", SchemaTokens: 700}},
+	})
+	if err := cache.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	human, err := runCLI(t, home, "--path", proj, "context")
+	if err != nil {
+		t.Fatalf("context: %v\n%s", err, human)
+	}
+	printed := assetItems(t, human)
+
+	jsonOut, err := runCLI(t, home, "--path", proj, "context", "--json")
+	if err != nil {
+		t.Fatalf("context --json: %v\n%s", err, jsonOut)
+	}
+	var payload struct {
+		AssetItems    int `json:"assetItems"`
+		ProbedServers int `json:"probedServers"`
+		Project       struct {
+			Items int `json:"items"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &payload); err != nil {
+		t.Fatalf("decode: %v\n%s", err, jsonOut)
+	}
+	if payload.AssetItems != printed {
+		t.Fatalf("assetItems = %d but the printed line says %d:\n%s", payload.AssetItems, printed, jsonOut)
+	}
+	if payload.ProbedServers != 1 {
+		t.Fatalf("probedServers = %d, want 1:\n%s", payload.ProbedServers, jsonOut)
+	}
+	// The raw field keeps its documented ctxcost meaning: assets plus measured
+	// servers. Exposing assetItems is an addition, not a redefinition.
+	if payload.Project.Items != payload.AssetItems+payload.ProbedServers {
+		t.Fatalf("project.items (%d) should be assetItems (%d) + probedServers (%d):\n%s",
+			payload.Project.Items, payload.AssetItems, payload.ProbedServers, jsonOut)
+	}
+}
