@@ -59,6 +59,7 @@ func renderHelp(width int) string {
 	kbd("s", "cycle scope: effective → local → user → project → stash")
 	kbd("p", "probe the current server for its per-turn tool-schema cost (starts it)")
 	kbd("P", "probe every visible server (confirms first - one subprocess each)")
+	kbd("esc", "during a running probe sweep: stop it (nothing further is spawned)")
 	kbd("/", "filter by substring (enter to lock, esc to cancel)")
 	kbd("c", "clear filter")
 	kbd("j/k or ↑/↓", "navigate; g/G top/bottom; pgup/pgdn page")

@@ -51,6 +51,21 @@ type Inputs struct {
 	PluginMCPs map[string][]config.PluginMCPSource
 }
 
+// McpjsonExcluded reports whether ./.mcp.json's server `name` is kept out of a
+// project by its allow/deny lists (enabledMcpjsonServers / disabledMcpjsonServers).
+//
+// An explicit deny always wins. A NON-EMPTY allow-list is exclusive: anything
+// missing from it is excluded. An empty allow-list means "no allow-list", not
+// "allow nothing" - which is the half of the rule an inverted condition flips,
+// and it had no test coverage on either surface until this was extracted.
+//
+// Exported because the MCPs tab computes the same fact when it paints rows
+// (mcpRow.McpjsonDeny) and cannot reuse Effective's Server list for it. This is
+// the single definition; the tab calls it rather than keeping a second copy.
+func McpjsonExcluded(name string, allow, deny map[string]bool) bool {
+	return deny[name] || (len(allow) > 0 && !allow[name])
+}
+
 // Effective returns one entry per server that loads in in.Project, sorted by
 // name then source. Two entries can share a Name when two sources register the
 // same one - that is a real configuration, and CostStates is where it is handled.
@@ -96,7 +111,7 @@ func Effective(in Inputs) []Server {
 		for name, cfg := range m.Servers() {
 			key := config.OverrideKey(config.SourceProject, name, "")
 			accounted[key] = true
-			if disabled[key] || deny[name] || (len(allow) > 0 && !allow[name]) {
+			if disabled[key] || McpjsonExcluded(name, allow, deny) {
 				continue
 			}
 			out = append(out, Server{Name: name, Source: config.SourceProject, Config: cfg})

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -69,6 +70,17 @@ type mcpView struct {
 	// probeInFlight counts probes currently running so the header can say so.
 	probeInFlight int
 
+	// probeSessions tracks every probe currently running so it can be stopped -
+	// by `esc` during a sweep, or by the quit path. Without a handle here the
+	// only thing bounding a probe was mcpprobe's own 10s timeout, and quitting
+	// mid-probe orphaned the server: mcpprobe puts the child in its OWN process
+	// group (so a terminal SIGINT never reaches it) and its group SIGKILL lives
+	// in a defer that never runs if tea.Quit exits the process first.
+	//
+	// Only ever touched from the update goroutine (bubbletea serializes it) plus
+	// the quit path, which runs after the last Update returns.
+	probeSessions []*probeSession
+
 	// bulkProbeTargets/bulkProbeIndex drive the `P` sweep, which runs serially -
 	// one server at a time, each result chaining the next - rather than spawning
 	// every server at once. bulkProbeConfirm is the pending confirmation: `P`
@@ -85,10 +97,35 @@ type mcpUpdateCheckMsg struct {
 	status updates.Status
 }
 
+// probeSession is a handle on one running probe. cancel stops the probe (and,
+// through mcpprobe's own teardown, SIGKILLs the server's whole process group);
+// done closes once the probe goroutine has returned, so the quit path can wait
+// for that teardown instead of racing the process exit.
+type probeSession struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+
+	// cancelled marks a probe the USER stopped. Its Result is a fact about the
+	// cancellation, not a measurement of the server, so probeDone must not cache
+	// it - caching it would leave a sticky failure that reads as the server's
+	// fault, the same defect the CLI's --timeout rule exists to prevent.
+	cancelled bool
+}
+
+// probeTeardownWait bounds how long the quit path waits for a cancelled probe to
+// tear its process group down. mcpprobe's own cmd.WaitDelay is 2s, so this is
+// comfortably above the worst case while still being a bound rather than a hope.
+const probeTeardownWait = 3 * time.Second
+
 // mcpProbeDoneMsg carries one completed probe. mcpprobe.Probe never returns an
 // error - a failure is a cached fact - so there is no err field here.
 type mcpProbeDoneMsg struct {
 	res mcpprobe.Result
+
+	// session identifies which probe produced this result, so a cancelled one
+	// can be discarded. Nil from a synthesized message (tests, or any future
+	// direct sender), which is treated as "not cancelled".
+	session *probeSession
 
 	// bulk marks this result as one the `P` sweep started. The sweep must only
 	// ever count its OWN probes: attributing any arriving result to it advanced
@@ -198,7 +235,10 @@ func (v *mcpView) rebuild() {
 	if m, err := config.LoadMCPJson(v.st.project + "/.mcp.json"); err == nil {
 		for name, cfg := range m.Servers() {
 			key := config.OverrideKey(config.SourceProject, name, "")
-			denied := deny[name] || (len(allow) > 0 && !allow[name])
+			// One definition, shared with internal/mcpscope (and therefore with
+			// `ccmcp context`): this rule previously existed as two live copies
+			// with no test catching them drifting.
+			denied := mcpscope.McpjsonExcluded(name, allow, deny)
 			rows = append(rows, mcpRow{
 				Name:         name,
 				Source:       config.SourceProject,
@@ -466,7 +506,20 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	if m, ok := msg.(mcpProbeDoneMsg); ok {
-		return v.probeDone(m.res, m.bulk)
+		return v.probeDone(m.res, m.bulk, m.session)
+	}
+	// A sweep in progress (confirmed, targets left) is interruptible. Handled
+	// before every other key path: previously esc/q were only wired inside the
+	// confirmation block, which clears the moment the sweep starts, so a
+	// confirmed sweep was uninterruptible for up to N x the probe timeout.
+	if !v.bulkProbeConfirm && len(v.bulkProbeTargets) > 0 {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "esc", "q":
+				v.stopSweep()
+				return nil
+			}
+		}
 	}
 	if v.bulkProbeConfirm {
 		if key, ok := msg.(tea.KeyMsg); ok {
@@ -1010,7 +1063,7 @@ func (v *mcpView) probeRow(r mcpRow) tea.Cmd {
 	}
 	v.probeInFlight++
 	v.flash = styleProgress.Render("probing " + r.Name + "… (spawning the server)")
-	return probeCmd(t, false)
+	return v.startProbe(t, false)
 }
 
 // askBulkProbe stages a sweep over every probeable visible row and asks for
@@ -1056,7 +1109,7 @@ func (v *mcpView) bulkProbeNext() tea.Cmd {
 		return nil
 	}
 	v.probeInFlight++
-	return probeCmd(v.bulkProbeTargets[v.bulkProbeIndex], true)
+	return v.startProbe(v.bulkProbeTargets[v.bulkProbeIndex], true)
 }
 
 // probeDone records a completed probe and refreshes the estimate. The cache is
@@ -1064,9 +1117,17 @@ func (v *mcpView) bulkProbeNext() tea.Cmd {
 // edit, and caching a failure is what stops a hanging server re-hanging the user.
 // fromBulk says the result belongs to the `P` sweep; a single-row probe that
 // completes while a sweep is running must not advance it.
-func (v *mcpView) probeDone(res mcpprobe.Result, fromBulk bool) tea.Cmd {
+func (v *mcpView) probeDone(res mcpprobe.Result, fromBulk bool, session *probeSession) tea.Cmd {
 	if v.probeInFlight > 0 {
 		v.probeInFlight--
+	}
+	v.forgetProbeSession(session)
+	if session != nil && session.cancelled {
+		// The user stopped this one. Its Result describes the cancellation, not
+		// the server, so it is neither cached nor allowed to advance a sweep -
+		// stopSweep has already cleared the targets, and the flash it set says
+		// what happened.
+		return nil
 	}
 	cache := v.st.probeCache()
 	cache.Put(res)
@@ -1096,12 +1157,83 @@ func (v *mcpView) probeDone(res mcpprobe.Result, fromBulk bool) tea.Cmd {
 	return v.bulkProbeNext()
 }
 
-// probeCmd runs one probe off the UI goroutine. mcpprobe.Probe bounds itself
-// with its own timeout and never returns an error.
-func probeCmd(t mcpprobe.Target, bulk bool) tea.Cmd {
+// startProbe runs one probe off the UI goroutine under a cancellable context,
+// and registers a session so `esc` or the quit path can stop it. mcpprobe.Probe
+// still bounds itself with its own timeout and never returns an error; the
+// context is what makes the wait interruptible rather than merely finite.
+func (v *mcpView) startProbe(t mcpprobe.Target, bulk bool) tea.Cmd {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &probeSession{cancel: cancel, done: make(chan struct{})}
+	v.probeSessions = append(v.probeSessions, s)
 	return func() tea.Msg {
-		return mcpProbeDoneMsg{res: mcpprobe.Probe(context.Background(), t), bulk: bulk}
+		// Closed before the message is delivered, so a quit path waiting on it
+		// knows the probe's own deferred process-group teardown has already run.
+		defer close(s.done)
+		res := mcpprobe.Probe(ctx, t)
+		cancel() // release the context regardless of how the probe ended
+		return mcpProbeDoneMsg{res: res, bulk: bulk, session: s}
 	}
+}
+
+// forgetProbeSession drops a finished session.
+func (v *mcpView) forgetProbeSession(s *probeSession) {
+	if s == nil {
+		return
+	}
+	kept := v.probeSessions[:0]
+	for _, existing := range v.probeSessions {
+		if existing != s {
+			kept = append(kept, existing)
+		}
+	}
+	v.probeSessions = kept
+}
+
+// cancelProbes stops every in-flight probe and reports how many it stopped.
+//
+// wait makes it block (bounded by probeTeardownWait) until each probe goroutine
+// has returned. The quit path MUST wait: cancelling only asks, and mcpprobe's
+// group SIGKILL runs in the probe goroutine's defer - if the process exits
+// first, the server survives as an orphan, which is the leak this exists to
+// close. Interactive cancellation does not wait, because blocking the UI for up
+// to 3s is exactly what the user just asked to stop.
+//
+// Sessions stay in the list: probeDone needs to see the cancelled flag when the
+// discarded result finally arrives, and removes its own entry then.
+func (v *mcpView) cancelProbes(wait bool) int {
+	n := 0
+	for _, s := range v.probeSessions {
+		if s.cancelled {
+			continue
+		}
+		s.cancelled = true
+		s.cancel()
+		n++
+	}
+	if wait {
+		for _, s := range v.probeSessions {
+			select {
+			case <-s.done:
+			case <-time.After(probeTeardownWait):
+			}
+		}
+	}
+	return n
+}
+
+// sweepActive reports whether a confirmed `P` sweep still has targets to run.
+// The confirmation state is NOT this: nothing is running there yet.
+func (v *mcpView) sweepActive() bool {
+	return !v.bulkProbeConfirm && len(v.bulkProbeTargets) > 0
+}
+
+// stopSweep cancels an active `P` sweep: the in-flight probe is stopped and the
+// remaining targets are dropped so probeDone cannot chain into them.
+func (v *mcpView) stopSweep() {
+	v.cancelProbes(false)
+	v.bulkProbeTargets = nil
+	v.bulkProbeIndex = 0
+	v.flash = styleDim.Render("probe sweep cancelled")
 }
 
 // --- filtering + rendering --------------------------------------------------
@@ -1210,8 +1342,14 @@ func (v *mcpView) render() string {
 	}
 
 	if v.probeInFlight > 0 {
+		// The hint is only shown for a sweep: a single `p` probe has nothing left
+		// to chain, so esc would stop one already-running server for no gain.
+		hint := ""
+		if v.sweepActive() {
+			hint = "  (esc to cancel)"
+		}
 		b.WriteString(fitWidth("  "+v.st.spinnerFrame+styleProgress.Render(fmt.Sprintf(
-			"probing %d server(s)…", v.probeInFlight)), v.w))
+			"probing %d server(s)…%s", v.probeInFlight, hint)), v.w))
 		b.WriteString("\n")
 	}
 	if v.bulkProbeConfirm {

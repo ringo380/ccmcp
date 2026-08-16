@@ -84,8 +84,9 @@ func TestEffectiveAppliesEveryScopeRule(t *testing.T) {
 			"claudeAiMcpEverConnected": []any{"claude.ai Notion", "claude.ai Gmail"},
 		},
 		map[string]any{
-			"shared-live":   map[string]any{"command": "s"},
-			"shared-denied": map[string]any{"command": "s"},
+			"shared-live":        map[string]any{"command": "s"},
+			"shared-denied":      map[string]any{"command": "s"},
+			"shared-not-allowed": map[string]any{"command": "s"},
 		},
 		map[string]any{"parked": map[string]any{"command": "p"}},
 		map[string][]config.PluginMCPSource{
@@ -102,6 +103,10 @@ func TestEffectiveAppliesEveryScopeRule(t *testing.T) {
 	// Project-scope config that only the loaded ClaudeJSON can carry.
 	in.CJ.SetProjectMCP(in.Project, "local-live", map[string]any{"command": "l"})
 	in.CJ.SetProjectDisabledMcpServers(in.Project, []string{"user-off", "shared-denied", "ghost-orphan"})
+	// A non-empty allow-list is exclusive: shared-not-allowed is absent from it
+	// and must not load. Without this leg, inverting the allow-list condition
+	// left every suite green.
+	in.CJ.SetProjectMcpjsonEnabled(in.Project, []string{"shared-live", "shared-denied"})
 	in.CJ.SetProjectEnabledMcpServers(in.Project, []string{"computer-use"})
 
 	got := names(Effective(in))
@@ -267,4 +272,37 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// TestMcpjsonExcludedRule pins the allow/deny rule directly, because once both
+// surfaces call one helper the cross-surface agreement test can no longer catch
+// a change to it - there is only one copy left to change.
+func TestMcpjsonExcludedRule(t *testing.T) {
+	set := func(names ...string) map[string]bool {
+		m := map[string]bool{}
+		for _, n := range names {
+			m[n] = true
+		}
+		return m
+	}
+	cases := []struct {
+		name     string
+		allow    map[string]bool
+		deny     map[string]bool
+		server   string
+		wantExcl bool
+		why      string
+	}{
+		{"no lists", nil, nil, "srv", false, "with neither list, everything loads"},
+		{"empty allow-list is not allow-nothing", set(), set(), "srv", false, "an absent allow-list must not exclude everything"},
+		{"denied outright", nil, set("srv"), "srv", true, "an explicit deny excludes"},
+		{"on a non-empty allow-list", set("srv", "other"), nil, "srv", false, "listed servers load"},
+		{"missing from a non-empty allow-list", set("other"), nil, "srv", true, "a non-empty allow-list is exclusive"},
+		{"deny wins over allow", set("srv"), set("srv"), "srv", true, "an explicit deny beats the allow-list"},
+	}
+	for _, c := range cases {
+		if got := McpjsonExcluded(c.server, c.allow, c.deny); got != c.wantExcl {
+			t.Errorf("%s: McpjsonExcluded(%q) = %v, want %v - %s", c.name, c.server, got, c.wantExcl, c.why)
+		}
+	}
 }

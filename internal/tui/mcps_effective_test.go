@@ -57,6 +57,17 @@ func buildAgreementState(t *testing.T) *state {
 		"mcpServers": map[string]any{"from-off-plugin": map[string]any{"command": "poff"}},
 	})
 
+	// A real .mcp.json plus allow/deny lists: the SourceProject leg was entirely
+	// unguarded while this fixture wrote no file at all, and the allow-list rule
+	// lives in two copies (mcpscope and the tab's rebuild()).
+	write(filepath.Join(proj, ".mcp.json"), map[string]any{
+		"mcpServers": map[string]any{
+			"shared-allowed":     map[string]any{"command": "sa"},
+			"shared-not-allowed": map[string]any{"command": "sna"},
+			"shared-denied":      map[string]any{"command": "sd"},
+		},
+	})
+
 	write(filepath.Join(home, ".claude.json"), map[string]any{
 		"anonymousId": "sandbox",
 		"mcpServers": map[string]any{
@@ -66,10 +77,13 @@ func buildAgreementState(t *testing.T) *state {
 		"claudeAiMcpEverConnected": []any{"claude.ai Notion", "claude.ai Gmail"},
 		"projects": map[string]any{
 			proj: map[string]any{
-				"mcpServers":            map[string]any{"local-live": map[string]any{"command": "l"}},
-				"disabledMcpServers":    []any{"user-off", "claude.ai Gmail", "vanished-orphan"},
-				"enabledMcpServers":     []any{"parked-builtin", "computer-use"},
-				"enabledMcpjsonServers": []any{},
+				"mcpServers":         map[string]any{"local-live": map[string]any{"command": "l"}},
+				"disabledMcpServers": []any{"user-off", "claude.ai Gmail", "vanished-orphan"},
+				"enabledMcpServers":  []any{"parked-builtin", "computer-use"},
+				// A non-empty allow-list: everything not on it is excluded, which is
+				// the half of the rule an inverted condition flips.
+				"enabledMcpjsonServers":  []any{"shared-allowed", "shared-denied"},
+				"disabledMcpjsonServers": []any{"shared-denied"},
 			},
 		},
 	})
@@ -191,12 +205,15 @@ func TestMCPRowsAgreeWithMCPScope(t *testing.T) {
 	for _, n := range fromRows {
 		seen[n] = true
 	}
-	for _, want := range []string{"user-live", "local-live", "from-on-plugin", "Notion", "computer-use"} {
+	for _, want := range []string{"user-live", "local-live", "from-on-plugin", "Notion", "computer-use", "shared-allowed"} {
 		if !seen[want] {
 			t.Fatalf("fixture is not exercising %q - the comparison is weaker than it claims: %v", want, fromRows)
 		}
 	}
-	for _, unwanted := range []string{"user-off", "from-off-plugin", "Gmail", "parked-builtin", "vanished-orphan"} {
+	for _, unwanted := range []string{
+		"user-off", "from-off-plugin", "Gmail", "parked-builtin", "vanished-orphan",
+		"shared-not-allowed", "shared-denied",
+	} {
 		if seen[unwanted] {
 			t.Fatalf("%q must not load here: %v", unwanted, fromRows)
 		}
