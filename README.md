@@ -256,6 +256,9 @@ ccmcp mcp prune [--dry-run] [--yes]            # remove stale entries from disab
 ccmcp mcp stash   [<name>...]                  # user-scope → stash
 ccmcp mcp restore [<name>...]                  # stash → user-scope (alias: unstash)
 ccmcp mcp unstash [<name>...]                  # same as restore
+ccmcp mcp probe   [names...] [--timeout D] [--force]   # measure stdio MCP tool-schema
+                                                # cost; no names = every server effective
+                                                # in this project; results cache to disk
 
 ccmcp profile save|list|show|use|delete <name> [<mcp>...]
 ccmcp profile export <name> [--out FILE] [--with-config]
@@ -285,7 +288,8 @@ ccmcp doctor md --llm-review [--provider anthropic|openai] # + LLM quality revie
 
 ccmcp context [--json]                                     # estimate per-turn context cost of enabled
                                                              # plugins/MCP servers; MCP tool schemas excluded
-                                                             # until probed
+                                                             # until probed. This command only reads the
+                                                             # probe cache - it never starts a server itself
 
 ccmcp tui --dump [--tab mcps|plugins|marketplaces|discover|skills|agents|commands|profiles|summary|doctor]   # print initial render, no TTY
 ```
@@ -299,6 +303,34 @@ and if a newer release is out it prints a release-notes excerpt and prompts
 binary and runs the matching upgrade command. On n the prompt is suppressed for
 24 hours or until a newer release ships. Cached at
 `~/.claude/plugins/cache/ccmcp-update-check.json`.
+
+## Measuring MCP tool-schema cost
+
+MCP servers add to every turn's context in a way ccmcp can't see without asking
+the server directly: its `initialize` response and `tools/list` schema. `ccmcp mcp
+probe` (or `p`/`P` in the MCPs tab) starts the server as a subprocess, asks it
+those two things over JSON-RPC, and caches the token cost - `ccmcp context` then
+folds that cached figure into the total. `ccmcp context` never starts a server on
+its own; an MCP server's schema is only fetched by an explicit keypress or CLI
+invocation.
+
+Figures are estimates, and they vary by machine and by which servers are
+configured - there's no universal number. For a sense of scale, on one
+development machine: assets (skills, agents, commands) came to ≈13.4k
+tokens/turn from about 330 items, and probing 3 configured MCP servers added
+≈13.4k more tokens loaded, with only ≈423 tokens deferred. One 45-tool server
+alone accounted for ≈8.9k of that (≈198 tokens/tool). Treat these only as an
+example of what "loaded" vs. "deferred" tool-schema cost looks like in
+practice, not as a target for any other setup.
+
+A server that hasn't been probed yet, can't be probed (a remote claude.ai
+integration or url-based entry), failed to respond, or shares a display name
+with another loaded server (so its cost can't be attributed to either one)
+always renders `-` with the reason - never a confident `≈0`. It's counted
+toward the "unmeasured" tally instead. A cached failure persists until you
+re-run with `--force`; a probe run under an explicit `--timeout` only caches
+successes, so a deliberately short timeout can't overwrite a real prior
+measurement with a caller-induced failure.
 
 ## Per-project overrides
 
@@ -370,6 +402,12 @@ internal/
                   + user URLs merged, preview-clone + conflict detection)
   doctor/         CLAUDE.md + MEMORY.md structural linter + asset lint
   install/        plugin marketplace installer (4 source formats)
+  mcpprobe/       probes a stdio MCP server over JSON-RPC (initialize +
+                  tools/list) under a hard timeout, and caches results
+                  (including failures) to disk keyed by a config hash
+  mcpscope/       single shared definition of which MCP servers are
+                  effective in a project - consumed by both the CLI
+                  (`mcp probe`, `context`) and the TUI's MCPs tab
   paths/          config path resolution ($CLAUDE_CONFIG_DIR aware)
   report/         snapshot / sweep / drift / audit report generators
   selfupdate/     launch-time check vs GitHub releases + Y/n prompt + brew/go

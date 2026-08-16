@@ -21,6 +21,17 @@ All notable changes to this project are documented here. Format based on
   locally, or shares a display name with another loaded server (so its cost
   cannot be attributed) renders `-` with the reason rather than a confident
   `≈0`, and counts toward the header's unmeasured tally.
+- `ccmcp mcp probe [names...]` runs the same measurement from the CLI, with
+  `--timeout` and `--force` flags. With no names, it probes every server that's
+  effective in the current project. `ccmcp context` only ever reads the probe
+  cache - it never starts a server itself.
+
+### Security
+
+- ccmcp now executes configured MCP server commands as subprocesses in order to
+  probe them, but only in direct response to an explicit keypress (`p`/`P` in
+  the MCPs tab) or CLI invocation (`ccmcp mcp probe`) - never implicitly, and
+  never as a side effect of `ccmcp context`, `ccmcp status`, or opening the TUI.
 
 ### Changed
 
