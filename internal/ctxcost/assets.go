@@ -15,6 +15,10 @@ type Input struct {
 	Agents   []agents.Agent
 	Commands []commands.Command
 
+	// MCP is the per-server probe state, keyed by the server name as the MCPs
+	// tab displays it. See MCPState for the unmeasured-vs-zero contract.
+	MCP map[string]MCPState
+
 	// PluginEnabled reports whether a plugin id ("name@marketplace") is enabled.
 	// Assets from a disabled plugin are still costed into ByPlugin (so the UI can
 	// show what enabling it would add) but are excluded from the Project total,
@@ -115,5 +119,22 @@ func Build(in Input) (*Index, error) {
 			return nil, err
 		}
 	}
+
+	// MCP servers fold through the same AddSource call path used for
+	// per-server (ByMCP) and project accounting, so the two stay arithmetically
+	// consistent by construction rather than via a parallel sum.
+	for name, st := range in.MCP {
+		src := Source{Cost: st.Cost, Tier: TierProbed, Reason: st.Reason}
+		if !st.Probed {
+			src.Tier = TierUnknown
+		}
+
+		b := idx.ByMCP[name]
+		b.AddSource(src)
+		idx.ByMCP[name] = b
+
+		idx.Project.AddSource(src)
+	}
+
 	return idx, nil
 }
