@@ -99,18 +99,28 @@ func exists(path string) bool {
 // nesting requires two or more commands per level - and tea.Sequence's message
 // type is unexported, so a sequenced command cannot be unwrapped this way. The
 // implicit paths in this view use Batch, not Sequence.
-func runCmd(cmd tea.Cmd) tea.Msg {
-	return drainCmd(cmd, 0)
+func runCmd(t *testing.T, cmd tea.Cmd) tea.Msg {
+	t.Helper()
+	return drainCmd(t, cmd, 0)
 }
 
-func drainCmd(cmd tea.Cmd, depth int) tea.Msg {
-	if cmd == nil || depth > 16 {
+func drainCmd(t *testing.T, cmd tea.Cmd, depth int) tea.Msg {
+	t.Helper()
+	if cmd == nil {
 		return nil
+	}
+	// Fails rather than returning nil: silently abandoning a command is the one
+	// outcome the implicit-probe test must never produce, and a nest deeper than
+	// this is precisely how a probe would slip past it unnoticed. The cap exists
+	// only to stop a self-referential batch from recursing forever.
+	if depth > 16 {
+		t.Fatalf("command nesting exceeded depth %d - a command was left undrained, "+
+			"so an implicit probe could run unobserved", depth)
 	}
 	msg := cmd()
 	if batch, ok := msg.(tea.BatchMsg); ok {
 		for _, c := range batch {
-			drainCmd(c, depth+1)
+			drainCmd(t, c, depth+1)
 		}
 		return nil
 	}
@@ -155,13 +165,13 @@ func TestMCPsTabNeverProbesImplicitly(t *testing.T) {
 	for _, msg := range steps {
 		var cmd tea.Cmd
 		im, cmd = im.Update(msg)
-		runCmd(cmd)
+		runCmd(t, cmd)
 	}
 	m.mcps.rebuild()
 	_ = im.View()
 	_ = m.mcps.render()
-	runCmd(m.tabEnterCmd())
-	runCmd(m.mcps.initialCheckCmd())
+	runCmd(t, m.tabEnterCmd())
+	runCmd(t, m.mcps.initialCheckCmd())
 
 	if exists(sentinel) || exists(sentinel+"-2") {
 		t.Fatalf("the MCPs tab spawned an MCP server without the user asking: %s", sentinel)
@@ -188,7 +198,7 @@ func TestProbeKeyProbesOnlySelectedRow(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("p must schedule a probe for the selected row")
 	}
-	msg := runCmd(cmd)
+	msg := runCmd(t, cmd)
 	if !exists(aSentinel) {
 		t.Fatal("p did not probe the selected row")
 	}
@@ -223,7 +233,7 @@ func TestBulkProbeAsksForConfirmationFirst(t *testing.T) {
 
 	im, cmd := press(im, "P")
 	if cmd != nil {
-		runCmd(cmd)
+		runCmd(t, cmd)
 	}
 	if exists(aSentinel) || exists(bSentinel) {
 		t.Fatal("P must not spawn anything before the user confirms")
@@ -236,7 +246,7 @@ func TestBulkProbeAsksForConfirmationFirst(t *testing.T) {
 	// Confirming runs the sweep, one server at a time: each result chains the next.
 	im, cmd = press(im, "P")
 	for i := 0; i < 5 && cmd != nil; i++ {
-		msg := runCmd(cmd)
+		msg := runCmd(t, cmd)
 		if msg == nil {
 			break
 		}
@@ -258,13 +268,90 @@ func TestBulkProbeCancelDoesNotProbe(t *testing.T) {
 	var im tea.Model = m
 	im, _ = im.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	im, _ = press(im, "P")
+	// Without this the test passes vacuously: if `P` stopped prompting at all,
+	// there would be nothing to cancel and the sentinel would stay absent for the
+	// wrong reason.
+	if !m.mcps.bulkProbeConfirm {
+		t.Fatal("P must have entered the confirmation state before esc is meaningful")
+	}
+	if len(m.mcps.bulkProbeTargets) == 0 {
+		t.Fatal("the confirmation must have staged at least one target")
+	}
 	im, cmd := press(im, "esc")
-	runCmd(cmd)
+	runCmd(t, cmd)
 	if exists(sentinel) {
 		t.Fatal("cancelling the bulk-probe confirmation must not probe anything")
 	}
+	if len(m.mcps.bulkProbeTargets) != 0 {
+		t.Fatal("cancelling must drop the staged targets")
+	}
 	if m.mcps.capturingInput() {
 		t.Fatal("esc must leave the confirmation mode")
+	}
+}
+
+// TestOutOfBandProbeDoesNotAdvanceTheSweep: a sweep must count only its OWN
+// probes. Attributing any arriving result to it advanced the index and fired the
+// "probed N server(s)" completion while probes were still in flight, so the
+// sweep silently lost its one-at-a-time guarantee and then lied about finishing.
+// The single-probe key is separately guarded from starting one at all mid-sweep.
+func TestOutOfBandProbeDoesNotAdvanceTheSweep(t *testing.T) {
+	aCfg := map[string]any{"command": "a-cmd"}
+	zCfg := map[string]any{"command": "z-cmd"}
+	other := map[string]any{"command": "other-cmd"}
+	st, _ := buildProbeState(t, map[string]any{"aaa": aCfg, "zzz": zCfg, "other": other})
+	m := newModel(st)
+	m.mcps.rebuild()
+	var im tea.Model = m
+	im, _ = im.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// Stage and confirm a sweep, but do NOT run the command - the sweep is now
+	// mid-flight with its first probe outstanding.
+	im, _ = press(im, "P")
+	im, cmd := press(im, "P")
+	if cmd == nil {
+		t.Fatal("confirming must start the sweep")
+	}
+	total := len(m.mcps.bulkProbeTargets)
+	if total < 2 {
+		t.Fatalf("fixture: need a multi-target sweep, got %d", total)
+	}
+	idxBefore, inflightBefore := m.mcps.bulkProbeIndex, m.mcps.probeInFlight
+	if inflightBefore != 1 {
+		t.Fatalf("the sweep must have exactly one probe in flight, got %d", inflightBefore)
+	}
+
+	// An untagged result arrives - what a single-row probe would deliver.
+	target, _, _ := mcpprobe.TargetFromConfig("other", other)
+	im, _ = im.Update(mcpProbeDoneMsg{res: mcpprobe.Result{
+		Key: target.Key(), Name: "other", OK: true, InstructionTokens: 10, NameTokens: 1,
+	}})
+
+	if m.mcps.bulkProbeIndex != idxBefore {
+		t.Fatalf("an out-of-band result must not advance the sweep index (%d -> %d)",
+			idxBefore, m.mcps.bulkProbeIndex)
+	}
+	if len(m.mcps.bulkProbeTargets) != total {
+		t.Fatalf("an out-of-band result must not end the sweep (%d targets -> %d)",
+			total, len(m.mcps.bulkProbeTargets))
+	}
+	view := stripANSI(im.View())
+	if strings.Contains(view, "probed 2 server(s)") || strings.Contains(view, "probed 3 server(s)") {
+		t.Fatalf("the sweep must not claim completion while its probes are outstanding:\n%s", view)
+	}
+
+	// And the single-probe key cannot start one mid-sweep in the first place.
+	before := m.mcps.probeInFlight
+	im, single := press(im, "p")
+	if single != nil {
+		t.Fatal("p must not start a probe while another is in flight")
+	}
+	if m.mcps.probeInFlight != before {
+		t.Fatalf("a refused probe must not change the in-flight count (%d -> %d)",
+			before, m.mcps.probeInFlight)
+	}
+	if out := stripANSI(im.View()); !strings.Contains(out, "already running") {
+		t.Fatalf("refusing a concurrent probe must say why:\n%s", out)
 	}
 }
 
@@ -527,6 +614,16 @@ func TestDuplicateNameRendersUnmeasuredNotTheFirstRowsCost(t *testing.T) {
 	if !strings.Contains(out, "(1 unmeasured)") {
 		t.Fatalf("the colliding name must count toward the header's unmeasured tally:\n%s", out)
 	}
+	// The row must also SAY why it reads "-". A dash the user cannot account for
+	// is only half the fix, and the header tally alone does not name the row.
+	if !strings.Contains(out, "duplicate server name") {
+		t.Fatalf("the colliding row must explain its own dash:\n%s", out)
+	}
+	// The reason folds into the existing description budget, so the common case
+	// keeps showing the command rather than boilerplate.
+	if strings.Contains(out, "not probed yet") {
+		t.Fatalf("the routine never-probed reason must not crowd out the description:\n%s", out)
+	}
 }
 
 // TestMCPsHeaderGeometryWithProbeData proves the header change numerically: the
@@ -557,11 +654,10 @@ func TestMCPsHeaderGeometryWithProbeData(t *testing.T) {
 			if !strings.Contains(lines[1], "loaded") || !strings.Contains(lines[1], "deferred") {
 				t.Fatalf("the header must render the loaded/deferred pair: %q", lines[1])
 			}
-			for i, ln := range lines[:2] {
-				if cols := lipgloss.Width(ln); cols > w {
-					t.Fatalf("header line %d is %d columns at w=%d: %q", i, cols, w, ln)
-				}
-			}
+			// EVERY line, not just the two header lines: the earlier lines[:2]
+			// slice left both conditional lines (spinner, bulk confirm) unchecked,
+			// and the confirm prompt was 82 columns.
+			assertAllLinesFit(t, lines, w)
 			if got := physicalRows(t, body, w); got != len(lines) {
 				t.Fatalf("w=%d: %d logical lines rendered as %d physical rows", w, len(lines), got)
 			}
@@ -574,6 +670,45 @@ func TestMCPsHeaderGeometryWithProbeData(t *testing.T) {
 				t.Fatalf("w=%d: expected %d lines (%d header + %d rows + trailing), got %d:\n%s",
 					w, want, headerRows, len(m.mcps.visibleRows()), len(lines), body)
 			}
+
+			// Same body with the bulk-probe confirmation open. w=80 is the real
+			// working width here, not an edge case, and a confirmation whose only
+			// cancel hint is clipped away is a defect however narrow the terminal.
+			var im tea.Model = m
+			im, _ = im.Update(key("P"))
+			if !m.mcps.bulkProbeConfirm {
+				t.Fatal("P must open the confirmation")
+			}
+			cbody := stripANSI(m.mcps.render())
+			clines := strings.Split(cbody, "\n")
+			assertAllLinesFit(t, clines, w)
+			if got := physicalRows(t, cbody, w); got != len(clines) {
+				t.Fatalf("w=%d with the prompt open: %d logical lines rendered as %d physical rows",
+					w, len(clines), got)
+			}
+			if len(clines) != want+1 {
+				t.Fatalf("w=%d: the prompt must cost exactly one line (%d -> %d)", w, want, len(clines))
+			}
+			if !strings.Contains(cbody, "esc: cancel") {
+				t.Fatalf("w=%d: the cancel hint must survive the width clamp:\n%s", w, cbody)
+			}
+			if !strings.Contains(cbody, "P: confirm") {
+				t.Fatalf("w=%d: the confirm hint must survive the width clamp:\n%s", w, cbody)
+			}
+			// The per-turn figure must still be there with the prompt open.
+			if !strings.Contains(clines[1], "loaded") {
+				t.Fatalf("w=%d: the per-turn header line must survive: %q", w, clines[1])
+			}
 		})
+	}
+}
+
+// assertAllLinesFit fails if any rendered line exceeds w display columns.
+func assertAllLinesFit(t *testing.T, lines []string, w int) {
+	t.Helper()
+	for i, ln := range lines {
+		if cols := lipgloss.Width(ln); cols > w {
+			t.Fatalf("line %d is %d columns at w=%d: %q", i, cols, w, ln)
+		}
 	}
 }

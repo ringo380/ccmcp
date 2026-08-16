@@ -36,6 +36,11 @@ var scopeDesc = map[string]string{
 
 var scopeCycle = []string{scopeEffective, scopeLocal, scopeUser, scopeProject, scopeStash}
 
+// reasonNotProbedYet is the unmeasured reason for a server that simply has no
+// cache entry. Named because costReason has to recognize it: it is the one
+// reason not worth repeating on every row.
+const reasonNotProbedYet = "not probed yet - press p"
+
 type mcpView struct {
 	st *state
 
@@ -83,6 +88,13 @@ type mcpUpdateCheckMsg struct {
 // error - a failure is a cached fact - so there is no err field here.
 type mcpProbeDoneMsg struct {
 	res mcpprobe.Result
+
+	// bulk marks this result as one the `P` sweep started. The sweep must only
+	// ever count its OWN probes: attributing any arriving result to it advanced
+	// bulkProbeIndex and fired the "probed N server(s)" completion while probes
+	// were still in flight, so the sweep both lost its serial guarantee and
+	// claimed to be finished when it was not.
+	bulk bool
 }
 
 // mcpRow represents one (display-name, source) pair. Two rows can share a Name
@@ -374,7 +386,7 @@ func (v *mcpView) publishCostStates() {
 		}
 		res, hit := cache.Get(t.Key())
 		if !hit {
-			states[r.Name] = ctxcost.MCPState{Probed: false, Reason: "not probed yet - press p"}
+			states[r.Name] = ctxcost.MCPState{Probed: false, Reason: reasonNotProbedYet}
 			continue
 		}
 		// MCPStateFrom is the single conversion point, and the reason it exists:
@@ -493,7 +505,7 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	if m, ok := msg.(mcpProbeDoneMsg); ok {
-		return v.probeDone(m.res)
+		return v.probeDone(m.res, m.bulk)
 	}
 	if v.bulkProbeConfirm {
 		if key, ok := msg.(tea.KeyMsg); ok {
@@ -1022,6 +1034,14 @@ func (v *mcpView) doMove(rowKey, target string) {
 // Never probes inline: the work runs as a tea.Cmd so a server that takes the
 // full mcpprobe timeout does not freeze the UI.
 func (v *mcpView) probeRow(r mcpRow) tea.Cmd {
+	// Refused, not queued, while anything is already running: a single probe
+	// started during a `P` sweep ran a second server concurrently, which is
+	// exactly the one-at-a-time property the sweep promises. askBulkProbe has the
+	// same guard.
+	if v.probeInFlight > 0 || len(v.bulkProbeTargets) > 0 {
+		v.flash = styleDim.Render("a probe is already running - wait for it to finish")
+		return nil
+	}
 	t, ok, reason := probeTargetFor(r)
 	if !ok {
 		v.flash = styleWarn.Render("can't probe " + r.Name + " - " + reason)
@@ -1029,7 +1049,7 @@ func (v *mcpView) probeRow(r mcpRow) tea.Cmd {
 	}
 	v.probeInFlight++
 	v.flash = styleProgress.Render("probing " + r.Name + "… (spawning the server)")
-	return probeCmd(t)
+	return probeCmd(t, false)
 }
 
 // askBulkProbe stages a sweep over every probeable visible row and asks for
@@ -1075,13 +1095,15 @@ func (v *mcpView) bulkProbeNext() tea.Cmd {
 		return nil
 	}
 	v.probeInFlight++
-	return probeCmd(v.bulkProbeTargets[v.bulkProbeIndex])
+	return probeCmd(v.bulkProbeTargets[v.bulkProbeIndex], true)
 }
 
 // probeDone records a completed probe and refreshes the estimate. The cache is
 // written through immediately: a probe result is a measurement, not a pending
 // edit, and caching a failure is what stops a hanging server re-hanging the user.
-func (v *mcpView) probeDone(res mcpprobe.Result) tea.Cmd {
+// fromBulk says the result belongs to the `P` sweep; a single-row probe that
+// completes while a sweep is running must not advance it.
+func (v *mcpView) probeDone(res mcpprobe.Result, fromBulk bool) tea.Cmd {
 	if v.probeInFlight > 0 {
 		v.probeInFlight--
 	}
@@ -1092,7 +1114,7 @@ func (v *mcpView) probeDone(res mcpprobe.Result) tea.Cmd {
 	// so rebuilds the estimate with this result folded in.
 	v.rebuild()
 
-	bulk := v.bulkProbeIndex < len(v.bulkProbeTargets)
+	bulk := fromBulk && v.bulkProbeIndex < len(v.bulkProbeTargets)
 	switch {
 	case saveErr != nil:
 		v.flash = styleErr.Render("probe cache not saved: " + saveErr.Error())
@@ -1115,9 +1137,9 @@ func (v *mcpView) probeDone(res mcpprobe.Result) tea.Cmd {
 
 // probeCmd runs one probe off the UI goroutine. mcpprobe.Probe bounds itself
 // with its own timeout and never returns an error.
-func probeCmd(t mcpprobe.Target) tea.Cmd {
+func probeCmd(t mcpprobe.Target, bulk bool) tea.Cmd {
 	return func() tea.Msg {
-		return mcpProbeDoneMsg{res: mcpprobe.Probe(context.Background(), t)}
+		return mcpProbeDoneMsg{res: mcpprobe.Probe(context.Background(), t), bulk: bulk}
 	}
 }
 
@@ -1232,8 +1254,11 @@ func (v *mcpView) render() string {
 		b.WriteString("\n")
 	}
 	if v.bulkProbeConfirm {
+		// Kept short enough to survive fitWidth at 80 columns WITH the cancel
+		// hint: the previous wording was 82 columns, so the clamp ate "esc to
+		// cancel" and left a confirmation with no visible way out.
 		b.WriteString(fitWidth(styleWarn.Render(fmt.Sprintf(
-			"Probe %d server(s)? Each one is started as a subprocess. P to confirm, esc to cancel",
+			"Probe %d server(s)? Starts each one. P: confirm  esc: cancel",
 			len(v.bulkProbeTargets))), v.w))
 		b.WriteString("\n")
 	}
@@ -1318,7 +1343,14 @@ func (v *mcpView) formatRow(r mcpRow, idx *ctxcost.Index) string {
 	}
 	// Description budget shrank from 54 to 44 to pay for the cost column, so the
 	// row is no wider than it was before.
-	suffix := truncate(r.Description, 44)
+	desc := r.Description
+	if why := v.costReason(r); why != "" {
+		// Folded into the SAME 44-column budget rather than appended, so
+		// explaining the "-" costs no width. An honest "-" the user cannot
+		// account for is only half an answer.
+		desc += " - " + why
+	}
+	suffix := truncate(desc, 44)
 	line := fmt.Sprintf("%s %-28s %s %8s  %s", mark, r.Name, badgeStr, v.rowCost(idx, r), styleDim.Render(suffix))
 	if s, ok := v.st.updates.MCP(r.Name); ok && s.Outdated {
 		line += "  " + styleWarn.Render("↑ "+s.Remote)
@@ -1343,6 +1375,22 @@ func (v *mcpView) rowCost(idx *ctxcost.Index, r mcpRow) string {
 		return ctxcost.Human(ctxcost.Unmeasured)
 	}
 	return ctxcost.Human(b.MCP.Loaded)
+}
+
+// costReason explains a row's "-" when the explanation is not obvious from the
+// row itself.
+//
+// The plain "never probed" case is deliberately excluded: it applies to nearly
+// every row before the user presses `p`, the `-` already says it, and repeating
+// it on each line would crowd out the command the description column exists to
+// show. What IS surfaced is the case the user cannot deduce - a name collision,
+// a failed probe, a source that cannot be probed locally.
+func (v *mcpView) costReason(r mcpRow) string {
+	st, ok := v.st.mcpStates[r.Name]
+	if !ok || st.Probed || st.Reason == "" || st.Reason == reasonNotProbedYet {
+		return ""
+	}
+	return st.Reason
 }
 
 // initialCheckCmd kicks off update probes for every MCP with a detectable npm/pypi
