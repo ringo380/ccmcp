@@ -146,6 +146,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, line.next
 	}
+	// A probe result belongs to the MCPs view no matter which tab is focused when
+	// it lands. updateActive() dispatches only to the current tab, so without this
+	// a probe started with `p` and completed after a tab switch would be dropped:
+	// the result never cached, and a bulk sweep stalled with its chain broken.
+	if pm, ok := msg.(mcpProbeDoneMsg); ok {
+		cmd := m.mcps.update(pm)
+		if m.mcps.flash != "" {
+			m.message = m.mcps.flash
+			m.mcps.flash = ""
+		}
+		return m, cmd
+	}
 	// Global search overlay captures all input (and the textinput's blink
 	// ticks) while open. Window-size messages still flow to the resize handler
 	// below so the layout stays correct if the terminal is resized mid-search.

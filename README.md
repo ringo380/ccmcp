@@ -135,6 +135,8 @@ apart from genuinely absent sources.
 | `S` | stash the current row (or unstash if it's already in stash) |
 | `m` | move an MCP's config between user / local / stash |
 | `s` | cycle scope: effective → local → user → project → stash |
+| `p` | probe the current server for its per-turn tool-schema cost (starts the server) |
+| `P` | probe every visible server (asks first - one subprocess per server) |
 | `/` | filter by substring (enter to lock, esc to cancel) |
 | `c` | clear filter |
 | `j` / `k` / arrows | navigate |
@@ -346,7 +348,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-482 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, plugin MCP scanning (.mcp.json + plugin.json manifest merge), doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, per-turn context-cost estimation (`ccmcp context`) across skills/agents/commands (MCP tool schemas are reported as unmeasured until a server probe lands, with a versioned on-disk cache so a completed or failed probe is not repeated on every visit), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+492 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, plugin MCP scanning (.mcp.json + plugin.json manifest merge), doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, per-turn context-cost estimation (`ccmcp context`) across skills/agents/commands (MCP tool schemas are reported as unmeasured until a server probe lands, with a versioned on-disk cache so a completed or failed probe is not repeated on every visit; the MCPs tab probes only on `p`/`P` and never implicitly), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

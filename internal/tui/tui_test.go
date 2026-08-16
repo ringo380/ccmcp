@@ -78,6 +78,7 @@ func buildState(t *testing.T) (*state, paths.Paths) {
 		KnownMarkets:     filepath.Join(home, ".claude", "plugins", "known_marketplaces.json"),
 		Stash:            filepath.Join(home, ".claude-mcp-stash.json"),
 		Profiles:         filepath.Join(home, ".claude-mcp-profiles.json"),
+		ProbeCache:       filepath.Join(home, ".claude-mcp-probe-cache.json"),
 		BackupsDir:       filepath.Join(home, ".claude-mcp-backups"),
 		Ignores:          filepath.Join(home, ".claude-ccmcp-ignores.json"),
 	}

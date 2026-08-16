@@ -14,6 +14,11 @@ All notable changes to this project are documented here. Format based on
   per-plugin cost column.
 - Both tabs display the session-start prompt prefix from the project's newest
   session transcript, so the estimate can be checked against a real number.
+- The MCPs tab can measure a stdio MCP server's tool-schema cost on demand: `p`
+  probes the selected server, `P` probes every visible one after confirming
+  (each is started as a subprocess). Results are cached on disk, and each row
+  shows its measured cost - a server that has not been probed, or cannot be
+  probed locally, renders `-` with the reason rather than a confident `≈0`.
 
 ### Changed
 
