@@ -158,12 +158,24 @@ func probeInto(ctx context.Context, t Target, res *Result) error {
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		// Start is never reached, so os/exec's own parent-side pipe cleanup
+		// never runs either - close what we already opened ourselves.
+		_ = stdin.Close()
 		return fmt.Errorf("cannot open stdout: %v", err)
 	}
 	// Servers log freely to stderr. Discarding through a pipe that os/exec
 	// drains in the background keeps a chatty server from filling the pipe
 	// buffer and blocking forever on its own log writes.
 	cmd.Stderr = io.Discard
+	// Because Stderr is not an *os.File, os/exec builds a pipe for it, and
+	// Wait blocks until every holder of that pipe's write end closes it. A
+	// descendant that escapes the process group - one that calls setsid, or
+	// daemonizes - survives the group SIGKILL below while still holding the
+	// inherited stderr, and Wait would then block forever, defeating the
+	// timeout this whole function is built around. WaitDelay bounds exactly
+	// that: once the context is done or the child has exited, Wait waits at
+	// most this long before closing the pipes and returning.
+	cmd.WaitDelay = 2 * time.Second
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("cannot start server: %v", err)
@@ -219,13 +231,17 @@ func probeInto(ctx context.Context, t Target, res *Result) error {
 		return fmt.Errorf("initialize failed: %v", err)
 	}
 	var initRes initializeResult
-	if err := json.Unmarshal(initRaw, &initRes); err == nil {
-		n, countErr := tokens.Count(initRes.Instructions)
-		if countErr != nil {
-			return fmt.Errorf("cannot measure tokens: %v", countErr)
-		}
-		res.InstructionTokens = n
+	// Fail rather than skip: a swallowed unmarshal would leave
+	// InstructionTokens at zero on an OK result, and a zero that means
+	// "never measured" is the exact confusion this feature exists to remove.
+	if err := json.Unmarshal(initRaw, &initRes); err != nil {
+		return fmt.Errorf("initialize returned an unreadable result: %v", err)
 	}
+	instructionTokens, err := tokens.Count(initRes.Instructions)
+	if err != nil {
+		return fmt.Errorf("cannot measure tokens: %v", err)
+	}
+	res.InstructionTokens = instructionTokens
 
 	notify := map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"}
 	if err := writeMessage(stdin, notify); err != nil {

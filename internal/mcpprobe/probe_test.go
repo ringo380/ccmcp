@@ -219,6 +219,125 @@ func TestProbeLeavesNoProcessBehind(t *testing.T) {
 	}
 }
 
+// TestProbeReturnsWhenADescendantEscapesTheProcessGroup pins the WaitDelay.
+// cmd.Stderr is io.Discard rather than an *os.File, so os/exec builds a pipe
+// for it, and cmd.Wait blocks until every holder of that pipe's write end
+// closes it. The escapee fixture spawns a setsid child that inherits stderr:
+// the group SIGKILL cannot reach it, so without a WaitDelay bounding Wait the
+// probe blocks forever and the timeout it is built around means nothing.
+func TestProbeReturnsWhenADescendantEscapesTheProcessGroup(t *testing.T) {
+	pidfile := filepath.Join(t.TempDir(), "pids")
+	target := fakeTarget("escapee", "FAKE_PIDFILE", pidfile)
+
+	// The escapee outlives the probe by design and nothing else will reap it,
+	// so registered up front - it must be cleaned up even if this test fails
+	// at the bound below.
+	t.Cleanup(func() {
+		for _, pid := range pidsBestEffort(pidfile) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	})
+
+	// The probe's own budget; Wait then costs at most one WaitDelay on top.
+	ctx := shortCtx(t, 700*time.Millisecond)
+	// Comfortably above 700ms + the 2s WaitDelay, and far below any plausible
+	// test timeout - so a missing WaitDelay fails here instead of hanging.
+	const bound = 6 * time.Second
+
+	done := make(chan Result, 1)
+	start := time.Now()
+	go func() { done <- Probe(ctx, target) }()
+
+	var res Result
+	select {
+	case res = <-done:
+	case <-time.After(bound):
+		t.Fatalf("Probe did not return within %s - cmd.Wait is blocked on a stderr pipe held by an escaped descendant", bound)
+	}
+	elapsed := time.Since(start)
+
+	if res.OK {
+		t.Fatalf("a server that never replies must not report OK: %+v", res)
+	}
+	if !strings.Contains(res.Err, "timed out") {
+		t.Fatalf("Err = %q, want it to mention the timeout", res.Err)
+	}
+
+	pids := pidsBestEffort(pidfile)
+	if len(pids) != 2 {
+		t.Fatalf("fixture recorded %d pids, want the server and its escapee: %v", len(pids), pids)
+	}
+	if waitForExit(pids[0], 3*time.Second) {
+		t.Fatalf("pid %d (the direct child) is still alive - the group kill did not land", pids[0])
+	}
+	// If this ever fails the fixture stopped escaping, and the test above is
+	// no longer exercising the blocked-Wait path it claims to.
+	if syscall.Kill(pids[1], 0) == syscall.ESRCH {
+		t.Fatalf("pid %d (the escapee) died with the group - the fixture is not escaping, so this test proves nothing", pids[1])
+	}
+
+	t.Logf("Probe returned in %s with a live escaped descendant still holding stderr", elapsed)
+}
+
+// TestProbeSucceedsDespiteANonJSONBanner covers the tolerated-junk path: a
+// server that prints a banner and THEN speaks protocol is still measurable.
+// Without a fixture that does both, sawJunk is only ever observed on failures.
+func TestProbeSucceedsDespiteANonJSONBanner(t *testing.T) {
+	res := Probe(shortCtx(t, 10*time.Second), fakeTarget("banner"))
+	if !res.OK {
+		t.Fatalf("a banner line before valid frames must not fail the probe: %q", res.Err)
+	}
+	if res.Err != "" {
+		t.Fatalf("OK probe carries an error: %q", res.Err)
+	}
+	if len(res.Tools) != 2 {
+		t.Fatalf("got %d tools, want 2: %+v", len(res.Tools), res.Tools)
+	}
+	for _, tl := range res.Tools {
+		if tl.SchemaTokens <= 0 {
+			t.Fatalf("tool %q measured %d tokens", tl.Name, tl.SchemaTokens)
+		}
+	}
+	if res.InstructionTokens <= 0 {
+		t.Fatalf("InstructionTokens = %d, want > 0", res.InstructionTokens)
+	}
+	if res.NameTokens <= 0 {
+		t.Fatalf("NameTokens = %d, want > 0", res.NameTokens)
+	}
+}
+
+// TestProbeRejectsUnreadableInitializeResult pins that a non-object result
+// fails the probe. Skipping it silently would report zero instruction tokens
+// on an OK result - unmeasured dressed up as measured.
+func TestProbeRejectsUnreadableInitializeResult(t *testing.T) {
+	res := Probe(shortCtx(t, 5*time.Second), fakeTarget("badinit"))
+	if res.OK {
+		t.Fatalf("an unreadable initialize result must not report OK: %+v", res)
+	}
+	if !strings.Contains(res.Err, "initialize") {
+		t.Fatalf("Err = %q, want it to name the initialize step", res.Err)
+	}
+	if res.InstructionTokens != 0 || len(res.Tools) != 0 {
+		t.Fatalf("failed probe must not report costs: %+v", res)
+	}
+}
+
+// pidsBestEffort reads whatever pids the fixture has recorded so far, without
+// waiting or failing - for cleanup paths and post-hoc assertions.
+func pidsBestEffort(path string) []int {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, f := range strings.Fields(string(b)) {
+		if n, convErr := strconv.Atoi(f); convErr == nil {
+			pids = append(pids, n)
+		}
+	}
+	return pids
+}
+
 // readPids waits briefly for the fixture to record its pids, then parses them.
 func readPids(t *testing.T, path string) []int {
 	t.Helper()

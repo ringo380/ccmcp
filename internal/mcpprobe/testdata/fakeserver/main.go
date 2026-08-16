@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -32,7 +33,19 @@ func main() {
 	}
 
 	if mode == "hangchild" {
-		spawnSleeper()
+		spawnSleeper(false)
+	}
+	if mode == "escapee" {
+		// A descendant that BOTH leaves the process group (setsid) and keeps
+		// the inherited stderr open. It survives the probe's group SIGKILL, so
+		// the stderr pipe's write end stays open and cmd.Wait has nothing
+		// bounding it but WaitDelay.
+		spawnSleeper(true)
+	}
+	if mode == "banner" {
+		// A non-JSON startup banner emitted BEFORE any valid frame. The probe
+		// must tolerate it and still measure the server.
+		fmt.Println("fakeserver 0.0.1 - listening on stdio")
 	}
 
 	sc := bufio.NewScanner(os.Stdin)
@@ -53,7 +66,7 @@ func main() {
 		id := string(*req.ID)
 
 		switch mode {
-		case "hang", "hangchild":
+		case "hang", "hangchild", "escapee":
 			continue // read everything, answer nothing
 		case "garbage":
 			fmt.Println("[info] starting up, this line is not JSON at all")
@@ -64,6 +77,12 @@ func main() {
 		case "initialize":
 			if mode == "noinit" {
 				emit(`{"jsonrpc":"2.0","id":` + id + `,"error":{"code":-32000,"message":"initialize refused by fake server"}}`)
+				continue
+			}
+			if mode == "badinit" {
+				// A well-formed JSON-RPC response whose result is not an
+				// object. Unmarshalling it into initializeResult fails.
+				emit(`{"jsonrpc":"2.0","id":` + id + `,"result":"not an object"}`)
 				continue
 			}
 			// A log notification and a response to an id nobody is waiting
@@ -97,7 +116,11 @@ func main() {
 // spawnSleeper starts a copy of this binary in sleeper mode - the stand-in for
 // the child processes real npx-based servers leave behind - and records both
 // pids in FAKE_PIDFILE, newest last.
-func spawnSleeper() {
+//
+// escape makes the child call setsid and inherit this process's stderr, which
+// is the combination that pins cmd.Wait open: the group kill cannot reach it,
+// and it holds the stderr pipe's write end.
+func spawnSleeper(escape bool) {
 	self, err := os.Executable()
 	if err != nil {
 		return
@@ -114,10 +137,16 @@ func spawnSleeper() {
 		env = append(env, kv)
 	}
 
-	child, err := os.StartProcess(self, []string{self}, &os.ProcAttr{
+	attr := &os.ProcAttr{
 		Env:   env,
 		Files: []*os.File{nil, nil, nil},
-	})
+	}
+	if escape {
+		attr.Files = []*os.File{nil, nil, os.Stderr}
+		attr.Sys = &syscall.SysProcAttr{Setsid: true}
+	}
+
+	child, err := os.StartProcess(self, []string{self}, attr)
 	if err != nil {
 		return
 	}
