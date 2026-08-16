@@ -29,10 +29,22 @@ type cacheFile struct {
 // yields an empty cache, not an error. A cache written by an older
 // CacheVersion is discarded wholesale rather than partially trusted - see the
 // CacheVersion doc comment for why a stale entry is worse than no entry.
+//
+// A file that exists but cannot be decoded (truncated, corrupted, or holding
+// something other than a cache) is treated exactly like a missing one: it is
+// a cache, so a corrupt copy is a miss, not a fatal condition, and the next
+// Save overwrites it. LoadCache also never returns a nil *Cache - even an
+// error path (should one ever be added here) must hand back a usable empty
+// cache, because the natural caller pattern on a TUI render path is to log an
+// error and keep going, and a nil result there panics on the first Get.
 func LoadCache(path string) (*Cache, error) {
+	empty := func() *Cache {
+		return &Cache{Path: path, Version: CacheVersion, Entries: map[string]Result{}}
+	}
+
 	var f cacheFile
 	if err := config.ReadJSON(path, &f); err != nil {
-		return nil, err
+		return empty(), nil
 	}
 	if f.Version != CacheVersion || f.Entries == nil {
 		f.Entries = map[string]Result{}
