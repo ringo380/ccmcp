@@ -509,10 +509,17 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 		return v.probeDone(m.res, m.bulk, m.session)
 	}
 	// A sweep in progress (confirmed, targets left) is interruptible. Handled
-	// before every other key path: previously esc/q were only wired inside the
-	// confirmation block, which clears the moment the sweep starts, so a
-	// confirmed sweep was uninterruptible for up to N x the probe timeout.
-	if !v.bulkProbeConfirm && len(v.bulkProbeTargets) > 0 {
+	// early, because esc/q were previously wired only inside the confirmation
+	// block, which clears the moment the sweep starts - so a confirmed sweep was
+	// uninterruptible for up to N x the probe timeout.
+	//
+	// But NOT ahead of a sub-mode that owns the keyboard. capturingInput is the
+	// existing expression of exactly that, so it is reused rather than testing
+	// filterActive/moveActive by hand: a third sub-mode added later would
+	// otherwise silently reintroduce the bug this guard fixes - typing a literal
+	// `q` into the filter cancelled the sweep and the keystroke was swallowed,
+	// and esc in the move picker killed the sweep while leaving the picker open.
+	if !v.capturingInput() && v.sweepActive() {
 		if key, ok := msg.(tea.KeyMsg); ok {
 			switch key.String() {
 			case "esc", "q":

@@ -290,3 +290,81 @@ func TestQuitKillsAnInFlightProbesProcessGroup(t *testing.T) {
 	}
 	_ = im
 }
+
+// startSweep stages and confirms a `P` sweep over two servers WITHOUT running
+// the returned command, so the sweep is left genuinely mid-flight with its first
+// probe outstanding - the state in which the cancel keys are live.
+func startSweep(t *testing.T, m *model) tea.Model {
+	t.Helper()
+	var im tea.Model = m
+	im, _ = im.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	im, _ = press(im, "P")
+	im, cmd := press(im, "P")
+	if cmd == nil {
+		t.Fatal("confirming must start the sweep")
+	}
+	if !m.mcps.sweepActive() {
+		t.Fatal("the sweep must be active after confirmation")
+	}
+	return im
+}
+
+// TestFilterDuringSweepKeepsItsKeystrokes: the sweep's cancel keys must not be
+// stolen from a sub-mode that owns the keyboard. Typing a literal `q` into the
+// filter is ordinary, and before this gate it cancelled the sweep and was
+// swallowed - the filter stayed focused having received nothing.
+func TestFilterDuringSweepKeepsItsKeystrokes(t *testing.T) {
+	st, p := buildProbeState(t, nil)
+	st.cj.SetUserMCP("aaa", sentinelServer(filepath.Join(p.Home, "s-aaa")))
+	st.cj.SetUserMCP("zzz", sentinelServer(filepath.Join(p.Home, "s-zzz")))
+	m := newModel(st)
+	m.mcps.rebuild()
+
+	im := startSweep(t, m)
+	im, _ = press(im, "/")
+	if !m.mcps.filterActive {
+		t.Fatal("`/` must open the filter even while a sweep runs")
+	}
+	im, _ = press(im, "q")
+
+	if got := m.mcps.filter.Value(); got != "q" {
+		t.Fatalf("the filter must receive the keystroke, got %q", got)
+	}
+	if !m.mcps.sweepActive() {
+		t.Fatal("typing into the filter must not cancel the sweep")
+	}
+	if !m.mcps.filterActive {
+		t.Fatal("the filter must still be focused")
+	}
+}
+
+// TestMovePickerDuringSweepOwnsEsc: esc inside the move picker means "close the
+// picker". Before this gate it cancelled the sweep instead and left the picker
+// open - the opposite of what esc means there.
+func TestMovePickerDuringSweepOwnsEsc(t *testing.T) {
+	st, p := buildProbeState(t, nil)
+	st.cj.SetUserMCP("aaa", sentinelServer(filepath.Join(p.Home, "m-aaa")))
+	st.cj.SetUserMCP("zzz", sentinelServer(filepath.Join(p.Home, "m-zzz")))
+	m := newModel(st)
+	m.mcps.rebuild()
+
+	im := startSweep(t, m)
+	im, _ = press(im, "m")
+	if !m.mcps.moveActive {
+		t.Fatal("`m` must open the move picker even while a sweep runs")
+	}
+	im, _ = press(im, "esc")
+
+	if m.mcps.moveActive {
+		t.Fatal("esc inside the move picker must close it")
+	}
+	if !m.mcps.sweepActive() {
+		t.Fatal("esc inside the move picker must not cancel the sweep")
+	}
+
+	// And with no sub-mode open, esc still cancels the sweep.
+	im, _ = press(im, "esc")
+	if m.mcps.sweepActive() {
+		t.Fatal("esc with no sub-mode open must still cancel the sweep")
+	}
+}
