@@ -453,9 +453,16 @@ func TestCLIProbeRejectsANonPositiveTimeout(t *testing.T) {
 func TestCLIProbeDoesNotCacheAFailureUnderAnExplicitTimeout(t *testing.T) {
 	home := setupSandbox(t)
 	proj := t.TempDir()
+	// FAKE_MODE=hang reads input and answers nothing, so this probe cannot
+	// succeed on any machine at any speed. The "ok" fixture made this test
+	// timing-dependent: on Linux it occasionally completed inside the 1ms bound,
+	// and a SUCCESS is cached by design, so the assertions below failed for a
+	// reason that had nothing to do with the rule under test. A server that never
+	// replies makes the failure a property of the fixture rather than of the
+	// host's scheduler.
 	cfg := map[string]any{
 		"command": fakeserver(t),
-		"env":     map[string]any{"FAKE_MODE": "ok"},
+		"env":     map[string]any{"FAKE_MODE": "hang"},
 	}
 	writeUserMCPs(t, home, map[string]any{"fake": cfg})
 	target, ok, reason := mcpprobe.TargetFromConfig("fake", cfg)

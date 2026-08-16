@@ -72,16 +72,59 @@ func pidsFromFixture(t *testing.T, path string) []int {
 	}
 }
 
-// pidAlive reports whether pid is still running after waiting up to d for it to
-// go away. Signal 0 tests for existence without delivering anything.
-func pidAlive(pid int, d time.Duration) bool {
+// processGone reports whether pid is no longer a LIVE process - either reaped
+// already, or dead and waiting to be reaped.
+//
+// A zombie has to count as gone, and this is the whole reason the helper exists:
+// syscall.Kill(pid, 0) SUCCEEDS for a process that has been killed but not yet
+// reaped, so "a signal would be deliverable" is a different question from "the
+// process is running". The probe reaps its own direct child through cmd.Wait,
+// but the grandchild is reparented to PID 1 and reaped asynchronously, and
+// platforms differ in how fast that happens. Verified in a linux/amd64
+// container: after the quit path the direct child was ESRCH while the grandchild
+// read PPid 1, State Z (zombie) - killed, not orphaned - which is exactly the
+// case that failed CI on Linux while passing on macOS.
+//
+// /proc is Linux-only; on macOS the fallback is simply the kill(0) answer, which
+// is what has always been checked there.
+func processGone(pid int) bool {
+	if err := syscall.Kill(pid, 0); err == syscall.ESRCH {
+		return true
+	}
+	return isZombie(pid)
+}
+
+// isZombie reads the kernel's own view of the process state. Returns false when
+// /proc is unavailable (macOS), where the kill(0) check above stands alone.
+func isZombie(pid int) bool {
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(line, "State:") {
+			return strings.Contains(line, "Z")
+		}
+	}
+	return false
+}
+
+// waitProcessGone polls processGone for up to d.
+//
+// The bound absorbs reaping and scheduling latency ONLY, and cannot let a broken
+// teardown pass: with the quit path's wait removed, the server is genuinely
+// RUNNING for the rest of mcpprobe's 10s timeout - two orders of magnitude
+// beyond this window - and the zero-grace session.done assertion in the test is
+// unchanged. Both mutations were re-run on linux/amd64 and darwin/arm64 with
+// this helper in place and still fail.
+func waitProcessGone(pid int, d time.Duration) bool {
 	deadline := time.Now().Add(d)
 	for {
-		if err := syscall.Kill(pid, 0); err == syscall.ESRCH {
-			return false
+		if processGone(pid) {
+			return true
 		}
 		if time.Now().After(deadline) {
-			return true
+			return false
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -247,7 +290,7 @@ func TestQuitKillsAnInFlightProbesProcessGroup(t *testing.T) {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 		}
 	})
-	if !pidAlive(pids[0], 0) || !pidAlive(pids[1], 0) {
+	if processGone(pids[0]) || processGone(pids[1]) {
 		t.Fatal("fixture: both the server and its child should be running before the quit path")
 	}
 
@@ -266,11 +309,14 @@ func TestQuitKillsAnInFlightProbesProcessGroup(t *testing.T) {
 			"tea.Quit can then exit the process mid-teardown and orphan the server")
 	}
 
-	// Zero grace: by the time the quit path returns, the group SIGKILL has been
-	// issued and reaped. Allowing a grace period here would let an unbounded,
-	// racing teardown pass as if it were synchronous.
+	// reapWindow covers the asynchronous reaping of the reparented grandchild,
+	// which Linux does more slowly than macOS. It is not a grace period for the
+	// teardown itself: a process that the quit path failed to kill is RUNNING,
+	// not a zombie, and stays that way for the remainder of mcpprobe's 10s
+	// timeout.
+	const reapWindow = 2 * time.Second
 	for i, pid := range pids {
-		if pidAlive(pid, 0) {
+		if !waitProcessGone(pid, reapWindow) {
 			which := "the server"
 			if i == 1 {
 				which = "its child"
