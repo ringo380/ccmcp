@@ -86,18 +86,31 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// runCmd executes a tea.Cmd and returns its message, unwrapping one level of
-// tea.Batch so a batched command's children run too.
+// runCmd executes a tea.Cmd and returns its message, draining tea.Batch
+// RECURSIVELY so a command nested at any depth still runs.
+//
+// The depth matters: TestMCPsTabNeverProbesImplicitly claims probing never
+// happens implicitly, full stop, and a one-level drainer would let a probe
+// hidden inside a batch-of-batches slip past the assertion while the test still
+// reported green. `depth` only guards against a pathological self-referential
+// batch; real nesting here is one or two levels.
+//
+// Note tea.Batch collapses a single-command batch to that command, so genuine
+// nesting requires two or more commands per level - and tea.Sequence's message
+// type is unexported, so a sequenced command cannot be unwrapped this way. The
+// implicit paths in this view use Batch, not Sequence.
 func runCmd(cmd tea.Cmd) tea.Msg {
-	if cmd == nil {
+	return drainCmd(cmd, 0)
+}
+
+func drainCmd(cmd tea.Cmd, depth int) tea.Msg {
+	if cmd == nil || depth > 16 {
 		return nil
 	}
 	msg := cmd()
 	if batch, ok := msg.(tea.BatchMsg); ok {
 		for _, c := range batch {
-			if c != nil {
-				c()
-			}
+			drainCmd(c, depth+1)
 		}
 		return nil
 	}
@@ -444,6 +457,75 @@ func TestUnprobedServerStaysInTheAccounting(t *testing.T) {
 	out := stripANSI(m.mcps.render())
 	if !strings.Contains(out, "2 unmeasured") {
 		t.Fatalf("the header must report the unmeasured servers:\n%s", out)
+	}
+}
+
+// TestDuplicateNameRendersUnmeasuredNotTheFirstRowsCost: Input.MCP is keyed by
+// display name, so two effective rows sharing a name cannot both be represented.
+// Publishing the first row's measurement would read as a COMPLETE figure while
+// the second real server silently vanished from the total - the same failure mode
+// as the absent-server contract. The name must read "-" and count as unmeasured.
+func TestDuplicateNameRendersUnmeasuredNotTheFirstRowsCost(t *testing.T) {
+	userCfg := map[string]any{"command": "dup-user-cmd"}
+	st, p := buildProbeState(t, map[string]any{
+		"dup":  userCfg,
+		"solo": map[string]any{"command": "solo-cmd"},
+	})
+	// A second effective source for the same display name, with a different
+	// config (so it is a genuinely distinct server, not the same one twice).
+	localCfg := map[string]any{"command": "dup-local-cmd"}
+	st.cj.SetProjectMCP(st.project, "dup", localCfg)
+	// BOTH colliding rows are measured, deliberately: with only one of them
+	// probed, the test passed even with the collision guard removed, because the
+	// row that happens to win sort order was the unprobed one. Seeding both means
+	// whichever row wins, a measurement is available to be wrongly published.
+	seedProbe(t, p, "dup", userCfg, 500, 400, 20)  // loaded 900
+	seedProbe(t, p, "dup", localCfg, 300, 200, 10) // loaded 500
+	// A second, uncontested server that IS measured, so the header carries a real
+	// total and the unmeasured tally is unambiguous.
+	seedProbe(t, p, "solo", map[string]any{"command": "solo-cmd"}, 100, 50, 5)
+	st.probes = nil
+
+	m := newModel(st)
+	m.mcps.rebuild()
+
+	var effRows int
+	for _, r := range m.mcps.rows {
+		if r.Name == "dup" && isEffective(r) {
+			effRows++
+		}
+	}
+	if effRows != 2 {
+		t.Fatalf("fixture: expected 2 effective rows named dup, got %d", effRows)
+	}
+
+	idx := st.costIndex()
+	b, ok := idx.ByMCP["dup"]
+	if !ok {
+		t.Fatal("a colliding name must still appear in the accounting")
+	}
+	if b.Items != 0 || b.Unmeasured != 1 {
+		t.Fatalf("a colliding name must be unmeasured, got Items=%d Unmeasured=%d", b.Items, b.Unmeasured)
+	}
+	// 150 is solo alone. 1050 would mean the colliding name smuggled its
+	// surviving row's 900 into a figure that omits the other real server.
+	if got := idx.Project.MCP.Loaded; got != 150 {
+		t.Fatalf("a colliding name must contribute no cost to the total; want 150 got %d", got)
+	}
+
+	out := stripANSI(drive(m, "1"))
+	for _, forbidden := range []string{"≈900", "≈500", "≈1.0k", "≈650"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("the surviving row's measurement (%s) must not be presented as the name's cost:\n%s",
+				forbidden, out)
+		}
+	}
+	dash := fmt.Sprintf("%-28s %s %8s", "dup", "[u]", "-")
+	if !strings.Contains(out, dash) {
+		t.Fatalf("a colliding name must render %q:\n%s", dash, out)
+	}
+	if !strings.Contains(out, "(1 unmeasured)") {
+		t.Fatalf("the colliding name must count toward the header's unmeasured tally:\n%s", out)
 	}
 }
 

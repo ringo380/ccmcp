@@ -332,19 +332,39 @@ func (v *mcpView) rebuild() {
 // the states, and the generation bump they cause, are in place before the first
 // keypress - and so no render path can ever be the thing that triggers a probe.
 //
-// Known limitation, inherited from Input.MCP being keyed by display name: two
-// effective rows sharing a name (e.g. a user-scope `context7` and a
-// plugin-registered one - the case the ⚠ duplicate-load marker exists for)
-// collapse into one entry, so the second one's cost is not counted. The first
-// row in sort order wins, deterministically.
+// Input.MCP is keyed by display name, so two effective rows sharing a name (a
+// user-scope `context7` plus a plugin-registered one - the case the ⚠
+// duplicate-load marker exists for) cannot both be represented. Such a name is
+// published as UNMEASURED rather than as the first row's measurement: keeping one
+// row's figure would read as a COMPLETE number while a second real server
+// vanished from the total with nothing saying so, which is the same failure mode
+// as the absent-server contract. An honest "-" plus a bump to the unmeasured
+// count costs a real measurement and is still the better trade.
 func (v *mcpView) publishCostStates() {
 	states := make(map[string]ctxcost.MCPState, len(v.rows))
 	cache := v.st.probeCache()
+
+	// Count first: the collision has to be known before the first of the
+	// colliding rows is published, or it would be published as measured.
+	effByName := map[string]int{}
+	for _, r := range v.rows {
+		if isEffective(r) {
+			effByName[r.Name]++
+		}
+	}
+
 	for _, r := range v.rows {
 		if !isEffective(r) {
 			continue
 		}
 		if _, dup := states[r.Name]; dup {
+			continue
+		}
+		if effByName[r.Name] > 1 {
+			states[r.Name] = ctxcost.MCPState{
+				Probed: false,
+				Reason: fmt.Sprintf("duplicate server name (%d sources) - cannot attribute cost", effByName[r.Name]),
+			}
 			continue
 		}
 		t, ok, reason := probeTargetFor(r)

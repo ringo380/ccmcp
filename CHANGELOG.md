@@ -17,8 +17,10 @@ All notable changes to this project are documented here. Format based on
 - The MCPs tab can measure a stdio MCP server's tool-schema cost on demand: `p`
   probes the selected server, `P` probes every visible one after confirming
   (each is started as a subprocess). Results are cached on disk, and each row
-  shows its measured cost - a server that has not been probed, or cannot be
-  probed locally, renders `-` with the reason rather than a confident `≈0`.
+  shows its measured cost - a server that has not been probed, cannot be probed
+  locally, or shares a display name with another loaded server (so its cost
+  cannot be attributed) renders `-` with the reason rather than a confident
+  `≈0`, and counts toward the header's unmeasured tally.
 
 ### Changed
 
