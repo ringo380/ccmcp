@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-28
+
 ### Added
 
 - Windows support: native `windows_amd64` and `windows_arm64` builds, installable
@@ -1176,7 +1178,8 @@ Initial public release.
 - 61-test suite across config readers / CLI sandbox / installer / headless TUI
   state machine.
 
-[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/ringo380/ccmcp/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.24.0
 [0.23.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.23.0
 [0.22.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.22.0
 [0.21.0]: https://github.com/ringo380/ccmcp/releases/tag/v0.21.0
