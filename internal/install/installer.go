@@ -374,11 +374,36 @@ func copyTree(src, dst string) error {
 			if err != nil {
 				return err
 			}
-			return os.Symlink(link, target)
+			if err := os.Symlink(link, target); err != nil {
+				// Windows refuses symlinks without Developer Mode or elevation.
+				// The plugin still has to install, so copy what the link points at.
+				return copySymlinkFallback(path, link, target)
+			}
+			return nil
 		default:
 			return copyFile(path, target, info.Mode())
 		}
 	})
+}
+
+// copySymlinkFallback materializes a symlink as a copy of its target. linkPath
+// is where the link lives (for resolving a relative target), link is what
+// Readlink returned, target is where the copy goes. Directories are copied
+// recursively; a dangling link is an error so a broken plugin is reported, not
+// silently thinned.
+func copySymlinkFallback(linkPath, link, target string) error {
+	resolved := link
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(filepath.Dir(linkPath), link)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return fmt.Errorf("symlink %s -> %s: %w", linkPath, link, err)
+	}
+	if info.IsDir() {
+		return copyTree(resolved, target)
+	}
+	return copyFile(resolved, target, info.Mode())
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
