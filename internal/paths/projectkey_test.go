@@ -18,8 +18,16 @@ func TestProjectKeyMatchesWhatClaudeCodeWrites(t *testing.T) {
 			{`C:\Users\ringo\git\ccmcp\`, "C:/Users/ringo/git/ccmcp"},  // trailing separator
 			{`C:\Users\ringo\git\.\ccmcp`, "C:/Users/ringo/git/ccmcp"}, // dot segment
 			{`C:/Users/ringo/git/ccmcp`, "C:/Users/ringo/git/ccmcp"},   // already canonical
-			{`C:\`, "C:/"},                                            // drive root, seen live
-			{`\\server\share\proj`, "//server/share/proj"},            // UNC passes through
+			{`C:\`, "C:/"}, // drive root, seen live
+			// os.Getwd hands back an uppercase drive letter on this box even
+			// after `cd c:\...`, and Claude Code keys on its cwd, so a typed
+			// lowercase drive must not yield a key Claude Code never reads.
+			{`c:\Users\ringo\git\ccmcp`, "C:/Users/ringo/git/ccmcp"},
+			{`c:/users/ringo/git/ccmcp`, "C:/users/ringo/git/ccmcp"}, // only the drive is case-normalized
+			// UNC: cleaned and slashed like any other path. No UNC key has
+			// been observed in a live file; this pins the current behavior,
+			// not a Claude Code contract.
+			{`\\server\share\proj`, "//server/share/proj"},
 		}
 	} else {
 		cases = []struct{ in, want string }{

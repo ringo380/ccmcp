@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -87,15 +88,24 @@ func (c *ClaudeJSON) projectNode(path string, createMissing bool) map[string]any
 	if node, ok := projects[path].(map[string]any); ok {
 		return node
 	}
-	for k, v := range projects {
-		if node, ok := v.(map[string]any); ok && paths.SameProject(k, path) {
-			return node
+	// A legacy spelling (a `C:\` key beside `C:/` keys) is read through, but
+	// never written: Claude Code looks keys up by exact string, so a write
+	// there would succeed and change nothing. A write creates the exact key
+	// instead, seeded with a copy of the legacy node, and leaves it in place.
+	var legacy map[string]any
+	for _, k := range sortedKeys(projects) {
+		if node, ok := projects[k].(map[string]any); ok && paths.SameProject(k, path) {
+			legacy = node
+			break
 		}
 	}
 	if !createMissing {
-		return nil
+		return legacy
 	}
 	node := map[string]any{}
+	if legacy != nil {
+		node = deepCopyObject(legacy)
+	}
 	projects[path] = node
 	c.Raw["projects"] = projects
 	return node
@@ -375,4 +385,18 @@ func DescribeMCP(cfg any) string {
 	default:
 		return "(no command)"
 	}
+}
+
+// deepCopyObject copies a decoded JSON object so the copy shares no storage
+// with the original.
+func deepCopyObject(m map[string]any) map[string]any {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return map[string]any{}
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil || out == nil {
+		return map[string]any{}
+	}
+	return out
 }

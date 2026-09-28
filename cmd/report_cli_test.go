@@ -136,3 +136,40 @@ func TestCLIReportAuditMD(t *testing.T) {
 		t.Errorf("expected Audit Markdown header; got:\n%s", out)
 	}
 }
+
+// TestCLIReportSweepBaseAcceptsANativePath: --base is typed by hand, so on
+// Windows it arrives with backslashes while project keys use forward slashes.
+// The filter must compare like with like, and a sibling sharing the prefix
+// ("git2" beside "git") must stay out.
+func TestCLIReportSweepBaseAcceptsANativePath(t *testing.T) {
+	home := setupSandbox(t)
+	base := filepath.Join(t.TempDir(), "git")
+	inside := projKey(t, filepath.Join(base, "a"))
+	nested := projKey(t, filepath.Join(base, "a", "b"))
+	sibling := projKey(t, base+"2")
+	b, _ := json.Marshal(map[string]any{
+		"projects": map[string]any{inside: map[string]any{}, nested: map[string]any{}, sibling: map[string]any{}},
+	})
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCLI(t, home, "report", "sweep", "--base", base)
+	if err != nil {
+		t.Fatalf("report sweep --base err: %v\n%s", err, out)
+	}
+	var sr struct {
+		Projects []struct {
+			ProjectPath string `json:"projectPath"`
+		} `json:"projects"`
+	}
+	if err := json.Unmarshal([]byte(out[strings.Index(out, "{"):]), &sr); err != nil {
+		t.Fatalf("parse sweep JSON: %v\n%s", err, out)
+	}
+	var got []string
+	for _, r := range sr.Projects {
+		got = append(got, r.ProjectPath)
+	}
+	if len(got) != 2 || got[0] != inside || got[1] != nested {
+		t.Fatalf("--base %q selected %v, want [%s %s]", base, got, inside, nested)
+	}
+}

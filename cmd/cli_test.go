@@ -102,6 +102,14 @@ func runCLI(t *testing.T, home string, args ...string) (string, error) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads this on Windows; HOME alone does not redirect
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
+	// Fail closed: every ccmcp-owned file must resolve under the sandbox, or the
+	// run below mutates the developer's REAL ~/.claude.json. This happened on
+	// Windows before USERPROFILE was set here - the sandbox covered only
+	// CLAUDE_CONFIG_DIR and the tests wrote junk project keys, a profile and a
+	// stash into the live home.
+	if p, err := resolvePaths(); err != nil || !strings.HasPrefix(p.ClaudeJSON, home) || !strings.HasPrefix(p.Profiles, home) {
+		t.Fatalf("sandbox leak: ccmcp would write outside %s (claude.json=%s profiles=%s err=%v)", home, p.ClaudeJSON, p.Profiles, err)
+	}
 
 	// Capture os.Stdout
 	origStdout := os.Stdout
@@ -507,10 +515,10 @@ func TestCLIPruneSkipsDisabledPluginAndStashGhosts(t *testing.T) {
 	}
 	projects[proj] = map[string]any{
 		"disabledMcpServers": []any{
-			"keep-me",             // live in user scope → stdioLive (NOT pruned)
-			"parked",              // in stash → stashGhost (kept unless --include-stash-ghosts)
-			"plugin:fake:fake",    // not installed → orphanPlugin (pruned)
-			"totally-gone",        // no source → orphanStdio (pruned)
+			"keep-me",          // live in user scope → stdioLive (NOT pruned)
+			"parked",           // in stash → stashGhost (kept unless --include-stash-ghosts)
+			"plugin:fake:fake", // not installed → orphanPlugin (pruned)
+			"totally-gone",     // no source → orphanStdio (pruned)
 		},
 	}
 	cj["projects"] = projects

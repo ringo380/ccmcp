@@ -18,6 +18,11 @@ func ProjectKey(dir string) (string, error) {
 		return "", err
 	}
 	if runtime.GOOS == "windows" {
+		// os.Getwd reports an uppercase drive letter and Claude Code keys on
+		// its cwd, so a typed `c:\...` must not produce a key it never reads.
+		if len(abs) >= 2 && abs[1] == ':' {
+			abs = strings.ToUpper(abs[:1]) + abs[1:]
+		}
 		return filepath.ToSlash(abs), nil
 	}
 	return abs, nil

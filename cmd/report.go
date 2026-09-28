@@ -14,6 +14,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/classify"
 	"github.com/ringo380/ccmcp/internal/commands"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/paths"
 	"github.com/ringo380/ccmcp/internal/report"
 	"github.com/ringo380/ccmcp/internal/skills"
 )
@@ -104,9 +105,15 @@ Optionally filter to projects whose path starts with --base.`,
 		// Collect project paths
 		projectPaths := cj.ProjectPaths()
 		if sweepBase != "" {
+			// Keys are in ProjectKey form; a hand-typed --base may not be.
+			base, err := paths.ProjectKey(sweepBase)
+			if err != nil {
+				return err
+			}
+			base = strings.TrimSuffix(base, "/")
 			filtered := projectPaths[:0]
 			for _, pp := range projectPaths {
-				if pp == sweepBase || strings.HasPrefix(pp, sweepBase+"/") {
+				if pp == base || strings.HasPrefix(pp, base+"/") {
 					filtered = append(filtered, pp)
 				}
 			}
