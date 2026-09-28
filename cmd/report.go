@@ -14,6 +14,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/classify"
 	"github.com/ringo380/ccmcp/internal/commands"
 	"github.com/ringo380/ccmcp/internal/config"
+	"github.com/ringo380/ccmcp/internal/paths"
 	"github.com/ringo380/ccmcp/internal/report"
 	"github.com/ringo380/ccmcp/internal/skills"
 )
@@ -104,14 +105,20 @@ Optionally filter to projects whose path starts with --base.`,
 		// Collect project paths
 		projectPaths := cj.ProjectPaths()
 		if sweepBase != "" {
+			// Keys are in ProjectKey form; a hand-typed --base may not be.
+			base, err := paths.ProjectKey(sweepBase)
+			if err != nil {
+				return err
+			}
 			filtered := projectPaths[:0]
 			for _, pp := range projectPaths {
-				if pp == sweepBase || strings.HasPrefix(pp, sweepBase+"/") {
+				if paths.WithinProject(pp, base) {
 					filtered = append(filtered, pp)
 				}
 			}
 			projectPaths = filtered
 		}
+		projectPaths = dropShadowedLegacyKeys(projectPaths)
 		sort.Strings(projectPaths)
 
 		sr := report.SweepReport{GeneratedAt: time.Now()}
@@ -451,4 +458,26 @@ func init() {
 
 	// audit
 	reportCmd.AddCommand(reportAuditCmd)
+}
+
+// dropShadowedLegacyKeys removes a legacy key (a Windows backslash spelling)
+// when the same project also has a key Claude Code reads, so a project copied
+// forward by a write is listed once. A legacy key with no twin is kept.
+func dropShadowedLegacyKeys(keys []string) []string {
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		shadowed := false
+		if paths.IsLegacyKey(k) {
+			for _, other := range keys {
+				if !paths.IsLegacyKey(other) && paths.SameProject(k, other) {
+					shadowed = true
+					break
+				}
+			}
+		}
+		if !shadowed {
+			out = append(out, k)
+		}
+	}
+	return out
 }

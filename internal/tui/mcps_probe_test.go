@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -74,6 +75,15 @@ func buildProbeState(t *testing.T, userMCPs map[string]any) (*state, paths.Paths
 // and exit. Probing it fails (it never speaks JSON-RPC), which is the point: the
 // sentinel records that a subprocess was spawned at all.
 func sentinelServer(path string) map[string]any {
+	if runtime.GOOS == "windows" {
+		// `copy nul <path>` takes the path as a separate argument, so a
+		// directory with spaces survives cmd.exe's quoting; a redirection
+		// (`type nul > path`) does not.
+		return map[string]any{
+			"command": "cmd.exe",
+			"args":    []any{"/c", "copy", "nul", path},
+		}
+	}
 	return map[string]any{
 		"command": "/bin/sh",
 		"args":    []any{"-c", "touch " + path},

@@ -88,3 +88,14 @@ func TestProjectStateDirDefaultsToCurrentSlug(t *testing.T) {
 		t.Fatalf("ProjectStateDir = %q, want %q", got, want)
 	}
 }
+
+// TestTranscriptSlugWindowsForm pins the directory name observed live under
+// ~/.claude/projects on fancy-pc: `C:\Users\ringo\git\ccmcp` is stored as
+// "C--Users-ringo-git-ccmcp" (":" and "\" each become "-"). A second live form,
+// "-c-Users-ringo-git-new-win-pc-assist", comes from a Git Bash "/c/..." cwd
+// and is deliberately NOT implemented until something needs it.
+func TestTranscriptSlugWindowsForm(t *testing.T) {
+	if got := TranscriptSlug(`C:\Users\ringo\git\ccmcp`); got != "C--Users-ringo-git-ccmcp" {
+		t.Fatalf("got %q, want C--Users-ringo-git-ccmcp", got)
+	}
+}

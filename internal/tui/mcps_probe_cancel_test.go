@@ -4,10 +4,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -34,6 +34,9 @@ func fakeserverBin(t *testing.T) string {
 			return
 		}
 		fakeserverPath = filepath.Join(dir, "fakeserver")
+		if runtime.GOOS == "windows" {
+			fakeserverPath += ".exe" // CreateProcess needs the extension
+		}
 		build := exec.Command("go", "build", "-o", fakeserverPath, "../mcpprobe/testdata/fakeserver")
 		if out, err := build.CombinedOutput(); err != nil {
 			fakeserverErr = err
@@ -72,42 +75,9 @@ func pidsFromFixture(t *testing.T, path string) []int {
 	}
 }
 
-// processGone reports whether pid is no longer a LIVE process - either reaped
-// already, or dead and waiting to be reaped.
-//
-// A zombie has to count as gone, and this is the whole reason the helper exists:
-// syscall.Kill(pid, 0) SUCCEEDS for a process that has been killed but not yet
-// reaped, so "a signal would be deliverable" is a different question from "the
-// process is running". The probe reaps its own direct child through cmd.Wait,
-// but the grandchild is reparented to PID 1 and reaped asynchronously, and
-// platforms differ in how fast that happens. Verified in a linux/amd64
-// container: after the quit path the direct child was ESRCH while the grandchild
-// read PPid 1, State Z (zombie) - killed, not orphaned - which is exactly the
-// case that failed CI on Linux while passing on macOS.
-//
-// /proc is Linux-only; on macOS the fallback is simply the kill(0) answer, which
-// is what has always been checked there.
-func processGone(pid int) bool {
-	if err := syscall.Kill(pid, 0); err == syscall.ESRCH {
-		return true
-	}
-	return isZombie(pid)
-}
-
-// isZombie reads the kernel's own view of the process state. Returns false when
-// /proc is unavailable (macOS), where the kill(0) check above stands alone.
-func isZombie(pid int) bool {
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status")
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(line, "State:") {
-			return strings.Contains(line, "Z")
-		}
-	}
-	return false
-}
+// processGone and killPid live in proc_unix_test.go / proc_windows_test.go:
+// liveness is a per-OS question (signal-zero plus /proc zombie state on Unix,
+// GetExitCodeProcess on Windows).
 
 // waitProcessGone polls processGone for up to d.
 //
@@ -287,7 +257,7 @@ func TestQuitKillsAnInFlightProbesProcessGroup(t *testing.T) {
 	// running on the developer's machine.
 	t.Cleanup(func() {
 		for _, pid := range pids {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
+			killPid(pid)
 		}
 	})
 	if processGone(pids[0]) || processGone(pids[1]) {

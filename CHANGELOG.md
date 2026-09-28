@@ -8,6 +8,10 @@ All notable changes to this project are documented here. Format based on
 
 ### Added
 
+- Windows support: native `windows_amd64` and `windows_arm64` builds, installable
+  via Scoop (`robworks-code/scoop-bucket`), and via winget (`Robworks.ccmcp`) once
+  the first manifest is accepted upstream, with self-update detecting both. Probed MCP servers are contained in a Job Object so
+  no child process outlives a probe.
 - `ccmcp context` estimates the per-turn context cost of the enabled plugins and
   MCP servers, attributed per plugin, with `--json` output.
 - Plugins and MCPs tabs show a per-turn context total, and the Plugins tab shows a
@@ -58,6 +62,14 @@ All notable changes to this project are documented here. Format based on
 
 ### Fixed
 
+- On Windows, project-scope commands now find the project under the
+  forward-slash key Claude Code writes (`C:/Users/...`) instead of missing it
+  and creating a duplicate `C:\...` entry. A legacy backslash key is read
+  through, and a change is written to the key Claude Code reads.
+- On Windows, a plugin whose source contains symlinks installs without
+  Developer Mode: each link is copied as its target, including links that Git
+  for Windows checks out as small text files. A link that loops back into the
+  plugin is reported as an error instead of copying forever.
 - Plugins and MCPs tab lists no longer overflow the terminal on short or narrow
   windows: the context header is clamped to the terminal width, and the list
   window is budgeted against the real available height instead of a hard floor

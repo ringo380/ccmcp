@@ -25,13 +25,26 @@ brew install robworks-code/tap/ccmcp
 > This is a one-time, per-machine step recorded in `~/.homebrew/trust.json` and applies to every
 > non-official tap, not just this one.
 
+**Scoop** (Windows):
+
+```powershell
+scoop bucket add robworks https://github.com/robworks-code/scoop-bucket
+scoop install ccmcp
+```
+
+**winget** (Windows, pending acceptance of the first manifest in microsoft/winget-pkgs):
+
+```powershell
+winget install Robworks.ccmcp
+```
+
 **`go install`** (needs Go 1.25+):
 
 ```sh
 go install github.com/ringo380/ccmcp@latest
 ```
 
-**Prebuilt binaries**: download from the [releases page](https://github.com/ringo380/ccmcp/releases/latest).
+**Prebuilt binaries**: download from the [releases page](https://github.com/ringo380/ccmcp/releases/latest), including `windows_amd64` and `windows_arm64` zips.
 
 **From source**:
 
@@ -380,7 +393,7 @@ Orphan entries (plugin not installed, plain name with no source) are pruned by d
 go test ./...
 ```
 
-516 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, plugin MCP scanning (.mcp.json + plugin.json manifest merge), doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, per-turn context-cost estimation (`ccmcp context`) across skills/agents/commands (MCP tool schemas are reported as unmeasured until a server probe lands, with a versioned on-disk cache so a completed or failed probe is not repeated on every visit; the MCPs tab probes only on `p`/`P` and never implicitly), and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
+534 tests across config readers/writers, CLI sandbox runs, installer, skill/agent CRUD, command discovery + conflict classifier + ignore list, profile export/import, marketplace + plugin update probes, plugin MCP scanning (.mcp.json + plugin.json manifest merge), doctor LLM-review provider precedence, doctor autofix preview/snapshot/revert flow, asset lint (skill/agent/command/plugin description + slug rules + skill-shadow detection), Claude Code version detection + capability calibration (probe/cache/mtime-invalidation, version-gated fallback-model, model-override precedence), bulk plugin-update failure capture + retry, marketplace discovery (sources, cache, conflict scan), shell-completion script generation + dynamic arg completion, TUI scroll-window clamping for multi-line list views, per-turn context-cost estimation (`ccmcp context`) across skills/agents/commands (MCP tool schemas are reported as unmeasured until a server probe lands, with a versioned on-disk cache so a completed or failed probe is not repeated on every visit; the MCPs tab probes only on `p`/`P` and never implicitly), Windows project-key normalization and legacy-key lookup, Job Object containment of probed servers, and a headless TUI state-machine that drives the real `tea.Model` with synthesized key events.
 
 ## Project layout
 

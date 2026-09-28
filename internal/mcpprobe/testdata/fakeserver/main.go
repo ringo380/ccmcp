@@ -14,7 +14,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -149,7 +148,7 @@ func spawnSleeper(escape bool) {
 	}
 	if escape {
 		attr.Files = []*os.File{nil, nil, os.Stderr}
-		attr.Sys = &syscall.SysProcAttr{Setsid: true}
+		escapeAttr(attr)
 	}
 
 	child, err := os.StartProcess(self, []string{self}, attr)

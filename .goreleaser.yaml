@@ -16,6 +16,7 @@ builds:
     goos:
       - darwin
       - linux
+      - windows
     goarch:
       - amd64
       - arm64
@@ -27,10 +28,13 @@ builds:
 
 archives:
   - id: default
-    # Users most often want the bare binary; ship tar.gz for unix and zip for nothing
-    # (no windows builds). Include README + LICENSE in the archive.
+    # Bare-binary archives: tar.gz for unix, zip for windows (what Scoop and
+    # winget expect). README + LICENSE + CHANGELOG ride along.
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     files:
       - README.md
       - LICENSE
@@ -86,6 +90,19 @@ release:
     go install github.com/ringo380/ccmcp@{{ .Tag }}
     ```
 
+    On Windows, via Scoop:
+
+    ```powershell
+    scoop bucket add robworks https://github.com/robworks-code/scoop-bucket
+    scoop install ccmcp
+    ```
+
+    or winget (once the manifest is accepted upstream):
+
+    ```powershell
+    winget install Robworks.ccmcp
+    ```
+
     Or grab a prebuilt binary for your platform from the Assets below and drop it in `~/bin`.
 
 # Homebrew formula is auto-regenerated on each non-prerelease tag and pushed to
@@ -113,3 +130,55 @@ brews:
       bin.install "ccmcp"
     test: |
       assert_match "ccmcp version", shell_output("#{bin}/ccmcp --version")
+
+# Scoop manifest lands in the bucket ROOT (a subdirectory breaks `scoop bucket
+# list`). Reuses HOMEBREW_TAP_TOKEN: a classic PAT with repo scope, which covers
+# robworks-code/scoop-bucket too. See release.yml.
+scoops:
+  - name: ccmcp
+    repository:
+      owner: robworks-code
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "chore(scoop): bump {{ .ProjectName }} to {{ .Tag }}"
+    homepage: "https://github.com/ringo380/ccmcp"
+    description: "Dynamic CLI + TUI for managing Claude Code MCP servers, plugins, and per-project overrides"
+    license: "MIT"
+    skip_upload: auto
+
+# winget manifests go to the ringo380/winget-pkgs fork on a per-version branch
+# and a PR is opened against microsoft/winget-pkgs. First submission is
+# human-reviewed by Microsoft. Package identifier must match
+# internal/selfupdate wingetID.
+winget:
+  - name: ccmcp
+    publisher: Robworks
+    package_identifier: Robworks.ccmcp
+    short_description: "Dynamic CLI + TUI for managing Claude Code MCP servers, plugins, and per-project overrides"
+    license: "MIT"
+    homepage: "https://github.com/ringo380/ccmcp"
+    publisher_url: "https://code.robworks.info"
+    publisher_support_url: "https://github.com/ringo380/ccmcp/issues"
+    license_url: "https://github.com/ringo380/ccmcp/blob/main/LICENSE"
+    release_notes_url: "https://github.com/ringo380/ccmcp/releases/tag/{{ .Tag }}"
+    tags: [claude, mcp, cli, tui]
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
+    repository:
+      owner: ringo380
+      name: winget-pkgs
+      branch: "ccmcp-{{ .Version }}"
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    skip_upload: auto

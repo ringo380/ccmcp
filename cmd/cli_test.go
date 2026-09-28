@@ -9,7 +9,20 @@ import (
 	"testing"
 
 	"github.com/ringo380/ccmcp/internal/mcpprobe"
+	"github.com/ringo380/ccmcp/internal/paths"
 )
+
+// projKey returns the ~/.claude.json#/projects key for a test project path: the
+// form --path is canonicalized to (on Windows "/tmp/x" becomes "C:/tmp/x"), so
+// a lookup by the literal would silently miss the node ccmcp wrote.
+func projKey(t *testing.T, p string) string {
+	t.Helper()
+	k, err := paths.ProjectKey(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
 
 // runCLI executes the root command with args in a sandboxed $HOME/$CLAUDE_CONFIG_DIR so
 // real user state is never touched. It captures both os.Stdout (commands use fmt.Println
@@ -87,7 +100,16 @@ func runCLI(t *testing.T, home string, args ...string) (string, error) {
 	probeForce = false
 
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads this on Windows; HOME alone does not redirect
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
+	// Fail closed: every ccmcp-owned file must resolve under the sandbox, or the
+	// run below mutates the developer's REAL ~/.claude.json. This happened on
+	// Windows before USERPROFILE was set here - the sandbox covered only
+	// CLAUDE_CONFIG_DIR and the tests wrote junk project keys, a profile and a
+	// stash into the live home.
+	if p, err := resolvePaths(); err != nil || !strings.HasPrefix(p.ClaudeJSON, home) || !strings.HasPrefix(p.Profiles, home) {
+		t.Fatalf("sandbox leak: ccmcp would write outside %s (claude.json=%s profiles=%s err=%v)", home, p.ClaudeJSON, p.Profiles, err)
+	}
 
 	// Capture os.Stdout
 	origStdout := os.Stdout
@@ -244,7 +266,7 @@ func TestCLIProjectEnableDisableRoundtrip(t *testing.T) {
 	home := setupSandbox(t)
 	before := readJSON(t, filepath.Join(home, ".claude.json"))
 
-	proj := "/tmp/test-proj"
+	proj := projKey(t, "/tmp/test-proj")
 	if _, err := runCLI(t, home, "mcp", "enable", "parked", "--scope", "project", "--path", proj); err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +340,7 @@ func TestCLIProfileSaveAndUse(t *testing.T) {
 	}
 	claude := readJSON(t, filepath.Join(home, ".claude.json"))
 	projects, _ := claude["projects"].(map[string]any)
-	proj, _ := projects["/tmp/newproj"].(map[string]any)
+	proj, _ := projects[projKey(t, "/tmp/newproj")].(map[string]any)
 	mcps, _ := proj["mcpServers"].(map[string]any)
 	if _, ok := mcps["keep-me"]; !ok {
 		t.Error("keep-me should be applied from user-scope source")
@@ -335,7 +357,7 @@ func TestCLIMoveUserToLocalRemovesFromUser(t *testing.T) {
 	if _, ok := claude["mcpServers"].(map[string]any)["keep-me"]; !ok {
 		t.Fatal("precondition: keep-me should be in user scope")
 	}
-	proj := "/tmp/cli-move-test"
+	proj := projKey(t, "/tmp/cli-move-test")
 	if _, err := runCLI(t, home, "mcp", "move", "keep-me", "--to", "local", "--path", proj); err != nil {
 		t.Fatalf("move: %v", err)
 	}
@@ -357,7 +379,7 @@ func TestCLIMoveUserToLocalRemovesFromUser(t *testing.T) {
 
 func TestCLIMoveAcceptsProjectAlias(t *testing.T) {
 	home := setupSandbox(t)
-	proj := "/tmp/cli-move-alias"
+	proj := projKey(t, "/tmp/cli-move-alias")
 	// 'project' is accepted as legacy alias for 'local'
 	if _, err := runCLI(t, home, "mcp", "move", "keep-me", "--to", "project", "--path", proj); err != nil {
 		t.Fatal(err)
@@ -373,7 +395,7 @@ func TestCLIMoveAcceptsProjectAlias(t *testing.T) {
 
 func TestCLIScopeLocalAliasInEnable(t *testing.T) {
 	home := setupSandbox(t)
-	proj := "/tmp/cli-local-alias"
+	proj := projKey(t, "/tmp/cli-local-alias")
 	// --scope local should behave exactly like --scope project.
 	if _, err := runCLI(t, home, "mcp", "enable", "parked", "--scope", "local", "--path", proj); err != nil {
 		t.Fatal(err)
@@ -389,7 +411,7 @@ func TestCLIScopeLocalAliasInEnable(t *testing.T) {
 
 func TestCLIOverridePluginRoundtrip(t *testing.T) {
 	home := setupSandbox(t)
-	proj := "/tmp/cli-override-proj"
+	proj := projKey(t, "/tmp/cli-override-proj")
 
 	// Disable a plugin-sourced MCP per-project.
 	if _, err := runCLI(t, home, "mcp", "override", "plugin:context7:context7", "--path", proj); err != nil {
@@ -431,7 +453,7 @@ func TestCLIOverridePluginRoundtrip(t *testing.T) {
 
 func TestCLIOverrideClaudeAi(t *testing.T) {
 	home := setupSandbox(t)
-	proj := "/tmp/cli-override-ai"
+	proj := projKey(t, "/tmp/cli-override-ai")
 
 	if _, err := runCLI(t, home, "mcp", "override", "claude.ai Gmail", "--path", proj); err != nil {
 		t.Fatal(err)
@@ -446,7 +468,7 @@ func TestCLIOverrideClaudeAi(t *testing.T) {
 
 func TestCLIOverrideUnqualifiedFallbackToStdio(t *testing.T) {
 	home := setupSandbox(t)
-	proj := "/tmp/cli-override-stdio"
+	proj := projKey(t, "/tmp/cli-override-stdio")
 
 	// "keep-me" is a user-scope stdio MCP in the sandbox
 	if _, err := runCLI(t, home, "mcp", "override", "keep-me", "--path", proj); err != nil {
@@ -480,7 +502,7 @@ func TestCLIUnstashAliasMatchesRestore(t *testing.T) {
 
 func TestCLIPruneSkipsDisabledPluginAndStashGhosts(t *testing.T) {
 	home := setupSandbox(t)
-	proj := "/tmp/cli-prune-proj"
+	proj := projKey(t, "/tmp/cli-prune-proj")
 
 	// Seed disabledMcpServers with one of each bucket. Sandbox doesn't have any
 	// plugin infrastructure so plugin:* entries will classify as orphan-plugin - which
@@ -493,10 +515,10 @@ func TestCLIPruneSkipsDisabledPluginAndStashGhosts(t *testing.T) {
 	}
 	projects[proj] = map[string]any{
 		"disabledMcpServers": []any{
-			"keep-me",             // live in user scope → stdioLive (NOT pruned)
-			"parked",              // in stash → stashGhost (kept unless --include-stash-ghosts)
-			"plugin:fake:fake",    // not installed → orphanPlugin (pruned)
-			"totally-gone",        // no source → orphanStdio (pruned)
+			"keep-me",          // live in user scope → stdioLive (NOT pruned)
+			"parked",           // in stash → stashGhost (kept unless --include-stash-ghosts)
+			"plugin:fake:fake", // not installed → orphanPlugin (pruned)
+			"totally-gone",     // no source → orphanStdio (pruned)
 		},
 	}
 	cj["projects"] = projects
@@ -540,7 +562,7 @@ func TestCLIPruneSkipsDisabledPluginAndStashGhosts(t *testing.T) {
 
 func TestCLIPruneWithIncludeStashGhosts(t *testing.T) {
 	home := setupSandbox(t)
-	proj := "/tmp/cli-prune-stash"
+	proj := projKey(t, "/tmp/cli-prune-stash")
 
 	cj := readJSON(t, filepath.Join(home, ".claude.json"))
 	projects, _ := cj["projects"].(map[string]any)

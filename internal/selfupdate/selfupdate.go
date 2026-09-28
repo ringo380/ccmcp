@@ -1,7 +1,7 @@
 // Package selfupdate runs an oh-my-zsh-style background check against the
 // GitHub releases API for ringo380/ccmcp, prompts the user when a newer version
 // is available, and dispatches to the appropriate upgrade command for the
-// detected install method (brew tap vs go install vs raw binary).
+// detected install method (brew tap, scoop, winget, go install, or raw binary).
 //
 // The check is gated by:
 //   - Build version != "dev" (skips local development builds)
@@ -207,8 +207,14 @@ type Method string
 const (
 	MethodBrew   Method = "brew"
 	MethodGo     Method = "go install"
+	MethodScoop  Method = "scoop"
+	MethodWinget Method = "winget"
 	MethodBinary Method = "binary"
 )
+
+// wingetID is the package identifier published by .goreleaser.yaml's winget
+// section; the two must stay in step.
+const wingetID = "Robworks.ccmcp"
 
 // DetectMethod looks at the running executable's path to decide which upgrade
 // command to suggest. Falls back to MethodBinary when nothing matches.
@@ -218,14 +224,25 @@ func DetectMethod() Method {
 		return MethodBinary
 	}
 	exe, _ = filepath.EvalSymlinks(exe)
+	return detectMethodFromExe(exe)
+}
+
+// detectMethodFromExe is DetectMethod without the os.Executable call, so the
+// path shapes can be pinned in a table. Comparison is on a lowercased,
+// forward-slash form: Windows paths are case-insensitive and arrive with either
+// separator, and the Unix prefixes are unaffected by the transform.
+func detectMethodFromExe(exe string) Method {
+	p := strings.ToLower(filepath.ToSlash(exe))
 	switch {
-	case strings.Contains(exe, "/Cellar/"),
-		strings.Contains(exe, "/opt/homebrew/"),
-		strings.HasPrefix(exe, "/usr/local/Cellar/"),
-		strings.HasPrefix(exe, "/home/linuxbrew/"):
+	case strings.Contains(p, "/cellar/"),
+		strings.Contains(p, "/opt/homebrew/"),
+		strings.HasPrefix(p, "/home/linuxbrew/"):
 		return MethodBrew
-	case strings.Contains(exe, "/go/bin/"),
-		strings.HasSuffix(filepath.Dir(exe), filepath.Join("go", "bin")):
+	case strings.Contains(p, "/scoop/apps/ccmcp/"):
+		return MethodScoop
+	case strings.Contains(p, "/winget/packages/"):
+		return MethodWinget
+	case strings.Contains(p, "/go/bin/"):
 		return MethodGo
 	}
 	return MethodBinary
@@ -239,6 +256,10 @@ func UpgradeCommand(m Method) []string {
 		return []string{"brew", "upgrade", "ccmcp"}
 	case MethodGo:
 		return []string{"go", "install", "github.com/ringo380/ccmcp@latest"}
+	case MethodScoop:
+		return []string{"scoop", "update", "ccmcp"}
+	case MethodWinget:
+		return []string{"winget", "upgrade", "--id", wingetID}
 	default:
 		return nil
 	}
@@ -252,6 +273,10 @@ func MethodHint(m Method, htmlURL string) string {
 		return "Detected Homebrew install - will run: brew upgrade ccmcp"
 	case MethodGo:
 		return "Detected go install - will run: go install github.com/ringo380/ccmcp@latest"
+	case MethodScoop:
+		return "Detected scoop install - will run: scoop update ccmcp"
+	case MethodWinget:
+		return "Detected winget install - will run: winget upgrade --id " + wingetID
 	default:
 		if htmlURL != "" {
 			return "Manual install detected - download the latest binary from " + htmlURL

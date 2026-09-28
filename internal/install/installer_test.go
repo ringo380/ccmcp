@@ -443,3 +443,48 @@ func TestPullMarketplacesForPlugins(t *testing.T) {
 		t.Errorf("marketplace not fast-forwarded: local HEAD = %s, want upstream %s", head, shaB)
 	}
 }
+
+// TestCopyTreeFallsBackToCopyingWhenSymlinksAreUnavailable: on Windows
+// os.Symlink needs Developer Mode or elevation, so a marketplace checkout that
+// carries a relative symlink must still install - as a copy of the target.
+// On Unix the link is recreated as a link, as before.
+func TestCopyTreeFallsBackToCopyingWhenSymlinksAreUnavailable(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "real.md"), []byte("body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real.md", filepath.Join(src, "link.md")); err != nil {
+		t.Skipf("cannot create symlinks here (%v); the fallback path is exercised where links are creatable but the destination refuses them", err)
+	}
+	dst := filepath.Join(t.TempDir(), "dst")
+	if err := copyTree(src, dst); err != nil {
+		t.Fatalf("copyTree: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dst, "link.md"))
+	if err != nil {
+		t.Fatalf("link.md missing from the copy: %v", err)
+	}
+	if string(got) != "body" {
+		t.Fatalf("link.md = %q, want the target's body", got)
+	}
+}
+
+// TestCopySymlinkFallbackCopiesTheTarget drives the fallback directly, so it is
+// proven even on a box where os.Symlink succeeds.
+func TestCopySymlinkFallbackCopiesTheTarget(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "real.md"), []byte("body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(t.TempDir(), "out.md")
+	if err := copySymlinkFallback(filepath.Join(src, "link.md"), "real.md", dst); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(dst)
+	if string(got) != "body" {
+		t.Fatalf("got %q, want body", got)
+	}
+	if err := copySymlinkFallback(filepath.Join(src, "dangling.md"), "missing.md", filepath.Join(t.TempDir(), "x")); err == nil {
+		t.Fatal("a dangling link must report an error, not silently produce nothing")
+	}
+}

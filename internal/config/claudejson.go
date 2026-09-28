@@ -1,8 +1,11 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
+
+	"github.com/ringo380/ccmcp/internal/paths"
 )
 
 // ClaudeJSON is a read/write wrapper around ~/.claude.json that preserves unknown keys.
@@ -75,18 +78,41 @@ func (c *ClaudeJSON) ClearUserMCPs() map[string]any {
 
 // --- project-scope MCP servers ----------------------------------------------
 
-// projectNode returns the raw per-project map, creating it if createMissing is true.
+// projectNode returns the raw per-project map, creating it if createMissing is
+// true. The exact key is tried first. Failing that, an existing key naming the
+// same directory is used: a forward-slash key that differs only in case is the
+// one Claude Code wrote, so it is read and written directly. A legacy spelling
+// (a `C:\` key beside `C:/` ones) is read through but never written, because
+// Claude Code looks keys up by exact string and a write there would change
+// nothing. A write creates the exact key instead, seeded with a copy of the
+// legacy node, and leaves the legacy key in place.
 func (c *ClaudeJSON) projectNode(path string, createMissing bool) map[string]any {
 	projects := objOrEmpty(c.Raw, "projects")
-	node, ok := projects[path].(map[string]any)
-	if !ok {
-		if !createMissing {
-			return nil
-		}
-		node = map[string]any{}
-		projects[path] = node
-		c.Raw["projects"] = projects
+	if node, ok := projects[path].(map[string]any); ok {
+		return node
 	}
+	var legacy map[string]any
+	for _, k := range sortedKeys(projects) {
+		node, ok := projects[k].(map[string]any)
+		if !ok || !paths.SameProject(k, path) {
+			continue
+		}
+		if !paths.IsLegacyKey(k) {
+			return node
+		}
+		if legacy == nil {
+			legacy = node
+		}
+	}
+	if !createMissing {
+		return legacy
+	}
+	node := map[string]any{}
+	if legacy != nil {
+		node = deepCopyObject(legacy)
+	}
+	projects[path] = node
+	c.Raw["projects"] = projects
 	return node
 }
 
@@ -129,6 +155,9 @@ func (c *ClaudeJSON) DeleteProjectMCP(path, name string) bool {
 	if _, exists := m[name]; !exists {
 		return false
 	}
+	// Re-fetch for writing so a legacy spelling is copied, not edited.
+	node = c.projectNode(path, true)
+	m = node["mcpServers"].(map[string]any)
 	delete(m, name)
 	if len(m) == 0 {
 		delete(node, "mcpServers")
@@ -146,7 +175,8 @@ func (c *ClaudeJSON) ClearProjectMCPs(path string) int {
 		return 0
 	}
 	n := len(m)
-	delete(node, "mcpServers")
+	// Re-fetch for writing so a legacy spelling is copied, not edited.
+	delete(c.projectNode(path, true), "mcpServers")
 	return n
 }
 
@@ -364,4 +394,18 @@ func DescribeMCP(cfg any) string {
 	default:
 		return "(no command)"
 	}
+}
+
+// deepCopyObject copies a decoded JSON object so the copy shares no storage
+// with the original.
+func deepCopyObject(m map[string]any) map[string]any {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return map[string]any{}
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil || out == nil {
+		return map[string]any{}
+	}
+	return out
 }
