@@ -110,15 +110,15 @@ Optionally filter to projects whose path starts with --base.`,
 			if err != nil {
 				return err
 			}
-			base = strings.TrimSuffix(base, "/")
 			filtered := projectPaths[:0]
 			for _, pp := range projectPaths {
-				if pp == base || strings.HasPrefix(pp, base+"/") {
+				if paths.WithinProject(pp, base) {
 					filtered = append(filtered, pp)
 				}
 			}
 			projectPaths = filtered
 		}
+		projectPaths = dropShadowedLegacyKeys(projectPaths)
 		sort.Strings(projectPaths)
 
 		sr := report.SweepReport{GeneratedAt: time.Now()}
@@ -458,4 +458,26 @@ func init() {
 
 	// audit
 	reportCmd.AddCommand(reportAuditCmd)
+}
+
+// dropShadowedLegacyKeys removes a legacy key (a Windows backslash spelling)
+// when the same project also has a key Claude Code reads, so a project copied
+// forward by a write is listed once. A legacy key with no twin is kept.
+func dropShadowedLegacyKeys(keys []string) []string {
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		shadowed := false
+		if paths.IsLegacyKey(k) {
+			for _, other := range keys {
+				if !paths.IsLegacyKey(other) && paths.SameProject(k, other) {
+					shadowed = true
+					break
+				}
+			}
+		}
+		if !shadowed {
+			out = append(out, k)
+		}
+	}
+	return out
 }

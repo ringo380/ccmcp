@@ -79,24 +79,29 @@ func (c *ClaudeJSON) ClearUserMCPs() map[string]any {
 // --- project-scope MCP servers ----------------------------------------------
 
 // projectNode returns the raw per-project map, creating it if createMissing is
-// true. The exact key is tried first; failing that, any existing key naming the
-// same directory under another spelling is used (Windows keeps a legacy `C:\`
-// key beside `C:/...` ones), so a write never creates a second entry for a
-// project that is already there.
+// true. The exact key is tried first. Failing that, an existing key naming the
+// same directory is used: a forward-slash key that differs only in case is the
+// one Claude Code wrote, so it is read and written directly. A legacy spelling
+// (a `C:\` key beside `C:/` ones) is read through but never written, because
+// Claude Code looks keys up by exact string and a write there would change
+// nothing. A write creates the exact key instead, seeded with a copy of the
+// legacy node, and leaves the legacy key in place.
 func (c *ClaudeJSON) projectNode(path string, createMissing bool) map[string]any {
 	projects := objOrEmpty(c.Raw, "projects")
 	if node, ok := projects[path].(map[string]any); ok {
 		return node
 	}
-	// A legacy spelling (a `C:\` key beside `C:/` keys) is read through, but
-	// never written: Claude Code looks keys up by exact string, so a write
-	// there would succeed and change nothing. A write creates the exact key
-	// instead, seeded with a copy of the legacy node, and leaves it in place.
 	var legacy map[string]any
 	for _, k := range sortedKeys(projects) {
-		if node, ok := projects[k].(map[string]any); ok && paths.SameProject(k, path) {
+		node, ok := projects[k].(map[string]any)
+		if !ok || !paths.SameProject(k, path) {
+			continue
+		}
+		if !paths.IsLegacyKey(k) {
+			return node
+		}
+		if legacy == nil {
 			legacy = node
-			break
 		}
 	}
 	if !createMissing {
@@ -150,6 +155,9 @@ func (c *ClaudeJSON) DeleteProjectMCP(path, name string) bool {
 	if _, exists := m[name]; !exists {
 		return false
 	}
+	// Re-fetch for writing so a legacy spelling is copied, not edited.
+	node = c.projectNode(path, true)
+	m = node["mcpServers"].(map[string]any)
 	delete(m, name)
 	if len(m) == 0 {
 		delete(node, "mcpServers")
@@ -167,7 +175,8 @@ func (c *ClaudeJSON) ClearProjectMCPs(path string) int {
 		return 0
 	}
 	n := len(m)
-	delete(node, "mcpServers")
+	// Re-fetch for writing so a legacy spelling is copied, not edited.
+	delete(c.projectNode(path, true), "mcpServers")
 	return n
 }
 

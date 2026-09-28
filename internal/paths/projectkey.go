@@ -41,6 +41,24 @@ func SameProject(a, b string) bool {
 	return na == nb
 }
 
+// IsLegacyKey reports whether a project key is a spelling Claude Code does not
+// write today: on Windows, one holding a backslash. Such a key is read through
+// but never written, because Claude Code looks keys up by exact string.
+func IsLegacyKey(k string) bool {
+	return runtime.GOOS == "windows" && strings.Contains(k, `\`)
+}
+
+// WithinProject reports whether key names base or a directory under it,
+// with the same normalization and case rules as SameProject.
+func WithinProject(key, base string) bool {
+	nk := normalizeKey(key)
+	nb := strings.TrimSuffix(normalizeKey(base), "/")
+	if runtime.GOOS == "windows" {
+		nk, nb = strings.ToLower(nk), strings.ToLower(nb)
+	}
+	return nk == nb || strings.HasPrefix(nk, nb+"/")
+}
+
 func normalizeKey(k string) string {
 	k = filepath.Clean(k)
 	if runtime.GOOS == "windows" {

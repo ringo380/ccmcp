@@ -345,12 +345,26 @@ func gitHeadSha(repo string) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
+// symlink is os.Symlink, replaceable in tests to act like Windows without
+// Developer Mode.
+var symlink = os.Symlink
+
 // copyTree copies src into dst, recursively. Skips .git directories so cache entries
 // stay lean. dst is wiped if it already exists (reinstall path).
 func copyTree(src, dst string) error {
+	return copyTreeExpanding(src, dst, nil)
+}
+
+// copyTreeExpanding is copyTree with the chain of directories currently being
+// copied, so a symlink copied as its target cannot lead back into one of them.
+func copyTreeExpanding(src, dst string, expanding []string) error {
 	if err := os.RemoveAll(dst); err != nil {
 		return err
 	}
+	if abs, err := filepath.Abs(src); err == nil {
+		expanding = append(expanding[:len(expanding):len(expanding)], abs)
+	}
+	stubs := gitSymlinkStubs(src)
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -374,16 +388,57 @@ func copyTree(src, dst string) error {
 			if err != nil {
 				return err
 			}
-			if err := os.Symlink(link, target); err != nil {
-				// Windows refuses symlinks without Developer Mode or elevation.
-				// The plugin still has to install, so copy what the link points at.
-				return copySymlinkFallback(path, link, target)
+			return linkOrCopy(path, link, target, expanding)
+		case info.Mode().IsRegular() && stubs[rel]:
+			// A symlink checked out as a text file holding its target.
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return err
 			}
-			return nil
+			return linkOrCopy(path, filepath.FromSlash(string(b)), target, expanding)
 		default:
 			return copyFile(path, target, info.Mode())
 		}
 	})
+}
+
+// linkOrCopy recreates a symlink at target, or copies what it points at when
+// the platform refuses: Windows needs Developer Mode or elevation for links,
+// and the plugin still has to install.
+func linkOrCopy(linkPath, link, target string, expanding []string) error {
+	if err := symlink(link, target); err == nil {
+		return nil
+	}
+	return copyLinkTarget(linkPath, link, target, expanding)
+}
+
+// gitSymlinkStubs returns the paths under dir, relative to dir, that git
+// tracks as symlinks but that are on disk as regular files. That is how
+// Git for Windows checks links out by default (core.symlinks=false): a small
+// file holding the link target. Returns nil when dir is not in a git work
+// tree or git is unavailable.
+func gitSymlinkStubs(dir string) map[string]bool {
+	out, err := exec.Command("git", "-C", dir, "ls-files", "-s", "-z").Output()
+	if err != nil {
+		return nil
+	}
+	var stubs map[string]bool
+	for _, entry := range strings.Split(string(out), "\x00") {
+		meta, p, ok := strings.Cut(entry, "\t")
+		if !ok || !strings.HasPrefix(meta, "120000 ") {
+			continue
+		}
+		rel := filepath.FromSlash(p)
+		info, err := os.Lstat(filepath.Join(dir, rel))
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if stubs == nil {
+			stubs = map[string]bool{}
+		}
+		stubs[rel] = true
+	}
+	return stubs
 }
 
 // copySymlinkFallback materializes a symlink as a copy of its target. linkPath
@@ -392,6 +447,10 @@ func copyTree(src, dst string) error {
 // recursively; a dangling link is an error so a broken plugin is reported, not
 // silently thinned.
 func copySymlinkFallback(linkPath, link, target string) error {
+	return copyLinkTarget(linkPath, link, target, nil)
+}
+
+func copyLinkTarget(linkPath, link, target string, expanding []string) error {
 	resolved := link
 	if !filepath.IsAbs(resolved) {
 		resolved = filepath.Join(filepath.Dir(linkPath), link)
@@ -401,7 +460,18 @@ func copySymlinkFallback(linkPath, link, target string) error {
 		return fmt.Errorf("symlink %s -> %s: %w", linkPath, link, err)
 	}
 	if info.IsDir() {
-		return copyTree(resolved, target)
+		abs, err := filepath.Abs(resolved)
+		if err != nil {
+			return err
+		}
+		// Copying a directory that contains, or is, one already being copied
+		// would recurse forever.
+		for _, dir := range expanding {
+			if withinDir(dir, abs) {
+				return fmt.Errorf("symlink %s -> %s: loop, it leads back into %s", linkPath, link, dir)
+			}
+		}
+		return copyTreeExpanding(resolved, target, expanding)
 	}
 	return copyFile(resolved, target, info.Mode())
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -171,5 +172,45 @@ func TestCLIReportSweepBaseAcceptsANativePath(t *testing.T) {
 	}
 	if len(got) != 2 || got[0] != inside || got[1] != nested {
 		t.Fatalf("--base %q selected %v, want [%s %s]", base, got, inside, nested)
+	}
+}
+
+// TestCLIReportSweepBaseOnWindowsKeys: a --base typed in another case still
+// selects its projects, a project known only by a legacy backslash key is
+// kept, and a project present under both spellings is listed once, under
+// the key Claude Code reads.
+func TestCLIReportSweepBaseOnWindowsKeys(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("case-insensitive keys and backslash spellings are Windows-only")
+	}
+	home := setupSandbox(t)
+	base := filepath.Join(t.TempDir(), "git")
+	live := projKey(t, filepath.Join(base, "a"))
+	legacyDup := filepath.Join(base, "a")
+	legacyOnly := filepath.Join(base, "b")
+	b, _ := json.Marshal(map[string]any{
+		"projects": map[string]any{live: map[string]any{}, legacyDup: map[string]any{}, legacyOnly: map[string]any{}},
+	})
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCLI(t, home, "report", "sweep", "--base", strings.ToLower(base))
+	if err != nil {
+		t.Fatalf("report sweep --base err: %v\n%s", err, out)
+	}
+	var sr struct {
+		Projects []struct {
+			ProjectPath string `json:"projectPath"`
+		} `json:"projects"`
+	}
+	if err := json.Unmarshal([]byte(out[strings.Index(out, "{"):]), &sr); err != nil {
+		t.Fatalf("parse sweep JSON: %v\n%s", err, out)
+	}
+	var got []string
+	for _, r := range sr.Projects {
+		got = append(got, r.ProjectPath)
+	}
+	if len(got) != 2 || got[0] != live || got[1] != legacyOnly {
+		t.Fatalf("selected %v, want [%s %s]", got, live, legacyOnly)
 	}
 }

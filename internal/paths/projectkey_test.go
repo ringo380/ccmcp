@@ -81,3 +81,36 @@ func TestSameProjectToleratesLegacySpellings(t *testing.T) {
 		t.Fatal("Unix paths are case-sensitive")
 	}
 }
+
+// TestWithinProject: the --base filter of report sweep. On Windows it must
+// ignore case and accept legacy backslash keys; a sibling sharing the prefix
+// never matches.
+func TestWithinProject(t *testing.T) {
+	type c struct {
+		key, base string
+		want      bool
+	}
+	var cases []c
+	if runtime.GOOS == "windows" {
+		cases = []c{
+			{"C:/Users/x/git/a", "C:/Users/x/git", true},
+			{"C:/Users/x/git", "C:/Users/x/git", true},
+			{"C:/Users/x/git/a", `c:\users\x\git`, true},
+			{`C:\Users\x\git\a`, "C:/Users/x/git", true},
+			{"C:/Users/x/git2", "C:/Users/x/git", false},
+			{"C:/Users/x/gi", "C:/Users/x/git", false},
+		}
+	} else {
+		cases = []c{
+			{"/Users/x/git/a", "/Users/x/git", true},
+			{"/Users/x/git", "/Users/x/git/", true},
+			{"/Users/x/git2", "/Users/x/git", false},
+			{"/Users/x/Git/a", "/Users/x/git", false},
+		}
+	}
+	for _, tc := range cases {
+		if got := WithinProject(tc.key, tc.base); got != tc.want {
+			t.Fatalf("WithinProject(%q, %q) = %v, want %v", tc.key, tc.base, got, tc.want)
+		}
+	}
+}
