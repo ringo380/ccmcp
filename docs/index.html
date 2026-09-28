@@ -290,6 +290,13 @@
 <pre><code>brew install robworks-code/tap/ccmcp</code></pre>
     <p class="muted">Homebrew 5.x requires third-party taps to be trusted. If install or <code>brew upgrade</code> reports <code>Refusing to load formula ... from untrusted tap</code>, trust it once with <code>brew trust robworks-code/tap</code> (a one-time, per-machine step that applies to every non-official tap).</p>
 
+    <h3>Scoop <span class="muted">(Windows)</span></h3>
+<pre><code>scoop bucket add robworks https://github.com/robworks-code/scoop-bucket
+scoop install ccmcp</code></pre>
+
+    <h3>winget <span class="muted">(Windows, pending first-manifest acceptance)</span></h3>
+<pre><code>winget install Robworks.ccmcp</code></pre>
+
     <h3><code>go install</code> <span class="muted">(Go 1.25+)</span></h3>
 <pre><code>go install github.com/ringo380/ccmcp@latest</code></pre>
 
