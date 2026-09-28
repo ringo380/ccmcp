@@ -6,9 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -25,6 +25,10 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	fakeserverPath = filepath.Join(dir, "fakeserver")
+	if runtime.GOOS == "windows" {
+		// CreateProcess needs the extension; `go build -o` adds nothing.
+		fakeserverPath += ".exe"
+	}
 
 	build := exec.Command("go", "build", "-o", fakeserverPath, "./testdata/fakeserver")
 	build.Stderr = os.Stderr
@@ -226,6 +230,9 @@ func TestProbeLeavesNoProcessBehind(t *testing.T) {
 // the group SIGKILL cannot reach it, so without a WaitDelay bounding Wait the
 // probe blocks forever and the timeout it is built around means nothing.
 func TestProbeReturnsWhenADescendantEscapesTheProcessGroup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a kill-on-close Job Object has no escape, so nothing can hold stderr past the kill; the WaitDelay bound is exercised by TestProbeLeavesNoProcessBehind")
+	}
 	pidfile := filepath.Join(t.TempDir(), "pids")
 	target := fakeTarget("escapee", "FAKE_PIDFILE", pidfile)
 
@@ -234,7 +241,7 @@ func TestProbeReturnsWhenADescendantEscapesTheProcessGroup(t *testing.T) {
 	// at the bound below.
 	t.Cleanup(func() {
 		for _, pid := range pidsBestEffort(pidfile) {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
+			killPid(pid)
 		}
 	})
 
@@ -272,7 +279,7 @@ func TestProbeReturnsWhenADescendantEscapesTheProcessGroup(t *testing.T) {
 	}
 	// If this ever fails the fixture stopped escaping, and the test above is
 	// no longer exercising the blocked-Wait path it claims to.
-	if syscall.Kill(pids[1], 0) == syscall.ESRCH {
+	if !processAlive(pids[1]) {
 		t.Fatalf("pid %d (the escapee) died with the group - the fixture is not escaping, so this test proves nothing", pids[1])
 	}
 
@@ -372,7 +379,7 @@ func readPids(t *testing.T, path string) []int {
 func waitForExit(pid int, d time.Duration) (alive bool) {
 	deadline := time.Now().Add(d)
 	for {
-		if err := syscall.Kill(pid, 0); err == syscall.ESRCH {
+		if !processAlive(pid) {
 			return false
 		}
 		if time.Now().After(deadline) {
