@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/ringo380/ccmcp/internal/tokens"
@@ -158,10 +157,7 @@ func probeInto(ctx context.Context, t Target, res *Result) error {
 	for k, v := range t.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
-	// Put the server in its own process group so the whole tree can be
-	// signalled at once. exec.CommandContext only kills the direct child, and
-	// npx-style servers routinely spawn children that would outlive it.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	prepareProcessGroup(cmd)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -193,15 +189,23 @@ func probeInto(ctx context.Context, t Target, res *Result) error {
 	}
 
 	// Registered immediately after a successful Start so every later return
-	// path - error, timeout or panic - tears the whole group down.
-	pgid := cmd.Process.Pid
+	// path - error, timeout or panic - tears the whole tree down.
+	tree, treeErr := newProcessTree(cmd)
 	stop := make(chan struct{})
 	defer func() {
 		close(stop)
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		tree.Kill()
 		_ = stdin.Close()
 		_ = cmd.Wait()
+		tree.Close()
 	}()
+	if treeErr != nil {
+		// A server we cannot contain is not a server we can measure: kill the
+		// direct child (all we hold) and report the failure rather than risk a
+		// leaked tree behind an OK result.
+		_ = cmd.Process.Kill()
+		return fmt.Errorf("cannot contain server process: %v", treeErr)
+	}
 
 	lines := make(chan []byte, 8)
 	scanErr := make(chan error, 1)

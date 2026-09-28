@@ -73,9 +73,10 @@ type mcpView struct {
 	// probeSessions tracks every probe currently running so it can be stopped -
 	// by `esc` during a sweep, or by the quit path. Without a handle here the
 	// only thing bounding a probe was mcpprobe's own 10s timeout, and quitting
-	// mid-probe orphaned the server: mcpprobe puts the child in its OWN process
-	// group (so a terminal SIGINT never reaches it) and its group SIGKILL lives
-	// in a defer that never runs if tea.Quit exits the process first.
+	// mid-probe orphaned the server: mcpprobe puts the child in its own process
+	// tree (a process group on Unix, a Job Object on Windows; a terminal SIGINT
+	// never reaches it) and the tree kill lives in a defer that never runs if
+	// tea.Quit exits the process first.
 	//
 	// Only ever touched from the update goroutine (bubbletea serializes it) plus
 	// the quit path, which runs after the last Update returns.
@@ -98,7 +99,7 @@ type mcpUpdateCheckMsg struct {
 }
 
 // probeSession is a handle on one running probe. cancel stops the probe (and,
-// through mcpprobe's own teardown, SIGKILLs the server's whole process group);
+// through mcpprobe's own teardown, kills the server's whole process tree);
 // done closes once the probe goroutine has returned, so the quit path can wait
 // for that teardown instead of racing the process exit.
 type probeSession struct {

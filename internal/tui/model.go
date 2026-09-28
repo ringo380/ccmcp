@@ -100,8 +100,8 @@ func (m *model) killActiveFixes() {
 }
 
 // killActiveProbes is killActiveFixes' counterpart for in-flight MCP probes,
-// and it is not optional: mcpprobe starts each server in its OWN process group
-// (so a terminal SIGINT never reaches it) and issues the group SIGKILL from a
+// and it is not optional: mcpprobe starts each server in its own process tree
+// (so a terminal SIGINT never reaches it) and kills the tree from a
 // defer inside the probe goroutine. If tea.Quit exits the process while a probe
 // is running, that defer never runs and the user is left with an orphaned MCP
 // server. Cancelling makes the probe return, and cancelProbes(true) WAITS for
