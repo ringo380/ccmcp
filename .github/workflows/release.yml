@@ -30,7 +30,9 @@ jobs:
           # GITHUB_TOKEN is scoped to this repo only - used for creating the release
           # and uploading assets.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # HOMEBREW_TAP_TOKEN is a PAT with contents:write on robworks-code/homebrew-tap,
-          # stored as a repo secret. Without it, the brews: step in .goreleaser.yaml
-          # fails because GITHUB_TOKEN can't push to a sibling repo.
+          # HOMEBREW_TAP_TOKEN is a classic PAT with repo scope, stored as a repo
+          # secret. It pushes the Homebrew formula to robworks-code/homebrew-tap, the
+          # Scoop manifest to robworks-code/scoop-bucket, and the winget manifest to
+          # the ringo380/winget-pkgs fork (then opens the PR to microsoft/winget-pkgs).
+          # Without it those steps fail because GITHUB_TOKEN can't push to a sibling repo.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
