@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -60,6 +61,9 @@ func TestWriteJSONIsAtomic(t *testing.T) {
 }
 
 func TestWriteJSONPreservesPerms(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix mode bits do not exist on Windows; the Windows user profile is user-ACL'd and Chmod only toggles read-only")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.json")
 	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
@@ -78,6 +82,9 @@ func TestWriteJSONPreservesPerms(t *testing.T) {
 }
 
 func TestWriteJSONDefaultsPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix mode bits do not exist on Windows; the Windows user profile is user-ACL'd and Chmod only toggles read-only")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "new.json")
 	if err := WriteJSON(path, map[string]any{"x": 1}); err != nil {

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +34,9 @@ func fakeserver(t *testing.T) string {
 			return
 		}
 		fakeserverPath = filepath.Join(dir, "fakeserver")
+		if runtime.GOOS == "windows" {
+			fakeserverPath += ".exe" // CreateProcess needs the extension
+		}
 		build := exec.Command("go", "build", "-o", fakeserverPath, "../internal/mcpprobe/testdata/fakeserver")
 		if out, err := build.CombinedOutput(); err != nil {
 			fakeserverErr = err
