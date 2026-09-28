@@ -9,8 +9,8 @@ All notable changes to this project are documented here. Format based on
 ### Added
 
 - Windows support: native `windows_amd64` and `windows_arm64` builds, installable
-  via Scoop (`robworks-code/scoop-bucket`) or winget (`Robworks.ccmcp`), with
-  self-update detecting both. Probed MCP servers are contained in a Job Object so
+  via Scoop (`robworks-code/scoop-bucket`), and via winget (`Robworks.ccmcp`) once
+  the first manifest is accepted upstream, with self-update detecting both. Probed MCP servers are contained in a Job Object so
   no child process outlives a probe.
 - `ccmcp context` estimates the per-turn context cost of the enabled plugins and
   MCP servers, attributed per plugin, with `--json` output.
