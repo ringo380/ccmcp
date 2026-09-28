@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -16,12 +17,21 @@ func TestDetectMethodFromExePath(t *testing.T) {
 		{"/opt/homebrew/Cellar/ccmcp/0.23.0/bin/ccmcp", MethodBrew},
 		{"/home/linuxbrew/.linuxbrew/bin/ccmcp", MethodBrew},
 		{"/Users/x/go/bin/ccmcp", MethodGo},
-		{`C:\Users\x\go\bin\ccmcp.exe`, MethodGo},
-		{`C:\Users\x\scoop\apps\ccmcp\current\ccmcp.exe`, MethodScoop},
 		{"c:/users/x/SCOOP/APPS/ccmcp/0.24.0/ccmcp.exe", MethodScoop},
-		{`C:\Users\x\AppData\Local\Microsoft\WinGet\Packages\Robworks.ccmcp_Microsoft.Winget.Source_8wekyb3d8bbwe\ccmcp.exe`, MethodWinget},
-		{`C:\Users\x\bin\ccmcp.exe`, MethodBinary},
 		{"/usr/local/bin/ccmcp", MethodBinary},
+	}
+	// Backslash spellings only reach this function on Windows, where
+	// os.Executable returns them. Elsewhere a backslash is not a separator.
+	if runtime.GOOS == "windows" {
+		cases = append(cases, []struct {
+			exe  string
+			want Method
+		}{
+			{`C:\Users\x\go\bin\ccmcp.exe`, MethodGo},
+			{`C:\Users\x\scoop\apps\ccmcp\current\ccmcp.exe`, MethodScoop},
+			{`C:\Users\x\AppData\Local\Microsoft\WinGet\Packages\Robworks.ccmcp_Microsoft.Winget.Source_8wekyb3d8bbwe\ccmcp.exe`, MethodWinget},
+			{`C:\Users\x\bin\ccmcp.exe`, MethodBinary},
+		}...)
 	}
 	for _, c := range cases {
 		if got := detectMethodFromExe(c.exe); got != c.want {
