@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ringo380/ccmcp/internal/mcpprobe"
 )
 
 // runCLI executes the root command with args in a sandboxed $HOME/$CLAUDE_CONFIG_DIR so
@@ -74,6 +76,15 @@ func runCLI(t *testing.T, home string, args ...string) (string, error) {
 	mktNoClone = false
 	discoverJSON = false
 	discoverRefresh = false
+	// This reset MUST STAY. probeTimeout is a package global and cobra does not
+	// restore it between in-process invocations, so a run that omits --timeout
+	// inherits the previous run's value. cmd/probe.go decides whether to cache a
+	// FAILURE by comparing probeTimeout against mcpprobe.DefaultTimeout - a
+	// leaked value would make TestCLIProbeDoesNotCacheAFailureUnderAnExplicitTimeout's
+	// "the default still caches" case pass or fail for the wrong reason, exactly
+	// as cobra's sticky Changed bit did before that rule was keyed off the value.
+	probeTimeout = mcpprobe.DefaultTimeout
+	probeForce = false
 
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))

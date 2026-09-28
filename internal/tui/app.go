@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -9,6 +11,7 @@ import (
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/ctxcost"
 	"github.com/ringo380/ccmcp/internal/install"
+	"github.com/ringo380/ccmcp/internal/mcpprobe"
 	"github.com/ringo380/ccmcp/internal/paths"
 	"github.com/ringo380/ccmcp/internal/updates"
 )
@@ -145,6 +148,7 @@ type state struct {
 	// automatically, PROVIDED it goes through markSettingsDirty/markPluginsDirty.
 	costSettingsGen int
 	costPluginsGen  int
+	costMCPGen      int
 
 	// measuredVal/measuredOK cache the transcript calibration, which is a
 	// directory scan plus a full file scan - too expensive to redo per render
@@ -154,6 +158,27 @@ type state struct {
 	measuredValid       bool
 	measuredSettingsGen int
 	measuredPluginsGen  int
+
+	// probes is the on-disk MCP probe cache, loaded on first use via
+	// probeCache(). Never nil once loaded - mcpprobe.LoadCache self-heals a
+	// missing or corrupt file into an empty cache.
+	probes *mcpprobe.Cache
+
+	// mcpStates is the per-server context-cost state the MCPs tab publishes for
+	// the estimate, keyed by display name. Written only through setMCPStates,
+	// which is where the completeness contract on ctxcost.Input.MCP is honored:
+	// EVERY server that loads in this project gets an entry, unprobed ones with
+	// Probed=false and a reason.
+	mcpStates map[string]ctxcost.MCPState
+
+	// mcpStateKey fingerprints mcpStates so setMCPStates can tell a real change
+	// from a re-publish of identical state.
+	mcpStateKey string
+
+	// mcpGen counts changes to mcpStates and only ever increases; the cost cache
+	// keys off it exactly as it keys off settingsGen/pluginsGen. A boolean would
+	// be blind to a second consecutive change.
+	mcpGen int
 
 	// claudeAi: full list of "claude.ai <Name>" strings from claudeAiMcpEverConnected
 	claudeAi []string
@@ -203,6 +228,52 @@ func (s *state) markSettingsDirty() {
 func (s *state) markPluginsDirty() {
 	s.dirtyPlugins = true
 	s.pluginsGen++
+}
+
+// probeCache returns the MCP probe cache, loading it on first use. It is not
+// part of the dirty/apply model: a probe result is a measurement of the world,
+// not a pending edit, so it is written straight through on completion.
+func (s *state) probeCache() *mcpprobe.Cache {
+	if s.probes == nil {
+		// LoadCache never returns a nil cache and never errors on a corrupt
+		// file - it self-heals to empty, so a miss and a corrupt file are
+		// indistinguishable here, which is the right behavior for a cache.
+		c, _ := mcpprobe.LoadCache(s.paths.ProbeCache)
+		s.probes = c
+	}
+	return s.probes
+}
+
+// setMCPStates publishes the MCPs tab's per-server cost state and advances
+// mcpGen when it actually changed, so the cost cache rebuilds. This is the ONLY
+// invalidation path for the MCP half of the estimate: it covers both a completed
+// probe and a config mutation that changes which servers load.
+func (s *state) setMCPStates(states map[string]ctxcost.MCPState) {
+	key := fingerprintMCPStates(states)
+	if s.mcpStates != nil && key == s.mcpStateKey {
+		return
+	}
+	s.mcpStates = states
+	s.mcpStateKey = key
+	s.mcpGen++
+}
+
+// fingerprintMCPStates renders states into a stable string. Values are included,
+// not just keys: a completed probe leaves the key set untouched while turning an
+// unmeasured entry into a costed one, and a key-only fingerprint would miss it.
+func fingerprintMCPStates(states map[string]ctxcost.MCPState) string {
+	names := make([]string, 0, len(states))
+	for name := range states {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, name := range names {
+		st := states[name]
+		fmt.Fprintf(&b, "%s\x00%t\x00%s\x00%d\x00%d\n",
+			name, st.Probed, st.Reason, st.Cost.Loaded, st.Cost.Deferred)
+	}
+	return b.String()
 }
 
 // rescanPluginMCPs refreshes pluginMCPs from the current enabledPlugins + installed_plugins state.

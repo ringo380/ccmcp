@@ -99,6 +99,20 @@ func (m *model) killActiveFixes() {
 	killIfRunning(m.tweaks.summary.fixCmd)
 }
 
+// killActiveProbes is killActiveFixes' counterpart for in-flight MCP probes,
+// and it is not optional: mcpprobe starts each server in its OWN process group
+// (so a terminal SIGINT never reaches it) and issues the group SIGKILL from a
+// defer inside the probe goroutine. If tea.Quit exits the process while a probe
+// is running, that defer never runs and the user is left with an orphaned MCP
+// server. Cancelling makes the probe return, and cancelProbes(true) WAITS for
+// that teardown rather than racing process exit.
+//
+// Called from every quit path, alongside killActiveFixes. Safe when nothing is
+// running.
+func (m *model) killActiveProbes() {
+	m.mcps.cancelProbes(true)
+}
+
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if t, ok := msg.(spinner.TickMsg); ok {
 		var cmd tea.Cmd
@@ -146,6 +160,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, line.next
 	}
+	// A probe result belongs to the MCPs view no matter which tab is focused when
+	// it lands. updateActive() dispatches only to the current tab, so without this
+	// a probe started with `p` and completed after a tab switch would be dropped:
+	// the result never cached, and a bulk sweep stalled with its chain broken.
+	if pm, ok := msg.(mcpProbeDoneMsg); ok {
+		cmd := m.mcps.update(pm)
+		if m.mcps.flash != "" {
+			m.message = m.mcps.flash
+			m.mcps.flash = ""
+		}
+		return m, cmd
+	}
 	// Global search overlay captures all input (and the textinput's blink
 	// ticks) while open. Window-size messages still flow to the resize handler
 	// below so the layout stays correct if the terminal is resized mid-search.
@@ -183,9 +209,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.activeView().capturingInput() {
 			return m.updateActive(msg)
 		}
+		// A running probe sweep owns esc/q on the MCPs tab: those keys stop the
+		// sweep rather than quitting the app. Routed to the view so the sweep's
+		// cancellation has exactly one implementation. ctrl+c still quits (with
+		// the teardown below), and from any other tab esc/q still mean quit -
+		// the sweep is background work, not a modal.
+		if m.tab == tabMCPs && m.mcps.sweepActive() {
+			switch msg.String() {
+			case "esc", "q":
+				return m.updateActive(msg)
+			}
+		}
 		switch msg.String() {
 		case "ctrl+c":
 			m.killActiveFixes()
+			m.killActiveProbes()
 			return m, tea.Quit
 		case "?":
 			m.showHelp = true
@@ -198,12 +236,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.killActiveFixes()
+			m.killActiveProbes()
 			return m, tea.Quit
 		case "Q":
 			m.killActiveFixes()
+			m.killActiveProbes()
 			return m, tea.Quit
 		case "D":
 			m.killActiveFixes()
+			m.killActiveProbes()
 			return m, tea.Quit // discard on exit
 		case "w":
 			if !m.st.anyDirty() {

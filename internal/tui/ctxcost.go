@@ -20,13 +20,19 @@ import (
 // which Human renders as "≈0" - a confident measurement of zero. Callers must
 // therefore consult costUnavailable() before rendering any figure from it.
 func (s *state) costIndex() *ctxcost.Index {
-	if s.cost != nil && s.costSettingsGen == s.settingsGen && s.costPluginsGen == s.pluginsGen {
+	if s.cost != nil && s.costSettingsGen == s.settingsGen && s.costPluginsGen == s.pluginsGen &&
+		s.costMCPGen == s.mcpGen {
 		return s.cost
 	}
 	in := ctxcost.Input{
 		Skills:   skills.Discover(s.paths.ClaudeConfigDir, s.project, s.settings, s.installed, s.paths.PluginsDir),
 		Agents:   agents.Discover(s.paths.ClaudeConfigDir, s.project, s.settings, s.installed, s.paths.PluginsDir),
 		Commands: commands.Discover(s.paths.ClaudeConfigDir, s.project, s.settings, s.installed, s.paths.PluginsDir),
+		// Published by the MCPs tab's rebuild(), which owns the completeness
+		// contract: one entry per server that loads here, unprobed ones marked
+		// Probed=false. Handing over only cache hits would drop every unprobed
+		// server out of the accounting entirely - not even counted as unmeasured.
+		MCP: s.mcpStates,
 		PluginEnabled: func(id string) bool {
 			if s.settings == nil {
 				return true
@@ -49,6 +55,7 @@ func (s *state) costIndex() *ctxcost.Index {
 	s.cost = idx
 	s.costSettingsGen = s.settingsGen
 	s.costPluginsGen = s.pluginsGen
+	s.costMCPGen = s.mcpGen
 	return s.cost
 }
 

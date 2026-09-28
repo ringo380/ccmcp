@@ -19,6 +19,7 @@ type Paths struct {
 	KnownMarkets     string // ~/.claude/plugins/known_marketplaces.json
 	Stash            string // ~/.claude-mcp-stash.json
 	Profiles         string // ~/.claude-mcp-profiles.json
+	ProbeCache       string // ~/.claude-mcp-probe-cache.json
 	BackupsDir       string // ~/.claude-mcp-backups
 	Ignores          string // ~/.claude-ccmcp-ignores.json (ccmcp-owned conflict ignore list)
 	AppConfig        string // ~/.claude-mcp-config.json
@@ -44,6 +45,7 @@ func Resolve() (Paths, error) {
 		KnownMarkets:     filepath.Join(cfgDir, "plugins", "known_marketplaces.json"),
 		Stash:            filepath.Join(home, ".claude-mcp-stash.json"),
 		Profiles:         filepath.Join(home, ".claude-mcp-profiles.json"),
+		ProbeCache:       filepath.Join(home, ".claude-mcp-probe-cache.json"),
 		BackupsDir:       filepath.Join(home, ".claude-mcp-backups"),
 		Ignores:          filepath.Join(home, ".claude-ccmcp-ignores.json"),
 		AppConfig:        filepath.Join(home, ".claude-mcp-config.json"),

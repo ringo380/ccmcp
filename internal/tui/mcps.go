@@ -1,15 +1,19 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ringo380/ccmcp/internal/config"
 	"github.com/ringo380/ccmcp/internal/ctxcost"
+	"github.com/ringo380/ccmcp/internal/mcpprobe"
+	"github.com/ringo380/ccmcp/internal/mcpscope"
 	"github.com/ringo380/ccmcp/internal/stringslice"
 	"github.com/ringo380/ccmcp/internal/updates"
 )
@@ -33,6 +37,11 @@ var scopeDesc = map[string]string{
 }
 
 var scopeCycle = []string{scopeEffective, scopeLocal, scopeUser, scopeProject, scopeStash}
+
+// reasonNotProbedYet is the unmeasured reason for a server that simply has no
+// cache entry. Named because costReason has to recognize it: it is the one
+// reason not worth repeating on every row.
+const reasonNotProbedYet = "not probed yet - press p"
 
 type mcpView struct {
 	st *state
@@ -58,12 +67,72 @@ type mcpView struct {
 
 	loaded bool // lazy-load gate for update probes
 
+	// probeInFlight counts probes currently running so the header can say so.
+	probeInFlight int
+
+	// probeSessions tracks every probe currently running so it can be stopped -
+	// by `esc` during a sweep, or by the quit path. Without a handle here the
+	// only thing bounding a probe was mcpprobe's own 10s timeout, and quitting
+	// mid-probe orphaned the server: mcpprobe puts the child in its OWN process
+	// group (so a terminal SIGINT never reaches it) and its group SIGKILL lives
+	// in a defer that never runs if tea.Quit exits the process first.
+	//
+	// Only ever touched from the update goroutine (bubbletea serializes it) plus
+	// the quit path, which runs after the last Update returns.
+	probeSessions []*probeSession
+
+	// bulkProbeTargets/bulkProbeIndex drive the `P` sweep, which runs serially -
+	// one server at a time, each result chaining the next - rather than spawning
+	// every server at once. bulkProbeConfirm is the pending confirmation: `P`
+	// spawns processes, so unlike single-row `p` it asks first.
+	bulkProbeConfirm bool
+	bulkProbeTargets []mcpprobe.Target
+	bulkProbeIndex   int
+
 	flash string
 }
 
 type mcpUpdateCheckMsg struct {
 	name   string
 	status updates.Status
+}
+
+// probeSession is a handle on one running probe. cancel stops the probe (and,
+// through mcpprobe's own teardown, SIGKILLs the server's whole process group);
+// done closes once the probe goroutine has returned, so the quit path can wait
+// for that teardown instead of racing the process exit.
+type probeSession struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+
+	// cancelled marks a probe the USER stopped. Its Result is a fact about the
+	// cancellation, not a measurement of the server, so probeDone must not cache
+	// it - caching it would leave a sticky failure that reads as the server's
+	// fault, the same defect the CLI's --timeout rule exists to prevent.
+	cancelled bool
+}
+
+// probeTeardownWait bounds how long the quit path waits for a cancelled probe to
+// tear its process group down. mcpprobe's own cmd.WaitDelay is 2s, so this is
+// comfortably above the worst case while still being a bound rather than a hope.
+const probeTeardownWait = 3 * time.Second
+
+// mcpProbeDoneMsg carries one completed probe. mcpprobe.Probe never returns an
+// error - a failure is a cached fact - so there is no err field here.
+type mcpProbeDoneMsg struct {
+	res mcpprobe.Result
+
+	// session identifies which probe produced this result, so a cancelled one
+	// can be discarded. Nil from a synthesized message (tests, or any future
+	// direct sender), which is treated as "not cancelled".
+	session *probeSession
+
+	// bulk marks this result as one the `P` sweep started. The sweep must only
+	// ever count its OWN probes: attributing any arriving result to it advanced
+	// bulkProbeIndex and fired the "probed N server(s)" completion while probes
+	// were still in flight, so the sweep both lost its serial guarantee and
+	// claimed to be finished when it was not.
+	bulk bool
 }
 
 // mcpRow represents one (display-name, source) pair. Two rows can share a Name
@@ -166,7 +235,10 @@ func (v *mcpView) rebuild() {
 	if m, err := config.LoadMCPJson(v.st.project + "/.mcp.json"); err == nil {
 		for name, cfg := range m.Servers() {
 			key := config.OverrideKey(config.SourceProject, name, "")
-			denied := deny[name] || (len(allow) > 0 && !allow[name])
+			// One definition, shared with internal/mcpscope (and therefore with
+			// `ccmcp context`): this rule previously existed as two live copies
+			// with no test catching them drifting.
+			denied := mcpscope.McpjsonExcluded(name, allow, deny)
 			rows = append(rows, mcpRow{
 				Name:         name,
 				Source:       config.SourceProject,
@@ -297,6 +369,54 @@ func (v *mcpView) rebuild() {
 	if v.index >= len(rows) {
 		v.index = 0
 	}
+	v.publishCostStates()
+}
+
+// publishCostStates hands the context estimator one entry per server that loads
+// in this project - NOT just the ones the probe cache knows about.
+//
+// The enumeration and the accounting both live in internal/mcpscope, shared with
+// `ccmcp context` and `ccmcp mcp probe`, so the tab and the CLI cannot disagree
+// about the same project. They already did: a name that was both stashed and
+// listed in enabledMcpServers was effective in the CLI's own former copy of these
+// rules and suppressed here, so the two printed different unmeasured counts. See
+// mcpscope.CostStates for the completeness and duplicate-name contracts.
+//
+// Runs from rebuild() (construction plus every mutation) rather than render() so
+// the states, and the generation bump they cause, are in place before the first
+// keypress - and so no render path can ever be the thing that triggers a probe.
+//
+// It reads v.st, not v.rows: the state is the source of truth for what loads, and
+// the tab's rows are a display projection of it (TestMCPRowsAgreeWithMCPScope
+// pins the two to the same effective set).
+func (v *mcpView) publishCostStates() {
+	servers := mcpscope.Effective(mcpscope.Inputs{
+		CJ:         v.st.cj,
+		Project:    v.st.project,
+		Stash:      v.st.stash,
+		PluginMCPs: v.st.pluginMCPs,
+	})
+	v.st.setMCPStates(mcpscope.CostStates(servers, v.st.probeCache(), reasonNotProbedYet))
+}
+
+// probeTargetFor resolves a row into a probeable target, or explains why it is
+// not one. The two sources with no local config at all are named specifically:
+// TargetFromConfig sees only a nil config there and would report it as malformed,
+// which is true but useless to the user.
+func probeTargetFor(r mcpRow) (mcpprobe.Target, bool, string) {
+	switch r.Source {
+	case config.SourceClaude:
+		return mcpprobe.Target{}, false, "claude.ai integration - cannot probe locally"
+	case config.SourceBuiltin:
+		return mcpprobe.Target{}, false, "built-in with no local config - cannot probe locally"
+	}
+	if r.UnknownReason != "" {
+		return mcpprobe.Target{}, false, "stale override with no source - nothing to probe"
+	}
+	if r.Config == nil {
+		return mcpprobe.Target{}, false, "no config on disk - nothing to probe"
+	}
+	return mcpprobe.TargetFromConfig(r.Name, r.Config)
 }
 
 // isHiddenInEffective: in the effective scope, rows that are neither loading now nor
@@ -385,6 +505,46 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 		v.st.updates.PutMCP(m.name, m.status)
 		return nil
 	}
+	if m, ok := msg.(mcpProbeDoneMsg); ok {
+		return v.probeDone(m.res, m.bulk, m.session)
+	}
+	// A sweep in progress (confirmed, targets left) is interruptible. Handled
+	// early, because esc/q were previously wired only inside the confirmation
+	// block, which clears the moment the sweep starts - so a confirmed sweep was
+	// uninterruptible for up to N x the probe timeout.
+	//
+	// But NOT ahead of a sub-mode that owns the keyboard. capturingInput is the
+	// existing expression of exactly that, so it is reused rather than testing
+	// filterActive/moveActive by hand: a third sub-mode added later would
+	// otherwise silently reintroduce the bug this guard fixes - typing a literal
+	// `q` into the filter cancelled the sweep and the keystroke was swallowed,
+	// and esc in the move picker killed the sweep while leaving the picker open.
+	if !v.capturingInput() && v.sweepActive() {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "esc", "q":
+				v.stopSweep()
+				return nil
+			}
+		}
+	}
+	if v.bulkProbeConfirm {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "P", "y", "enter":
+				v.bulkProbeConfirm = false
+				v.bulkProbeIndex = 0
+				v.flash = styleProgress.Render(fmt.Sprintf("probing %d server(s)… (1/%d)",
+					len(v.bulkProbeTargets), len(v.bulkProbeTargets)))
+				return v.bulkProbeNext()
+			case "esc", "ctrl+c", "n", "q":
+				v.bulkProbeConfirm = false
+				v.bulkProbeTargets = nil
+				v.flash = styleDim.Render("probe cancelled")
+			}
+		}
+		return nil
+	}
 	if v.filterActive {
 		var cmd tea.Cmd
 		v.filter, cmd = v.filter.Update(msg)
@@ -471,6 +631,15 @@ func (v *mcpView) update(msg tea.Msg) tea.Cmd {
 		}
 		v.moveForKey = visible[v.index].RowKey()
 		v.moveActive = true
+	case "p":
+		// A keypress IS the consent for one probe: it spawns exactly the server
+		// the user is looking at, so there is nothing more to confirm.
+		if len(visible) == 0 {
+			return nil
+		}
+		return v.probeRow(visible[v.index])
+	case "P":
+		return v.askBulkProbe(visible)
 	case "/":
 		v.filterActive = true
 		v.filter.Focus()
@@ -880,6 +1049,200 @@ func (v *mcpView) doMove(rowKey, target string) {
 	v.rebuild()
 }
 
+// --- probing ----------------------------------------------------------------
+
+// probeRow starts a probe for one row, or explains why it cannot be probed.
+// Never probes inline: the work runs as a tea.Cmd so a server that takes the
+// full mcpprobe timeout does not freeze the UI.
+func (v *mcpView) probeRow(r mcpRow) tea.Cmd {
+	// Refused, not queued, while anything is already running: a single probe
+	// started during a `P` sweep ran a second server concurrently, which is
+	// exactly the one-at-a-time property the sweep promises. askBulkProbe has the
+	// same guard.
+	if v.probeInFlight > 0 || len(v.bulkProbeTargets) > 0 {
+		v.flash = styleDim.Render("a probe is already running - wait for it to finish")
+		return nil
+	}
+	t, ok, reason := probeTargetFor(r)
+	if !ok {
+		v.flash = styleWarn.Render("can't probe " + r.Name + " - " + reason)
+		return nil
+	}
+	v.probeInFlight++
+	v.flash = styleProgress.Render("probing " + r.Name + "… (spawning the server)")
+	return v.startProbe(t, false)
+}
+
+// askBulkProbe stages a sweep over every probeable visible row and asks for
+// confirmation. Unlike single-row `p` this spawns one process per server, so it
+// never starts on the first keypress.
+func (v *mcpView) askBulkProbe(rows []mcpRow) tea.Cmd {
+	// Same in-flight guard the plugins tab puts on its bulk update: re-staging
+	// targets while a result is still in flight would have probeDone chain into
+	// the new list before the user confirmed it.
+	if v.probeInFlight > 0 || len(v.bulkProbeTargets) > 0 {
+		v.flash = styleDim.Render("a probe is already running - wait for it to finish")
+		return nil
+	}
+	seen := map[string]bool{}
+	var targets []mcpprobe.Target
+	for _, r := range rows {
+		t, ok, _ := probeTargetFor(r)
+		if !ok || seen[t.Key()] {
+			continue
+		}
+		seen[t.Key()] = true
+		targets = append(targets, t)
+	}
+	if len(targets) == 0 {
+		v.flash = styleDim.Render("nothing here can be probed locally")
+		return nil
+	}
+	v.bulkProbeTargets = targets
+	v.bulkProbeIndex = 0
+	v.bulkProbeConfirm = true
+	return nil
+}
+
+// bulkProbeNext probes the target at bulkProbeIndex, or finishes the sweep.
+func (v *mcpView) bulkProbeNext() tea.Cmd {
+	if v.bulkProbeIndex >= len(v.bulkProbeTargets) {
+		n := len(v.bulkProbeTargets)
+		v.bulkProbeTargets = nil
+		v.bulkProbeIndex = 0
+		if n > 0 {
+			v.flash = styleOK.Render(fmt.Sprintf("probed %d server(s)", n))
+		}
+		return nil
+	}
+	v.probeInFlight++
+	return v.startProbe(v.bulkProbeTargets[v.bulkProbeIndex], true)
+}
+
+// probeDone records a completed probe and refreshes the estimate. The cache is
+// written through immediately: a probe result is a measurement, not a pending
+// edit, and caching a failure is what stops a hanging server re-hanging the user.
+// fromBulk says the result belongs to the `P` sweep; a single-row probe that
+// completes while a sweep is running must not advance it.
+func (v *mcpView) probeDone(res mcpprobe.Result, fromBulk bool, session *probeSession) tea.Cmd {
+	if v.probeInFlight > 0 {
+		v.probeInFlight--
+	}
+	v.forgetProbeSession(session)
+	if session != nil && session.cancelled {
+		// The user stopped this one. Its Result describes the cancellation, not
+		// the server, so it is neither cached nor allowed to advance a sweep -
+		// stopSweep has already cleared the targets, and the flash it set says
+		// what happened.
+		return nil
+	}
+	cache := v.st.probeCache()
+	cache.Put(res)
+	saveErr := cache.Save()
+	// rebuild republishes the cost states, which advances the MCP generation and
+	// so rebuilds the estimate with this result folded in.
+	v.rebuild()
+
+	bulk := fromBulk && v.bulkProbeIndex < len(v.bulkProbeTargets)
+	switch {
+	case saveErr != nil:
+		v.flash = styleErr.Render("probe cache not saved: " + saveErr.Error())
+	case !res.OK:
+		v.flash = styleWarn.Render(res.Name + " probe failed: " + truncateRunes(res.Err, 70))
+	default:
+		v.flash = styleOK.Render(fmt.Sprintf("%s probed - %s", res.Name,
+			ctxcost.HumanCost(ctxcost.Cost{Loaded: res.Loaded(), Deferred: res.Deferred()})))
+	}
+	if !bulk {
+		return nil
+	}
+	v.bulkProbeIndex++
+	if v.bulkProbeIndex < len(v.bulkProbeTargets) {
+		v.flash = styleProgress.Render(fmt.Sprintf("probing %s… (%d/%d)",
+			v.bulkProbeTargets[v.bulkProbeIndex].Name, v.bulkProbeIndex+1, len(v.bulkProbeTargets)))
+	}
+	return v.bulkProbeNext()
+}
+
+// startProbe runs one probe off the UI goroutine under a cancellable context,
+// and registers a session so `esc` or the quit path can stop it. mcpprobe.Probe
+// still bounds itself with its own timeout and never returns an error; the
+// context is what makes the wait interruptible rather than merely finite.
+func (v *mcpView) startProbe(t mcpprobe.Target, bulk bool) tea.Cmd {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &probeSession{cancel: cancel, done: make(chan struct{})}
+	v.probeSessions = append(v.probeSessions, s)
+	return func() tea.Msg {
+		// Closed before the message is delivered, so a quit path waiting on it
+		// knows the probe's own deferred process-group teardown has already run.
+		defer close(s.done)
+		res := mcpprobe.Probe(ctx, t)
+		cancel() // release the context regardless of how the probe ended
+		return mcpProbeDoneMsg{res: res, bulk: bulk, session: s}
+	}
+}
+
+// forgetProbeSession drops a finished session.
+func (v *mcpView) forgetProbeSession(s *probeSession) {
+	if s == nil {
+		return
+	}
+	kept := v.probeSessions[:0]
+	for _, existing := range v.probeSessions {
+		if existing != s {
+			kept = append(kept, existing)
+		}
+	}
+	v.probeSessions = kept
+}
+
+// cancelProbes stops every in-flight probe and reports how many it stopped.
+//
+// wait makes it block (bounded by probeTeardownWait) until each probe goroutine
+// has returned. The quit path MUST wait: cancelling only asks, and mcpprobe's
+// group SIGKILL runs in the probe goroutine's defer - if the process exits
+// first, the server survives as an orphan, which is the leak this exists to
+// close. Interactive cancellation does not wait, because blocking the UI for up
+// to 3s is exactly what the user just asked to stop.
+//
+// Sessions stay in the list: probeDone needs to see the cancelled flag when the
+// discarded result finally arrives, and removes its own entry then.
+func (v *mcpView) cancelProbes(wait bool) int {
+	n := 0
+	for _, s := range v.probeSessions {
+		if s.cancelled {
+			continue
+		}
+		s.cancelled = true
+		s.cancel()
+		n++
+	}
+	if wait {
+		for _, s := range v.probeSessions {
+			select {
+			case <-s.done:
+			case <-time.After(probeTeardownWait):
+			}
+		}
+	}
+	return n
+}
+
+// sweepActive reports whether a confirmed `P` sweep still has targets to run.
+// The confirmation state is NOT this: nothing is running there yet.
+func (v *mcpView) sweepActive() bool {
+	return !v.bulkProbeConfirm && len(v.bulkProbeTargets) > 0
+}
+
+// stopSweep cancels an active `P` sweep: the in-flight probe is stopped and the
+// remaining targets are dropped so probeDone cannot chain into them.
+func (v *mcpView) stopSweep() {
+	v.cancelProbes(false)
+	v.bulkProbeTargets = nil
+	v.bulkProbeIndex = 0
+	v.flash = styleDim.Render("probe sweep cancelled")
+}
+
 // --- filtering + rendering --------------------------------------------------
 
 func (v *mcpView) visibleRows() []mcpRow {
@@ -959,14 +1322,11 @@ func (v *mcpView) render() string {
 	b.WriteString("\n")
 
 	idx := v.st.costIndex()
-	unmeasured := 0
-	for _, r := range v.rows {
-		if isEffective(r) {
-			if _, ok := idx.ByMCP[r.Name]; !ok {
-				unmeasured++
-			}
-		}
-	}
+	// Every effective server has an entry (see publishCostStates), so the count
+	// of unmeasured ones comes from the accounting itself rather than from a
+	// missing-key scan. Only MCP sources increment Unmeasured - assets are folded
+	// in through a different path - so this figure is servers, not assets.
+	unmeasured := idx.Project.Unmeasured
 	known := idx.Project.MCP
 	// Keep each header line inside v.w: headerLines below budgets logical lines,
 	// so a wrapped header costs the list a row it never gave back.
@@ -988,6 +1348,26 @@ func (v *mcpView) render() string {
 		b.WriteString("\n")
 	}
 
+	if v.probeInFlight > 0 {
+		// The hint is only shown for a sweep: a single `p` probe has nothing left
+		// to chain, so esc would stop one already-running server for no gain.
+		hint := ""
+		if v.sweepActive() {
+			hint = "  (esc to cancel)"
+		}
+		b.WriteString(fitWidth("  "+v.st.spinnerFrame+styleProgress.Render(fmt.Sprintf(
+			"probing %d server(s)…%s", v.probeInFlight, hint)), v.w))
+		b.WriteString("\n")
+	}
+	if v.bulkProbeConfirm {
+		// Kept short enough to survive fitWidth at 80 columns WITH the cancel
+		// hint: the previous wording was 82 columns, so the clamp ate "esc to
+		// cancel" and left a confirmation with no visible way out.
+		b.WriteString(fitWidth(styleWarn.Render(fmt.Sprintf(
+			"Probe %d server(s)? Starts each one. P: confirm  esc: cancel",
+			len(v.bulkProbeTargets))), v.w))
+		b.WriteString("\n")
+	}
 	if v.moveActive {
 		b.WriteString(styleWarn.Render(fmt.Sprintf("Move to: [u]ser  [l]ocal  [s]tash  (esc to cancel)")))
 		b.WriteString("\n")
@@ -1043,7 +1423,7 @@ func (v *mcpView) render() string {
 	}
 	for i := v.top; i < end; i++ {
 		row := visible[i]
-		line := v.formatRow(row)
+		line := v.formatRow(row, idx)
 		if effDup[row.Name] > 1 && isEffective(row) {
 			line += "  " + styleWarn.Render(fmt.Sprintf("⚠ %dx (also loads from another source)", effDup[row.Name]))
 		}
@@ -1060,19 +1440,63 @@ func (v *mcpView) render() string {
 	return b.String()
 }
 
-func (v *mcpView) formatRow(r mcpRow) string {
+func (v *mcpView) formatRow(r mcpRow, idx *ctxcost.Index) string {
 	mark := v.markFor(r)
 	badge := badgeFor(r.Source)
 	badgeStr := ""
 	if badge != "" {
 		badgeStr = styleDim.Render("[" + badge + "]")
 	}
-	suffix := truncate(r.Description, 54)
-	line := fmt.Sprintf("%s %-28s %s  %s", mark, r.Name, badgeStr, styleDim.Render(suffix))
+	// Description budget shrank from 54 to 44 to pay for the cost column, so the
+	// row is no wider than it was before.
+	desc := r.Description
+	if why := v.costReason(r); why != "" {
+		// Folded into the SAME 44-column budget rather than appended, so
+		// explaining the "-" costs no width. An honest "-" the user cannot
+		// account for is only half an answer.
+		desc += " - " + why
+	}
+	suffix := truncate(desc, 44)
+	line := fmt.Sprintf("%s %-28s %s %8s  %s", mark, r.Name, badgeStr, v.rowCost(idx, r), styleDim.Render(suffix))
 	if s, ok := v.st.updates.MCP(r.Name); ok && s.Outdated {
 		line += "  " + styleWarn.Render("↑ "+s.Remote)
 	}
 	return line
+}
+
+// rowCost renders this row's probed per-turn cost, or "-" when there is no
+// measurement.
+//
+// The two-value ByMCP lookup is load-bearing: a missing key yields a zero-value
+// Breakdown whose Total() is 0, and rows that never load (stash, disabled
+// plugins, rows in other scopes) are deliberately absent from the accounting. A
+// one-value lookup would print "≈0" for every one of them - a confident
+// measurement of zero where nothing was measured at all.
+func (v *mcpView) rowCost(idx *ctxcost.Index, r mcpRow) string {
+	if v.st.costUnavailable() != "" {
+		return ctxcost.Human(ctxcost.Unmeasured)
+	}
+	b, ok := idx.ByMCP[r.Name]
+	if !ok || b.Items == 0 || b.Unmeasured > 0 {
+		return ctxcost.Human(ctxcost.Unmeasured)
+	}
+	return ctxcost.Human(b.MCP.Loaded)
+}
+
+// costReason explains a row's "-" when the explanation is not obvious from the
+// row itself.
+//
+// The plain "never probed" case is deliberately excluded: it applies to nearly
+// every row before the user presses `p`, the `-` already says it, and repeating
+// it on each line would crowd out the command the description column exists to
+// show. What IS surfaced is the case the user cannot deduce - a name collision,
+// a failed probe, a source that cannot be probed locally.
+func (v *mcpView) costReason(r mcpRow) string {
+	st, ok := v.st.mcpStates[r.Name]
+	if !ok || st.Probed || st.Reason == "" || st.Reason == reasonNotProbedYet {
+		return ""
+	}
+	return st.Reason
 }
 
 // initialCheckCmd kicks off update probes for every MCP with a detectable npm/pypi
@@ -1203,10 +1627,12 @@ func truncate(s string, n int) string {
 func (v *mcpView) resize(w, h int) { v.w, v.h = w, h }
 
 func (v *mcpView) helpText() string {
-	return "space: toggle  A/N: all on/off  S: stash/unstash  m: move  s: scope  H: show hidden  /: filter"
+	return "space: toggle  A/N: all on/off  S: stash/unstash  m: move  s: scope  p: probe  H: show hidden  /: filter"
 }
 
-func (v *mcpView) capturingInput() bool { return v.filterActive || v.moveActive }
+func (v *mcpView) capturingInput() bool {
+	return v.filterActive || v.moveActive || v.bulkProbeConfirm
+}
 
 // --- helpers ---------------------------------------------------------------
 
