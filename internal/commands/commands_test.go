@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,8 +30,14 @@ func TestDiscoverUserAndPluginCommands(t *testing.T) {
 		"---\ndescription: brainstorm\n---\n")
 	writeFile(t, filepath.Join(home, ".claude", "settings.json"),
 		`{"enabledPlugins": {"superpowers@official": true}}`)
-	writeFile(t, filepath.Join(home, ".claude", "plugins", "installed_plugins.json"),
-		`{"version":2,"plugins":{"superpowers@official":[{"scope":"user","installPath":"`+pluginPath+`"}]}}`)
+	// Marshalled, not spliced: a Windows installPath contains backslashes that are invalid JSON escapes when pasted raw.
+	installedJSON, _ := json.Marshal(map[string]any{
+		"version": 2,
+		"plugins": map[string]any{
+			"superpowers@official": []map[string]any{{"scope": "user", "installPath": pluginPath}},
+		},
+	})
+	writeFile(t, filepath.Join(home, ".claude", "plugins", "installed_plugins.json"), string(installedJSON))
 
 	settings, _ := config.LoadSettings(filepath.Join(home, ".claude", "settings.json"))
 	installed, _ := config.LoadInstalledPlugins(filepath.Join(home, ".claude", "plugins", "installed_plugins.json"))

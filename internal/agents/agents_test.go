@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,8 +41,14 @@ func TestDiscoverPluginAgents(t *testing.T) {
 		"---\nname: copywriter\n---\n")
 	writeFile(t, filepath.Join(home, ".claude", "settings.json"),
 		`{"enabledPlugins": {"ap@mkt": false}}`)
-	writeFile(t, filepath.Join(home, ".claude", "plugins", "installed_plugins.json"),
-		`{"version":2,"plugins":{"ap@mkt":[{"scope":"user","installPath":"`+pluginPath+`"}]}}`)
+	// Marshalled, not spliced: a Windows installPath contains backslashes that are invalid JSON escapes when pasted raw.
+	installedJSON, _ := json.Marshal(map[string]any{
+		"version": 2,
+		"plugins": map[string]any{
+			"ap@mkt": []map[string]any{{"scope": "user", "installPath": pluginPath}},
+		},
+	})
+	writeFile(t, filepath.Join(home, ".claude", "plugins", "installed_plugins.json"), string(installedJSON))
 
 	settings, _ := config.LoadSettings(filepath.Join(home, ".claude", "settings.json"))
 	installed, _ := config.LoadInstalledPlugins(filepath.Join(home, ".claude", "plugins", "installed_plugins.json"))
