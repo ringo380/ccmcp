@@ -80,12 +80,18 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagNoUpdateCheck, "no-update-check", false, "skip the launch-time check for a newer ccmcp release (also respects $CCMCP_NO_UPDATE_CHECK)")
 }
 
-// projectPath returns the --path flag or the current working directory.
+// projectPath returns the --path flag or the current working directory, in the
+// key form Claude Code uses under ~/.claude.json#/projects (paths.ProjectKey).
 func projectPath() (string, error) {
-	if flagPath != "" {
-		return flagPath, nil
+	p := flagPath
+	if p == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		p = cwd
 	}
-	return os.Getwd()
+	return paths.ProjectKey(p)
 }
 
 func resolvePaths() (paths.Paths, error) { return paths.Resolve() }

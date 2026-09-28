@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"sort"
+
+	"github.com/ringo380/ccmcp/internal/paths"
 )
 
 // ClaudeJSON is a read/write wrapper around ~/.claude.json that preserves unknown keys.
@@ -75,18 +77,27 @@ func (c *ClaudeJSON) ClearUserMCPs() map[string]any {
 
 // --- project-scope MCP servers ----------------------------------------------
 
-// projectNode returns the raw per-project map, creating it if createMissing is true.
+// projectNode returns the raw per-project map, creating it if createMissing is
+// true. The exact key is tried first; failing that, any existing key naming the
+// same directory under another spelling is used (Windows keeps a legacy `C:\`
+// key beside `C:/...` ones), so a write never creates a second entry for a
+// project that is already there.
 func (c *ClaudeJSON) projectNode(path string, createMissing bool) map[string]any {
 	projects := objOrEmpty(c.Raw, "projects")
-	node, ok := projects[path].(map[string]any)
-	if !ok {
-		if !createMissing {
-			return nil
-		}
-		node = map[string]any{}
-		projects[path] = node
-		c.Raw["projects"] = projects
+	if node, ok := projects[path].(map[string]any); ok {
+		return node
 	}
+	for k, v := range projects {
+		if node, ok := v.(map[string]any); ok && paths.SameProject(k, path) {
+			return node
+		}
+	}
+	if !createMissing {
+		return nil
+	}
+	node := map[string]any{}
+	projects[path] = node
+	c.Raw["projects"] = projects
 	return node
 }
 
