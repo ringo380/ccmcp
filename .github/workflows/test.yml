@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
 
@@ -32,4 +36,4 @@ jobs:
         run: go test -race -count=1 ./...
 
       - name: Build
-        run: go build -o /tmp/ccmcp .
+        run: go build -o ccmcp-test${{ runner.os == 'Windows' && '.exe' || '' }} .
